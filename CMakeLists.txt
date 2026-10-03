@@ -261,6 +261,18 @@ if(MRU_BUILD_TESTS)
 
     add_test(NAME transport.live_reads COMMAND mru_live_reads_test)
     set_tests_properties(transport.live_reads PROPERTIES TIMEOUT 300)
+
+    # End-to-end against a mock DataService over gRPC's in-process channel: no
+    # sequencer, no Icarust, no TCP port, no TLS, deterministic. This is the test
+    # that turns "the transport compiles" into "the transport works".
+    add_executable(mru_live_reads_integration_test
+                   test/live_reads_integration_test.cpp src/transport/auth.cpp)
+    target_link_libraries(mru_live_reads_integration_test
+                          PRIVATE mru_core mru_warnings mru_sanitizers)
+
+    add_test(NAME transport.live_reads_integration
+             COMMAND mru_live_reads_integration_test)
+    set_tests_properties(transport.live_reads_integration PROPERTIES TIMEOUT 300)
   endif()
 
   # A deliberately long soak, excluded from the default run.

@@ -61,6 +61,36 @@
 
 namespace mru {
 
+// Idle wait for the data-plane threads.
+//
+// Spinning is correct when the thread sits on a dedicated isolated core: whatever
+// it waits on is running elsewhere, and a pause loop reacts fastest. It is wrong
+// when threads outnumber cores -- the waiter burns its whole timeslice while the
+// thread it needs is descheduled. That is not hypothetical here: it is exactly
+// how this project's first CI run failed, with four jobs hitting a 900 s timeout
+// because 5 spinning threads shared 4 vCPUs.
+//
+// Adaptive serves both. On an isolated core under load the spin budget is rarely
+// exhausted, so the fast path is unchanged; when oversubscribed, one yield
+// unblocks the thread we are waiting for.
+class IdleWait {
+ public:
+  void reset() noexcept { spins_ = 0; }
+
+  void operator()() noexcept {
+    if (++spins_ < kSpinBudget) {
+      cpu_relax();
+      return;
+    }
+    spins_ = 0;
+    std::this_thread::yield();
+  }
+
+ private:
+  static constexpr unsigned kSpinBudget = 2048;
+  unsigned spins_ = 0;
+};
+
 // What a worker hands the writer. Trivially copyable so it rides an SpscRing.
 struct Decision {
   std::uint32_t channel;
@@ -178,6 +208,10 @@ class LiveReadsStream {
   [[nodiscard]] const StreamConfig& config() const noexcept { return cfg_; }
   [[nodiscard]] const StreamStats& stats() const noexcept { return stats_; }
   [[nodiscard]] const std::string& last_error() const noexcept { return last_error_; }
+
+  // For tests: after stop(), free_count_quiesced() must equal arena_slots, which
+  // proves no slot leaked while real traffic was flowing. Null before start().
+  [[nodiscard]] const PbArenaPool* arena_pool() const noexcept { return arenas_.get(); }
 
   // Builds the stream, sends StreamSetup, and launches reader, workers, writer.
   // Returns false with last_error() set on any failure.
@@ -330,13 +364,14 @@ inline void LiveReadsStream::reader_loop(std::stop_token st) {
   (void)set_thread_name("mru-reader");
   (void)pin_this_thread_to_core(cfg_.cores.reader_core);
 
+  IdleWait idle;
   while (!st.stop_requested()) {
     PbArenaPool::Slot* slot = arenas_->acquire();
     if (slot == nullptr) {
       // Workers are behind. Drop this response rather than block: a chunk we
       // cannot act on in time is worth nothing.
       stats_.arena_exhausted.fetch_add(1, std::memory_order_relaxed);
-      cpu_relax();
+      idle();
       continue;
     }
 
@@ -416,13 +451,15 @@ inline void LiveReadsStream::worker_loop(std::stop_token st, unsigned shard) {
 
   constexpr std::size_t kBatch = 32;
   ChunkRef batch[kBatch];
+  IdleWait idle;
 
   while (!st.stop_requested()) {
     const std::size_t n = in.try_pop_bulk(batch, kBatch);
     if (n == 0) {
-      cpu_relax();
+      idle();
       continue;
     }
+    idle.reset();
     for (std::size_t i = 0; i < n; ++i) {
       ChunkRef& c = batch[i];
       const ChunkKind kind =
@@ -466,6 +503,7 @@ inline void LiveReadsStream::writer_loop(std::stop_token st) {
   Req req;
   auto* actions = req.mutable_actions();
   auto next_tick = std::chrono::steady_clock::now();
+  IdleWait widle;
 
   const auto flush = [&]() {
     if (actions->actions_size() == 0) return;
@@ -508,7 +546,7 @@ inline void LiveReadsStream::writer_loop(std::stop_token st) {
     flush();
 
     if (cfg_.writer_tick.count() == 0) {
-      cpu_relax();
+      widle();
     } else {
       next_tick += cfg_.writer_tick;
       const auto now = std::chrono::steady_clock::now();
