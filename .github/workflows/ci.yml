@@ -1,0 +1,152 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Weekly long soak: rare interleavings only show up over hundreds of millions
+    # of operations, which is too slow for every push.
+    - cron: "0 3 * * 0"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CMAKE_GENERATOR: Ninja
+
+jobs:
+  core:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The one that matters: proves the lock-free ring and the arena
+          # refcount protocol are race-free.
+          - name: tsan-clang
+            cc: clang
+            cxx: clang++
+            build_type: RelWithDebInfo
+            cmake_args: -DMRU_TSAN=ON
+
+          # Catches a broken arena refcount as a use-after-free rather than as
+          # silent payload corruption. Run under both compilers because their
+          # sanitizer runtimes do not find identical sets of bugs.
+          - name: asan-ubsan-clang
+            cc: clang
+            cxx: clang++
+            build_type: RelWithDebInfo
+            cmake_args: -DMRU_ASAN=ON -DMRU_UBSAN=ON
+
+          - name: asan-ubsan-gcc
+            cc: gcc
+            cxx: g++
+            build_type: RelWithDebInfo
+            cmake_args: -DMRU_ASAN=ON -DMRU_UBSAN=ON
+
+          # Warnings are errors here, so the optimised build stays clean.
+          - name: release-warnings-gcc
+            cc: gcc
+            cxx: g++
+            build_type: Release
+            cmake_args: -DMRU_WERROR=ON
+
+          - name: release-warnings-clang
+            cc: clang
+            cxx: clang++
+            build_type: Release
+            cmake_args: -DMRU_WERROR=ON
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build clang
+
+      - name: Record environment
+        run: |
+          cmake --version
+          ${{ matrix.cxx }} --version
+          echo "cores: $(nproc)"
+          echo "kernel: $(uname -r)"
+
+      - name: Configure
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          ${{ matrix.cmake_args }}
+
+      - name: Build
+        run: cmake --build build -j "$(nproc)"
+
+      - name: Test
+        env:
+          # halt_on_error so the first race fails the job instead of being
+          # buried in the log. history_size raises the odds of a usable stack
+          # for the *other* thread in a reported pair.
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:history_size=7
+          ASAN_OPTIONS: >-
+            abort_on_error=1:detect_leaks=1:detect_stack_use_after_return=1:
+            strict_string_checks=1:check_initialization_order=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ctest --test-dir build --output-on-failure -LE soak
+
+  # ---------------------------------------------------------------------------
+  # Long runs, excluded from the per-push matrix.
+  # ---------------------------------------------------------------------------
+  soak:
+    name: ${{ matrix.name }}
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 200M ops, 8 shards, at full speed: hunts rare interleavings that
+          # sanitizer-slowed builds never reach.
+          - name: soak-release
+            build_type: Release
+            cmake_args: ""
+            command: ctest --test-dir build --output-on-failure -L soak
+
+          # A much longer TSan run than the push matrix can afford.
+          - name: soak-tsan
+            build_type: RelWithDebInfo
+            cmake_args: -DMRU_TSAN=ON
+            command: ./build/mru_ring_stress 20000000 8 500000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build clang
+
+      - name: Configure
+        env:
+          CC: clang
+          CXX: clang++
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          ${{ matrix.cmake_args }}
+
+      - name: Build
+        run: cmake --build build -j "$(nproc)"
+
+      - name: Run
+        env:
+          TSAN_OPTIONS: halt_on_error=1:history_size=7
+        run: ${{ matrix.command }}

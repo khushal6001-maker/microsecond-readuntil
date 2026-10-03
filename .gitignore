@@ -1,0 +1,17 @@
+build/
+build-*/
+out/
+cmake-build-*/
+.cache/
+compile_commands.json
+vcpkg_installed/
+.vs/
+.vscode/
+*.o
+*.obj
+*.exe
+*.pdb
+*.ilk
+perf.data
+perf.data.old
+*.hgrm

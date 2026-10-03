@@ -1,0 +1,15 @@
+{
+  "name": "microsecond-readuntil",
+  "version": "0.1.0",
+  "description": "Zero-copy C++ engine for real-time nanopore adaptive sampling",
+  "dependencies": [],
+  "features": {
+    "transport": {
+      "description": "MinKNOW gRPC transport layer (configure with -DMRU_WITH_TRANSPORT=ON)",
+      "dependencies": [
+        "grpc",
+        "protobuf"
+      ]
+    }
+  }
+}
