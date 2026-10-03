@@ -88,12 +88,13 @@ void test_zero_copy_spans() {
   constexpr std::uint32_t kSamples = 400;  // 0.1 s at 4 kHz
   constexpr std::uint32_t kBytes = kSamples * 2;  // UNCALIBRATED == int16
 
-  mru::PbArenaPool pool(4, google::protobuf::ArenaOptions{});
+  // 64 KiB initial block per slot; sized from measurement in the daemon.
+  mru::PbArenaPool pool(4, std::size_t{64} * 1024);
   mru::PbArenaPool::Slot* slot = pool.acquire();
   CHECK(slot != nullptr, "slot acquired");
   if (slot == nullptr) return;
 
-  auto* resp = arena_new<Resp>(&slot->arena());
+  auto* resp = arena_new<Resp>(slot->arena().get());
   CHECK(resp != nullptr, "response allocated in the arena");
 
   resp->set_samples_since_start(123456);

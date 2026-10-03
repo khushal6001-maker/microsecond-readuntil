@@ -245,7 +245,47 @@ class BumpArena {
 using BumpArenaPool = ArenaPool<BumpArena>;
 
 #if defined(MRU_WITH_PROTOBUF)
-using PbArenaPool = ArenaPool<google::protobuf::Arena>;
+// A protobuf Arena backed by a buffer the slot owns for its whole life.
+//
+// This wrapper is not convenience, it is required for correctness AND for the
+// no-allocation claim:
+//
+//  * Arena::Reset() frees every block it allocated. Without a user-supplied
+//    initial block, each recycled slot therefore mallocs again on the next
+//    response, and "no allocation on the hot path" is false. With an initial
+//    block, Reset() keeps it and reuses it.
+//
+//  * The initial block must be a DIFFERENT buffer per arena. ArenaPool forwards
+//    the same constructor arguments to every slot, so passing a prebuilt
+//    ArenaOptions would hand one buffer to all of them and two arenas would
+//    scribble over each other -- silent memory corruption under load. Taking a
+//    SIZE and allocating per slot makes that mistake impossible to express.
+//
+// Size the block from the measured worst-case response, not from arithmetic, and
+// watch ArenaPool::exhausted(): if a response outgrows the block the arena falls
+// back to malloc, quietly, and the hot path is allocating again.
+class BlockBackedArena {
+ public:
+  explicit BlockBackedArena(std::size_t block_bytes)
+      : block_bytes_(block_bytes), buf_(std::make_unique<char[]>(block_bytes)) {
+    google::protobuf::ArenaOptions opt;
+    opt.initial_block = buf_.get();
+    opt.initial_block_size = block_bytes;
+    arena_ = std::make_unique<google::protobuf::Arena>(opt);
+  }
+
+  [[nodiscard]] google::protobuf::Arena* get() noexcept { return arena_.get(); }
+  [[nodiscard]] std::size_t block_bytes() const noexcept { return block_bytes_; }
+
+  std::uint64_t Reset() noexcept { return arena_->Reset(); }
+
+ private:
+  std::size_t block_bytes_;
+  std::unique_ptr<char[]> buf_;
+  std::unique_ptr<google::protobuf::Arena> arena_;
+};
+
+using PbArenaPool = ArenaPool<BlockBackedArena>;
 #endif
 
 }  // namespace mru

@@ -251,6 +251,16 @@ if(MRU_BUILD_TESTS)
 
     add_test(NAME transport.proto_compat COMMAND mru_proto_compat_test)
     set_tests_properties(transport.proto_compat PROPERTIES TIMEOUT 300)
+
+    # Compiling this type-checks all of live_reads_stream.hpp. The runtime part
+    # only covers what works without a MinKNOW server; the rest needs Icarust.
+    add_executable(mru_live_reads_test
+                   test/live_reads_stream_test.cpp src/transport/auth.cpp)
+    target_link_libraries(mru_live_reads_test
+                          PRIVATE mru_core mru_warnings mru_sanitizers)
+
+    add_test(NAME transport.live_reads COMMAND mru_live_reads_test)
+    set_tests_properties(transport.live_reads PROPERTIES TIMEOUT 300)
   endif()
 
   # A deliberately long soak, excluded from the default run.

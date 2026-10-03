@@ -134,7 +134,7 @@ static_assert(sizeof(TestChunkRef) <= 64,
               "ChunkRef outgrew a cacheline -- re-check what was added");
 
 #if defined(MRU_WITH_PROTOBUF)
-using ChunkRef = ChunkRefT<google::protobuf::Arena>;
+using ChunkRef = ChunkRefT<BlockBackedArena>;
 static_assert(std::is_trivially_copyable_v<ChunkRef>);
 static_assert(sizeof(ChunkRef) <= 64);
 #endif
