@@ -127,36 +127,78 @@ endif()
 # Optional transport layer (step 3; off by default so step 1-2 needs no deps)
 # ---------------------------------------------------------------------------
 if(MRU_WITH_TRANSPORT)
-  if(CMAKE_VERSION VERSION_LESS 3.24)
-    message(FATAL_ERROR "MRU_WITH_TRANSPORT needs CMake >= 3.24 for protobuf_generate")
-  endif()
-
-  set(MINKNOW_PROTO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/minknow_api/proto")
-  if(NOT EXISTS "${MINKNOW_PROTO_DIR}")
+  set(MINKNOW_PROTO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/minknow_api/proto")
+  if(NOT EXISTS "${MINKNOW_PROTO_ROOT}/minknow_api/data.proto")
     message(FATAL_ERROR
-      "minknow_api protos not found at ${MINKNOW_PROTO_DIR}\n"
-      "  git submodule add https://github.com/nanoporetech/minknow_api third_party/minknow_api\n"
-      "  git submodule update --init --recursive")
+      "minknow_api protos not found under ${MINKNOW_PROTO_ROOT}\n"
+      "  git submodule update --init --recursive\n"
+      "The submodule is pinned to the tag matching the target MinKNOW Core minor "
+      "version (6.10.3). See src/transport/proto_compat.hpp.")
   endif()
 
-  find_package(protobuf CONFIG REQUIRED)
-  find_package(gRPC CONFIG REQUIRED)
+  # Two supported toolchains, because they package gRPC completely differently:
+  #   * vcpkg / upstream build -> CMake package config, imported targets
+  #   * Debian/Ubuntu apt      -> pkg-config only, no gRPCConfig.cmake
+  # Deliberately NOT using protobuf_generate(): it only exists on the CMake-config
+  # path, so an explicit protoc command is the only thing that works on both.
+  find_package(gRPC CONFIG QUIET)
+  if(gRPC_FOUND)
+    message(STATUS "mru: gRPC via CMake package config")
+    set(MRU_GRPC_LINK gRPC::grpc++ protobuf::libprotobuf)
+    set(MRU_PROTOC "$<TARGET_FILE:protobuf::protoc>")
+    set(MRU_GRPC_PLUGIN "$<TARGET_FILE:gRPC::grpc_cpp_plugin>")
+  else()
+    message(STATUS "mru: gRPC via pkg-config")
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(MRU_PB REQUIRED IMPORTED_TARGET protobuf)
+    pkg_check_modules(MRU_GRPCPP REQUIRED IMPORTED_TARGET grpc++)
+    find_program(MRU_PROTOC NAMES protoc REQUIRED)
+    find_program(MRU_GRPC_PLUGIN NAMES grpc_cpp_plugin REQUIRED)
+    set(MRU_GRPC_LINK PkgConfig::MRU_GRPCPP PkgConfig::MRU_PB)
+  endif()
 
-  file(GLOB MINKNOW_PROTOS "${MINKNOW_PROTO_DIR}/minknow_api/*.proto")
-  add_library(minknow_proto STATIC ${MINKNOW_PROTOS})
-  target_link_libraries(minknow_proto PUBLIC protobuf::libprotobuf gRPC::grpc++)
-  target_include_directories(minknow_proto PUBLIC "${CMAKE_CURRENT_BINARY_DIR}")
+  file(GLOB MINKNOW_PROTOS "${MINKNOW_PROTO_ROOT}/minknow_api/*.proto")
+  list(LENGTH MINKNOW_PROTOS MINKNOW_PROTO_COUNT)
 
-  protobuf_generate(TARGET minknow_proto
-    IMPORT_DIRS "${MINKNOW_PROTO_DIR}"
-    PROTOC_OUT_DIR "${CMAKE_CURRENT_BINARY_DIR}")
-  protobuf_generate(TARGET minknow_proto LANGUAGE grpc
-    GENERATE_EXTENSIONS .grpc.pb.h .grpc.pb.cc
-    PLUGIN "protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>"
-    IMPORT_DIRS "${MINKNOW_PROTO_DIR}"
-    PROTOC_OUT_DIR "${CMAKE_CURRENT_BINARY_DIR}")
+  set(MRU_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+  file(MAKE_DIRECTORY "${MRU_GEN_DIR}/minknow_api")
 
-  # Switches on PbArenaPool in arena_pool.hpp.
+  # Derive the output list from the protos themselves: grpc_cpp_plugin emits a
+  # .grpc.pb.cc only for files that declare a service, and listing an output that
+  # protoc never produces is a hard build failure. Reading the files keeps this
+  # correct when ONT adds or removes a service.
+  set(MRU_GEN_SRCS "")
+  foreach(P IN LISTS MINKNOW_PROTOS)
+    get_filename_component(STEM "${P}" NAME_WE)
+    list(APPEND MRU_GEN_SRCS "${MRU_GEN_DIR}/minknow_api/${STEM}.pb.cc")
+    file(STRINGS "${P}" MRU_HAS_SERVICE REGEX "^[ \t]*service[ \t]+")
+    if(MRU_HAS_SERVICE)
+      list(APPEND MRU_GEN_SRCS "${MRU_GEN_DIR}/minknow_api/${STEM}.grpc.pb.cc")
+    endif()
+  endforeach()
+
+  add_custom_command(
+    OUTPUT ${MRU_GEN_SRCS}
+    COMMAND "${MRU_PROTOC}"
+            -I "${MINKNOW_PROTO_ROOT}"
+            --cpp_out "${MRU_GEN_DIR}"
+            --grpc_out "${MRU_GEN_DIR}"
+            "--plugin=protoc-gen-grpc=${MRU_GRPC_PLUGIN}"
+            ${MINKNOW_PROTOS}
+    DEPENDS ${MINKNOW_PROTOS}
+    COMMENT "protoc: generating minknow_api bindings (${MINKNOW_PROTO_COUNT} protos)"
+    VERBATIM)
+
+  add_library(minknow_proto STATIC ${MRU_GEN_SRCS})
+  target_link_libraries(minknow_proto PUBLIC ${MRU_GRPC_LINK})
+  # SYSTEM: generated protobuf/gRPC code is not warning-clean, and consumers of
+  # these headers are built with -Werror.
+  target_include_directories(minknow_proto SYSTEM PUBLIC "${MRU_GEN_DIR}")
+  if(NOT MSVC)
+    target_compile_options(minknow_proto PRIVATE -w)
+  endif()
+
+  # Switches on PbArenaPool in arena_pool.hpp and ChunkRef in chunk_ref.hpp.
   target_compile_definitions(mru_core INTERFACE MRU_WITH_PROTOBUF=1)
   target_link_libraries(mru_core INTERFACE minknow_proto)
 endif()
@@ -172,6 +214,12 @@ if(MRU_BUILD_TESTS)
 
   add_test(NAME core.ring_stress COMMAND mru_ring_stress)
   set_tests_properties(core.ring_stress PROPERTIES TIMEOUT 900)
+
+  add_executable(mru_read_state_test test/read_state_test.cpp)
+  target_link_libraries(mru_read_state_test PRIVATE mru_core mru_warnings mru_sanitizers)
+
+  add_test(NAME decide.read_state COMMAND mru_read_state_test)
+  set_tests_properties(decide.read_state PROPERTIES TIMEOUT 300)
 
   # A deliberately long soak, excluded from the default run.
   add_test(NAME core.ring_soak COMMAND mru_ring_stress 200000000 8 5000000)

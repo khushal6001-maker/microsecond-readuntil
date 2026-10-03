@@ -38,6 +38,17 @@
 #define MRU_TSAN_BUILD 0
 #endif
 
+#if defined(__SANITIZE_ADDRESS__)
+#define MRU_ASAN_BUILD 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define MRU_ASAN_BUILD 1
+#endif
+#endif
+#ifndef MRU_ASAN_BUILD
+#define MRU_ASAN_BUILD 0
+#endif
+
 namespace {
 
 int g_failures = 0;
@@ -66,6 +77,37 @@ void fail(const char* file, int line, const char* what, const char* expr) {
 
 void banner(const char* name) { std::printf("[ RUN ] %s\n", name); }
 
+// Oversubscription-safe wait.
+//
+// A pure pause loop is right when the thread you are waiting on is running on
+// another core. It is wrong when there are more spinning threads than cores --
+// then the waiter burns its whole timeslice while the thread it needs is
+// descheduled, and throughput collapses. CI runners have 4 vCPUs, so yield
+// periodically rather than spinning blind.
+//
+// The production daemon does not need this: its threads are pinned to dedicated
+// isolated cores, so a spin never competes with the thread it waits on.
+inline void spin_wait() noexcept {
+  static thread_local unsigned n = 0;
+  if ((++n & 0x3FFu) == 0) {
+    std::this_thread::yield();
+  } else {
+    mru::cpu_relax();
+  }
+}
+
+// One producer plus N consumers should not exceed the core count, or these tests
+// stop measuring the ring and start measuring the scheduler. Must be a power of
+// two for the shard mask.
+[[nodiscard]] unsigned default_shards() noexcept {
+  const unsigned cores = mru::hardware_cores();
+  unsigned budget = cores > 1 ? cores - 1 : 1;  // leave one core for the producer
+  if (budget > 8) budget = 8;
+  unsigned p = 1;
+  while (p * 2 <= budget) p *= 2;
+  return p;
+}
+
 // ---------------------------------------------------------------------------
 // 1. SPSC: nothing lost, nothing duplicated, nothing reordered
 // ---------------------------------------------------------------------------
@@ -91,7 +133,7 @@ void test_spsc_sequence(std::uint64_t ops) {
       (void)mru::set_thread_name("mru-prod");
       for (std::uint64_t i = 0; i < ops; ++i) {
         const Item it{i, 0, 0};
-        while (!ring->try_push(it)) mru::cpu_relax();
+        while (!ring->try_push(it)) spin_wait();
       }
     });
     std::jthread consumer([&] {
@@ -103,7 +145,7 @@ void test_spsc_sequence(std::uint64_t ops) {
           if (it.seq != expect) out_of_order.fetch_add(1, std::memory_order_relaxed);
           ++expect;
         } else {
-          mru::cpu_relax();
+          spin_wait();
         }
       }
       consumed.store(expect, std::memory_order_relaxed);
@@ -164,7 +206,7 @@ void test_sharded_fanout(std::uint64_t ops, unsigned shards) {
             expect += shards;
             ++n;
           } else {
-            mru::cpu_relax();
+            spin_wait();
           }
         }
         got[s].store(n, std::memory_order_relaxed);
@@ -176,7 +218,7 @@ void test_sharded_fanout(std::uint64_t ops, unsigned shards) {
       for (std::uint64_t i = 0; i < per_shard * shards; ++i) {
         const auto s = static_cast<std::uint32_t>(i & mask);
         const Item it{i, s, 0};
-        while (!rings[s]->try_push(it)) mru::cpu_relax();
+        while (!rings[s]->try_push(it)) spin_wait();
       }
     });
   }
@@ -219,7 +261,7 @@ void test_drop_conservation(std::uint64_t ops) {
           continue;
         }
         if (done.load(std::memory_order_acquire) && ring->size_approx() == 0) break;
-        mru::cpu_relax();
+        spin_wait();
       }
       popped.store(n, std::memory_order_relaxed);
     });
@@ -310,7 +352,7 @@ void test_arena_pool_refcount(std::uint64_t iters, unsigned shards) {
         Ref r{};
         while (expect < iters) {
           if (!rings[s]->try_pop(r)) {
-            mru::cpu_relax();
+            spin_wait();
             continue;
           }
           // Read through the span while holding our reference -- exactly what a
@@ -332,7 +374,7 @@ void test_arena_pool_refcount(std::uint64_t iters, unsigned shards) {
         Slot* slot = nullptr;
         while ((slot = pool.acquire()) == nullptr) {
           acquire_stalls.fetch_add(1, std::memory_order_relaxed);
-          mru::cpu_relax();
+          spin_wait();
         }
         // refcount is 1 here and it belongs to US until dispatch completes.
         for (unsigned s = 0; s < shards; ++s) {
@@ -348,7 +390,7 @@ void test_arena_pool_refcount(std::uint64_t iters, unsigned shards) {
 
           slot->retain();
           const Ref r{pl, slot, i, s, 0};
-          while (!rings[s]->try_push(r)) mru::cpu_relax();
+          while (!rings[s]->try_push(r)) spin_wait();
         }
         slot->release();  // drop the reader's own reference
       }
@@ -429,13 +471,33 @@ std::uint64_t arg_or(int argc, char** argv, int idx, std::uint64_t fallback) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  // TSan instruments every memory access, so a full-speed op count would take
-  // minutes. Keep the default brisk and raise it explicitly for a soak run.
-  const std::uint64_t default_ops = MRU_TSAN_BUILD ? 2'000'000ull : 20'000'000ull;
-  const std::uint64_t default_iters = MRU_TSAN_BUILD ? 50'000ull : 500'000ull;
+  // The default workload scales with instrumentation overhead rather than
+  // relying on a generous ctest timeout.
+  //
+  // This is not a guess. The first CI run failed exactly here: all four
+  // uninstrumented jobs hit the 900 s ctest timeout while the TSan job passed in
+  // 193 s -- purely because TSan was the only configuration whose workload had
+  // been reduced. The full 20 M ops with a hardcoded 4 shards meant 5 spinning
+  // threads on a 4-vCPU runner, and the spin loops starved each other.
+  //
+  // Fixed in three places: here (workload scales), spin_wait() (yields instead
+  // of spinning blind), and default_shards() (never more consumers than cores).
+#if MRU_TSAN_BUILD
+  const std::uint64_t default_ops = 2'000'000ull;
+  const std::uint64_t default_iters = 50'000ull;
+  const char* build_kind = "ThreadSanitizer";
+#elif MRU_ASAN_BUILD
+  const std::uint64_t default_ops = 5'000'000ull;
+  const std::uint64_t default_iters = 150'000ull;
+  const char* build_kind = "AddressSanitizer";
+#else
+  const std::uint64_t default_ops = 20'000'000ull;
+  const std::uint64_t default_iters = 500'000ull;
+  const char* build_kind = "plain";
+#endif
 
   const std::uint64_t ops = arg_or(argc, argv, 1, default_ops);
-  auto shards = static_cast<unsigned>(arg_or(argc, argv, 2, 4));
+  auto shards = static_cast<unsigned>(arg_or(argc, argv, 2, default_shards()));
   const std::uint64_t iters = arg_or(argc, argv, 3, default_iters);
 
   if ((shards & (shards - 1)) != 0 || shards == 0) {
@@ -445,7 +507,7 @@ int main(int argc, char** argv) {
 
   std::printf("microsecond-readuntil core stress test\n");
   std::printf("  build: %s, cores: %u, ops: %llu, shards: %u, arena iters: %llu\n\n",
-              MRU_TSAN_BUILD ? "ThreadSanitizer" : "plain", mru::hardware_cores(),
+              build_kind, mru::hardware_cores(),
               static_cast<unsigned long long>(ops), shards,
               static_cast<unsigned long long>(iters));
 

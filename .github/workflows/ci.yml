@@ -95,9 +95,10 @@ jobs:
           # buried in the log. history_size raises the odds of a usable stack
           # for the *other* thread in a reported pair.
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:history_size=7
-          ASAN_OPTIONS: >-
-            abort_on_error=1:detect_leaks=1:detect_stack_use_after_return=1:
-            strict_string_checks=1:check_initialization_order=1
+          # MUST stay on one line. A YAML folded scalar (>-) joins lines with a
+          # SPACE, which would produce "...=1: strict_string_checks=1" and the
+          # ASan flag parser rejects a flag name beginning with a space.
+          ASAN_OPTIONS: abort_on_error=1:detect_leaks=1:detect_stack_use_after_return=1:strict_string_checks=1:check_initialization_order=1
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
         run: ctest --test-dir build --output-on-failure -LE soak
 
@@ -105,7 +106,10 @@ jobs:
   # Long runs, excluded from the per-push matrix.
   # ---------------------------------------------------------------------------
   soak:
-    name: ${{ matrix.name }}
+    # Deliberately no dynamic `name:` here. When a job is skipped, GitHub cannot
+    # expand the matrix, so `name: ${{ matrix.name }}` renders as the literal
+    # string "matrix.name" in the run summary. The default naming is uglier but
+    # always correct.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 120
