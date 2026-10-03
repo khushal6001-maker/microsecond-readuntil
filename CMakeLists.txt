@@ -233,6 +233,14 @@ if(MRU_BUILD_TESTS)
   add_test(NAME decide.read_state COMMAND mru_read_state_test)
   set_tests_properties(decide.read_state PROPERTIES TIMEOUT 300)
 
+  # The index layer has no gRPC dependency either, so it is built and tested
+  # everywhere -- including under TSan and ASan.
+  add_executable(mru_index_test test/index_test.cpp)
+  target_link_libraries(mru_index_test PRIVATE mru_core mru_warnings mru_sanitizers)
+
+  add_test(NAME index.quantise_and_probe COMMAND mru_index_test)
+  set_tests_properties(index.quantise_and_probe PROPERTIES TIMEOUT 600)
+
   # Credential discovery has no gRPC dependency, so it is tested in every
   # configuration rather than only in the transport build.
   add_executable(mru_auth_test test/auth_test.cpp src/transport/auth.cpp)
