@@ -20,6 +20,18 @@ if(NOT MSVC)
   add_compile_options(-fno-omit-frame-pointer)
 endif()
 
+# MinGW only: link the C++ and GCC runtimes statically.
+#
+# Not a style preference. On a typical Windows dev box several libstdc++-6.dll
+# copies sit on PATH (Git for Windows ships one, Strawberry Perl ships two), and
+# whichever appears first wins at load time. If that one predates the compiler,
+# any binary referencing newer libstdc++ symbols dies at startup with
+# STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139) and no diagnostic. Linking statically
+# makes the dev build independent of PATH ordering. CI on Linux is unaffected.
+if(MINGW)
+  add_link_options(-static-libstdc++ -static-libgcc)
+endif()
+
 # ---------------------------------------------------------------------------
 # Options
 # ---------------------------------------------------------------------------
@@ -220,6 +232,26 @@ if(MRU_BUILD_TESTS)
 
   add_test(NAME decide.read_state COMMAND mru_read_state_test)
   set_tests_properties(decide.read_state PROPERTIES TIMEOUT 300)
+
+  # Credential discovery has no gRPC dependency, so it is tested in every
+  # configuration rather than only in the transport build.
+  add_executable(mru_auth_test test/auth_test.cpp src/transport/auth.cpp)
+  target_link_libraries(mru_auth_test PRIVATE mru_core mru_warnings mru_sanitizers)
+
+  add_test(NAME transport.auth COMMAND mru_auth_test)
+  set_tests_properties(transport.auth PROPERTIES TIMEOUT 120)
+
+  # Compiling this exercises every field-number assertion in proto_compat.hpp,
+  # and running it exercises the zero-copy path against real protobuf arenas.
+  # Needs the generated headers, so it only exists in the transport build.
+  if(MRU_WITH_TRANSPORT)
+    add_executable(mru_proto_compat_test test/proto_compat_test.cpp)
+    target_link_libraries(mru_proto_compat_test
+                          PRIVATE mru_core mru_warnings mru_sanitizers)
+
+    add_test(NAME transport.proto_compat COMMAND mru_proto_compat_test)
+    set_tests_properties(transport.proto_compat PROPERTIES TIMEOUT 300)
+  endif()
 
   # A deliberately long soak, excluded from the default run.
   add_test(NAME core.ring_soak COMMAND mru_ring_stress 200000000 8 5000000)

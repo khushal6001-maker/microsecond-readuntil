@@ -103,6 +103,59 @@ jobs:
         run: ctest --test-dir build --output-on-failure -LE soak
 
   # ---------------------------------------------------------------------------
+  # Transport build. There is no gRPC toolchain on the dev machine, so this job
+  # is where src/transport/ gets compiled at all -- it is the only verification
+  # that the generated minknow_api bindings and proto_compat.hpp's field-number
+  # assertions actually hold.
+  #
+  # Uses Debian/Ubuntu packages, which provide gRPC via pkg-config only and ship
+  # no gRPCConfig.cmake. CMakeLists handles both that and the vcpkg CMake-config
+  # layout; this job exercises the pkg-config path.
+  # ---------------------------------------------------------------------------
+  transport:
+    name: transport-gcc
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive  # the minknow_api protos live in a submodule
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build pkg-config \
+            protobuf-compiler protobuf-compiler-grpc \
+            libprotobuf-dev libgrpc++-dev
+
+      - name: Record environment
+        run: |
+          cmake --version
+          g++ --version | head -1
+          protoc --version
+          echo "protobuf: $(pkg-config --modversion protobuf)"
+          echo "grpc++:   $(pkg-config --modversion grpc++)"
+          echo "plugin:   $(command -v grpc_cpp_plugin)"
+          echo "minknow_api pin: $(git -C third_party/minknow_api describe --tags || echo UNKNOWN)"
+
+      - name: Configure
+        env:
+          CC: gcc
+          CXX: g++
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DMRU_WITH_TRANSPORT=ON
+
+      - name: Build
+        run: cmake --build build -j "$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -LE soak
+
+  # ---------------------------------------------------------------------------
   # Long runs, excluded from the per-push matrix.
   # ---------------------------------------------------------------------------
   soak:
