@@ -76,6 +76,7 @@ inline std::size_t probe_batch(const MinimizerIndex& index,
   if (seeds.empty() || out.size() < seeds.size()) return 0;
 
   const MinimizerIndex::Entry* table = index.data();
+  const MinimizerIndex::Position* positions = index.positions();
   const std::size_t mask = index.mask();
   if (table == nullptr || index.capacity() == 0) return 0;
 
@@ -126,41 +127,31 @@ inline std::size_t probe_batch(const MinimizerIndex& index,
       m.seed_offset = seeds[base + i].offset;
       m.count = 0;
 
-      std::size_t s = slot[cur][i];
-      std::size_t probes = 0;
-      std::size_t lines = 0;
-      std::size_t last_line = ~std::size_t{0};
-      std::uint64_t rejects = 0;
+      // The SAME probe function the scalar path calls. The two used to duplicate this
+      // walk, kept honest by a test asserting they agreed; sharing it makes them unable
+      // to disagree, which is better than detecting a divergence afterwards.
+      const MinimizerIndex::Probe pr =
+          MinimizerIndex::probe_at(table, mask, positions, slot[cur][i], fp[cur][i]);
 
-      // Identical walk to MinimizerIndex::query(); see the correctness contract.
-      for (std::size_t p = 0; p < MinimizerIndex::kMaxProbe; ++p) {
-        ++probes;
-        const std::size_t line = s / kEntriesPerLine;
-        if (line != last_line) {
-          ++lines;
-          last_line = line;
-        }
-        const MinimizerIndex::Entry e = table[s];
-        if (e == MinimizerIndex::kEmpty) break;
-        if (MinimizerIndex::entry_fingerprint(e) == fp[cur][i]) {
-          m.positions[m.count++] = MinimizerIndex::entry_position(e);
-          if (m.count == SeedMatches::kMaxPerSeed) break;
-        } else {
-          ++rejects;
-        }
-        s = (s + 1) & mask;
-      }
+      const auto take =
+          static_cast<std::uint32_t>(std::min<std::size_t>(pr.count, SeedMatches::kMaxPerSeed));
+      for (std::uint32_t j = 0; j < take; ++j) m.positions[j] = pr.positions[j];
+      m.count = take;
 
       if (m.count > 0) ++matched_seeds;
       if (stats != nullptr) {
         ++stats->queries;
-        if (m.count > 0) {
+        if (pr.count > 0) {
           ++stats->hits;
         } else {
           ++stats->misses;
         }
-        stats->fingerprint_rejects += rejects;
-        stats->note_probe(probes, lines);
+        stats->fingerprint_rejects += pr.rejects;
+        stats->positions_returned += take;
+        if (pr.count > SeedMatches::kMaxPerSeed) {
+          stats->positions_truncated += pr.count - SeedMatches::kMaxPerSeed;
+        }
+        stats->note_probe(pr.slots, pr.lines);
       }
     }
 

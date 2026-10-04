@@ -33,7 +33,12 @@
 #include <string>
 #include <thread>
 
+#include <fstream>
+
 #include "core/affinity.hpp"
+#include "daemon/policy.hpp"
+#include "index/minimizer_index.hpp"
+#include "index/quantise.hpp"
 #include "transport/auth.hpp"
 #include "transport/live_reads_stream.hpp"
 
@@ -49,7 +54,16 @@ struct Args {
   std::uint32_t last_channel = 512;
   unsigned shards = 4;
   int seconds = 30;
-  std::uint32_t unblock_after_chunks = 2;
+  std::uint32_t unblock_after_chunks = 2;  // placeholder policy only
+
+  // Index: with both of these the daemon runs real signal-space matching. Without them
+  // it falls back to the placeholder policy, which is useful for isolating transport
+  // problems from decision problems.
+  std::string model_path;      // ONT k-mer level table, <kmer>\t<level_pA>
+  std::string reference_path;  // target reference FASTA
+  std::uint32_t accept_votes = 5;
+  std::uint32_t max_chunks = 10;
+  int probe_budget = mru::kDefaultProbeBudget;
   bool pin = false;  // off by default: pinning a dev box is rarely what you want
 };
 
@@ -66,6 +80,11 @@ void usage() {
       "  --shards N              power of two, default 4\n"
       "  --seconds N             how long to stream, default 30\n"
       "  --unblock-after N       placeholder policy: unblock after N chunks\n"
+      "  --model PATH            ONT k-mer level table (enables real matching)\n"
+      "  --reference PATH        target reference FASTA (enables real matching)\n"
+      "  --accept-votes N        diagonal votes to call on-target, default 5\n"
+      "  --max-chunks N          defer up to N chunks before unblocking, default 10\n"
+      "  --probes N              keys probed per seed (1, 2 or 4), default 4\n"
       "  --pin                   pin data-plane threads to cores\n");
 }
 
@@ -118,6 +137,26 @@ void usage() {
       const char* v = next("--seconds");
       if (v == nullptr) return false;
       a.seconds = std::atoi(v);
+    } else if (k == "--model") {
+      const char* v = next("--model");
+      if (v == nullptr) return false;
+      a.model_path = v;
+    } else if (k == "--reference") {
+      const char* v = next("--reference");
+      if (v == nullptr) return false;
+      a.reference_path = v;
+    } else if (k == "--accept-votes") {
+      const char* v = next("--accept-votes");
+      if (v == nullptr) return false;
+      a.accept_votes = static_cast<std::uint32_t>(std::atoi(v));
+    } else if (k == "--max-chunks") {
+      const char* v = next("--max-chunks");
+      if (v == nullptr) return false;
+      a.max_chunks = static_cast<std::uint32_t>(std::atoi(v));
+    } else if (k == "--probes") {
+      const char* v = next("--probes");
+      if (v == nullptr) return false;
+      a.probe_budget = std::atoi(v);
     } else if (k == "--unblock-after") {
       const char* v = next("--unblock-after");
       if (v == nullptr) return false;
@@ -129,6 +168,45 @@ void usage() {
     }
   }
   return true;
+}
+
+// ONT level table: "<kmer>\t<level_pA>" per line, 4^k lines in lexicographic ACGT
+// order, which is the 2-bit packing order PoreModel::load_levels expects.
+bool load_model_tsv(const std::string& path, std::vector<float>& levels) {
+  std::ifstream f(path);
+  if (!f) return false;
+  levels.clear();
+  levels.reserve(262144);
+  std::string line;
+  while (std::getline(f, line)) {
+    const std::size_t tab = line.find('\t');
+    if (tab == std::string::npos) continue;
+    levels.push_back(std::strtof(line.c_str() + tab + 1, nullptr));
+  }
+  std::size_t p = 1;
+  while (p < levels.size()) p *= 4;
+  return !levels.empty() && p == levels.size();
+}
+
+bool load_fasta_acgt(const std::string& path, std::string& out) {
+  std::ifstream f(path);
+  if (!f) return false;
+  out.clear();
+  std::string line;
+  while (std::getline(f, line)) {
+    if (!line.empty() && line[0] == '>') continue;
+    for (char c : line) {
+      switch (c) {
+        case 'A': case 'a': case 'C': case 'c':
+        case 'G': case 'g': case 'T': case 't':
+          out.push_back(c);
+          break;
+        default:
+          break;  // N runs and anything else contribute no k-mer
+      }
+    }
+  }
+  return !out.empty();
 }
 
 }  // namespace
@@ -197,19 +275,91 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // --- placeholder policy ----------------------------------------------------
-  // Unblocks every read once it has produced N chunks. This does NO mapping: its
-  // only job is to prove that actions reach the server and are accepted. Replace
-  // with signal-space matching plus diagonal voting once the index is wired in.
+  // --- index, if a model and reference were given ----------------------------
+  const bool use_index = !args.model_path.empty() && !args.reference_path.empty();
+  mru::MinimizerIndex index;
+  mru::PolicyConfig pcfg;
+  mru::PolicyStats pstats;
+  std::unique_ptr<mru::SignalPolicy> signal_policy;
+
+  if (use_index) {
+    std::vector<float> levels;
+    if (!load_model_tsv(args.model_path, levels)) {
+      std::printf("cannot load level table %s (expects 4^k lines of "
+                  "<kmer>TAB<level_pA>)\n", args.model_path.c_str());
+      return 1;
+    }
+    mru::PoreModel model;
+    if (!model.load_levels(levels)) {
+      std::printf("level table has %zu entries, which is not a power of four\n",
+                  levels.size());
+      return 1;
+    }
+    std::string dna;
+    if (!load_fasta_acgt(args.reference_path, dna)) {
+      std::printf("cannot load reference %s\n", args.reference_path.c_str());
+      return 1;
+    }
+
+    pcfg.first_channel = cfg.first_channel;
+    pcfg.last_channel = cfg.last_channel;
+    pcfg.accept_votes = args.accept_votes;
+    pcfg.max_chunks = args.max_chunks;
+    pcfg.probe_budget = args.probe_budget;
+
+    std::printf("index: %u-mer model, %zu reference bases, geometry %u x %u = %u-bit "
+                "keys, window %u\n",
+                model.k(), dna.size(), pcfg.quant.bits_per_event,
+                pcfg.quant.events_per_key, pcfg.quant.key_bits(),
+                pcfg.quant.minimizer_window);
+
+    std::vector<mru::QEvent> ref_events;
+    if (!model.reference_to_events(dna, pcfg.quant, ref_events)) {
+      std::printf("reference_to_events failed\n");
+      return 1;
+    }
+    std::vector<mru::SeedHash> all_seeds, minimizers;
+    mru::hash_all_keys(ref_events, pcfg.quant, all_seeds);
+    mru::select_minimizers(all_seeds, pcfg.quant.minimizer_window, minimizers);
+    index.build(minimizers);
+
+    std::printf("index: %zu events, %zu minimizers of %zu keys, %llu distinct, "
+                "%llu capped, %llu insert failures, %.1f MiB table + %.1f MiB positions\n",
+                ref_events.size(), minimizers.size(), all_seeds.size(),
+                static_cast<unsigned long long>(index.distinct_keys()),
+                static_cast<unsigned long long>(index.capped_seeds()),
+                static_cast<unsigned long long>(index.insert_failures()),
+                static_cast<double>(index.capacity() * 8) / (1024.0 * 1024.0),
+                static_cast<double>(index.position_count() * 4) / (1024.0 * 1024.0));
+    std::printf("rule: accept at >=%u votes, unblock after %u chunks without them, "
+                "%d probes/seed\n",
+                pcfg.accept_votes, pcfg.max_chunks, pcfg.probe_budget);
+    signal_policy = std::make_unique<mru::SignalPolicy>(index, pcfg, pstats);
+  } else {
+    std::printf("NO INDEX: --model and --reference not both given, so the placeholder\n"
+                "policy runs instead. It unblocks after %u chunks and does NO mapping;\n"
+                "it exists to isolate transport problems from decision problems.\n",
+                args.unblock_after_chunks);
+  }
+
   std::atomic<std::uint64_t> policy_calls{0};
   const std::uint32_t after = args.unblock_after_chunks;
-  auto policy = [&policy_calls, after](const mru::ChunkRef& c,
-                                       const mru::ChannelState& s)
-      -> std::optional<mru::Decision> {
-    policy_calls.fetch_add(1, std::memory_order_relaxed);
-    if (s.chunks_seen < after) return std::nullopt;
-    return mru::Decision::reject(c, 0, 0.1);
-  };
+  mru::LiveReadsStream::PolicyFn policy;
+  if (signal_policy) {
+    policy = [&policy_calls, &signal_policy](const mru::ChunkRef& c,
+                                             const mru::ChannelState& s)
+        -> std::optional<mru::Decision> {
+      policy_calls.fetch_add(1, std::memory_order_relaxed);
+      return (*signal_policy)(c, s);
+    };
+  } else {
+    policy = [&policy_calls, after](const mru::ChunkRef& c, const mru::ChannelState& s)
+        -> std::optional<mru::Decision> {
+      policy_calls.fetch_add(1, std::memory_order_relaxed);
+      if (s.chunks_seen < after) return std::nullopt;
+      return mru::Decision::reject(c, 0, 0.1);
+    };
+  }
 
   std::printf("connecting to %s (%s), channels %u-%u, %u shards\n", args.target.c_str(),
               args.insecure ? "insecure" : "TLS", cfg.first_channel, cfg.last_channel,
@@ -247,6 +397,7 @@ int main(int argc, char** argv) {
   stream.stop();
 
   std::printf("\n%s", stream.stats().describe().c_str());
+  if (use_index) std::printf("%s", pstats.describe().c_str());
   std::printf("policy calls: %llu\n",
               static_cast<unsigned long long>(policy_calls.load()));
   if (!stream.last_error().empty()) {

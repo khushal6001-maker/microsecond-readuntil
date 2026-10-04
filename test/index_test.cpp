@@ -129,69 +129,79 @@ void test_quantisation() {
 
 void test_index_basics() {
   banner("index_basics");
-  mru::MinimizerIndex idx;
-  idx.reserve(1000);
-  CHECK(idx.capacity() >= 2000, "capacity honours the 0.5 load factor");
-  CHECK((idx.capacity() & (idx.capacity() - 1)) == 0, "capacity is a power of two");
-  CHECK_EQ(idx.size(), 0u, "starts empty");
 
+  // Built through build() rather than per-occurrence inserts: the index now stores one
+  // entry per DISTINCT key with its positions in a side array, so there is no
+  // per-occurrence insert to call.
   std::mt19937_64 rng(42);
-  std::vector<std::pair<std::uint64_t, std::uint64_t>> inserted;
-  for (std::uint64_t i = 0; i < 800; ++i) {
+  std::vector<mru::SeedHash> seeds;
+  std::vector<std::pair<std::uint64_t, std::uint64_t>> expected;
+  for (std::uint32_t i = 0; i < 800; ++i) {
     const std::uint64_t h = rng();
-    CHECK(idx.insert(h, i), "insert succeeds below the probe bound");
-    inserted.emplace_back(h, i);
+    seeds.push_back(mru::SeedHash{h, i});
+    expected.emplace_back(h, i);
   }
-  CHECK_EQ(idx.size(), 800u, "all inserted");
-  CHECK(idx.load_factor() <= mru::MinimizerIndex::kMaxLoadFactor,
-        "load factor stays within bounds");
+
+  mru::MinimizerIndex idx;
+  idx.build(seeds);
+  CHECK(idx.capacity() >= 1600, "capacity honours the 0.5 load factor over distinct keys");
+  CHECK((idx.capacity() & (idx.capacity() - 1)) == 0, "capacity is a power of two");
+  CHECK_EQ(idx.size(), 800u, "one entry per distinct key");
+  CHECK_EQ(idx.distinct_keys(), 800u, "all keys distinct here");
+  CHECK_EQ(idx.position_count(), 800u, "one position each");
   CHECK_EQ(idx.insert_failures(), 0u, "no insert hit the probe bound");
+  CHECK_EQ(idx.capped_seeds(), 0u, "nothing capped");
+  CHECK(idx.load_factor() <= mru::MinimizerIndex::kMaxLoadFactor, "load factor in bounds");
 
   mru::IndexStats stats;
   std::uint64_t out[4];
   std::size_t found_all = 0;
-  for (const auto& [h, pos] : inserted) {
+  for (const auto& [h, pos] : expected) {
     const std::size_t n = idx.query(h, out, &stats);
-    bool saw = false;
     for (std::size_t i = 0; i < n; ++i) {
-      if (out[i] == pos) saw = true;
+      if (out[i] == pos) ++found_all;
     }
-    if (saw) ++found_all;
   }
-  CHECK_EQ(found_all, inserted.size(), "every inserted key is found at its position");
+  CHECK_EQ(found_all, expected.size(), "every key is found at its position");
 
-  std::printf("        mean slots %.3f, mean cachelines %.3f, single-line %.1f%%, "
-              "fp rejects %llu\n",
-              stats.mean_slots(), stats.mean_cachelines(),
-              100.0 * stats.single_cacheline_fraction(),
+  std::printf("        mean slots %.3f, single-slot %.1f%%, mean cachelines %.3f, "
+              "single-line %.1f%%, fp rejects %llu\n",
+              stats.mean_slots(), 100.0 * stats.single_slot_fraction(),
+              stats.mean_cachelines(), 100.0 * stats.single_cacheline_fraction(),
               static_cast<unsigned long long>(stats.fingerprint_rejects));
 
-  // The design claim is ONE CACHELINE, not one slot. This index is a multimap, so
-  // a hit must walk to the end of its run to collect duplicates and therefore
-  // always touches at least two slots -- asserting one slot would be asserting
-  // something the data structure cannot do. What it can do, with 8 entries per
-  // 64-byte line, is keep that short run inside a single line.
-  CHECK(stats.mean_slots() >= 2.0, "a hit necessarily touches the match and a terminator");
-  // Measured 69.5% at load 0.39 on x86-64. This threshold is a regression guard set
-  // below the measurement with margin, not an aspiration: the first version asserted
-  // 0.70 and failed by half a percentage point, which is how a healthy data
-  // structure turns into a red build.
-  CHECK(stats.single_cacheline_fraction() > 0.60,
-        "most queries stay within one cacheline");
-  CHECK(stats.mean_cachelines() < 1.5, "cacheline touches per query stay near one");
+  // With one entry per key a hit stops at the FIRST fingerprint match, so single-slot is
+  // now genuinely achievable -- it was not under the old per-occurrence layout, where a
+  // hit always had to walk to the end of its duplicate run.
+  CHECK(stats.single_slot_fraction() > 0.55, "most hits resolve in a single slot");
+  CHECK(stats.mean_slots() < 2.0, "mean slots touched is close to one");
+  CHECK(stats.single_cacheline_fraction() > 0.85, "almost all hits stay in one cacheline");
 
-  // Duplicates: a minimizer legitimately occurs many times.
-  mru::MinimizerIndex dup;
-  dup.reserve(64);
+  // Duplicates: one entry, several contiguous positions.
+  std::vector<mru::SeedHash> dups;
   const std::uint64_t h = 0xDEADBEEFCAFEBABEull;
-  for (std::uint64_t p = 0; p < 3; ++p) CHECK(dup.insert(h, 100 + p), "duplicate insert");
+  for (std::uint32_t p = 0; p < 3; ++p) dups.push_back(mru::SeedHash{h, 100 + p});
+  mru::MinimizerIndex dup;
+  dup.build(dups);
+  CHECK_EQ(dup.size(), 1u, "three occurrences of one key make ONE entry");
+  CHECK_EQ(dup.position_count(), 3u, "but three positions");
   const std::size_t n = dup.query(h, out);
-  CHECK_EQ(n, 3u, "all three duplicates returned");
+  CHECK_EQ(n, 3u, "all three positions returned");
+  CHECK(out[0] == 100 && out[1] == 101 && out[2] == 102, "positions in offset order");
+
+  // The occurrence cap trims positions, not keys.
+  std::vector<mru::SeedHash> many;
+  for (std::uint32_t p = 0; p < 50; ++p) many.push_back(mru::SeedHash{h, p});
+  mru::MinimizerIndex capped;
+  capped.build(many, 8);
+  CHECK_EQ(capped.size(), 1u, "still one entry");
+  CHECK_EQ(capped.position_count(), 8u, "capped to 8 positions");
+  CHECK_EQ(capped.capped_seeds(), 42u, "42 occurrences discarded");
 
   // Absent key must miss, not wander.
+  std::vector<mru::SeedHash> sparse_seeds{mru::SeedHash{mru::hash64(7), 7}};
   mru::MinimizerIndex sparse;
-  sparse.reserve(1024);
-  (void)sparse.insert(mru::hash64(7), 7);
+  sparse.build(sparse_seeds);
   CHECK_EQ(sparse.query(mru::hash64(99999), out), 0u, "absent key returns nothing");
 }
 
