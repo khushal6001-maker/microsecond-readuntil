@@ -878,6 +878,168 @@ void test_specificity_scaling() {
               "        linear in candidates; the number above is what bounds it.\n");
 }
 
+// ---------------------------------------------------------------------------
+// Key geometry sweep
+// ---------------------------------------------------------------------------
+//
+// 27-bit keys cap human-scale recall at ~35% by pigeonhole alone, so the geometry
+// has to grow. Both ways of growing it cost recall, through different mechanisms:
+//
+//   more bits per event  -> larger key space, but narrower buckets, so a fixed
+//                           normalisation error flips a bucket more often
+//   more events per key  -> larger key space, bucket width unchanged, but the
+//                           per-event error is amplified over more events
+//
+// This measures both decays at once so the trade can be read off rather than
+// argued about.
+//
+// MEASURED vs DERIVED -- the columns are deliberately separated because a
+// 3.1e9-event index is ~25 GB and cannot be built here:
+//   measured: per-event disagreement, exact / 2-probe / 4-probe key recall
+//   derived : human-scale occupancy, cap survival, projected recall
+// The projection also assumes the true position is as likely to be retained as any
+// other when the occurrence cap bites. build() currently keeps the LOWEST offsets
+// after sorting, which would systematically drop positions late in the reference --
+// that needs fixing before the projection is trustworthy as more than a bound.
+
+struct GeometryResult {
+  double disagree_rate = 0.0;
+  double exact_pct = 0.0;
+  double p2_pct = 0.0;
+  double p4_pct = 0.0;
+  std::size_t n_events = 0;
+  std::size_t n_keys = 0;
+};
+
+// Index-free: recall at the key level depends only on whether the two bucket
+// sequences agree, so no table is needed and the geometry effect is isolated.
+GeometryResult measure_geometry(const std::vector<std::int16_t>& reference,
+                                const mru::SignalScaling& ref_scaling,
+                                const mru::QuantConfig& cfg) {
+  constexpr std::size_t kQueryLen = 4000;
+  constexpr std::size_t kWindows = 40;
+  constexpr std::size_t kFirstOffset = 20000;
+  constexpr std::size_t kStride = 8000;
+
+  GeometryResult r;
+  std::size_t disagreements = 0, exact = 0, p2 = 0, p4 = 0;
+
+  for (std::size_t wi = 0; wi < kWindows; ++wi) {
+    const std::size_t off = kFirstOffset + wi * kStride;
+    if (off + kQueryLen > reference.size()) break;
+
+    const std::vector<std::int16_t> query(
+        reference.begin() + static_cast<std::ptrdiff_t>(off),
+        reference.begin() + static_cast<std::ptrdiff_t>(off + kQueryLen));
+    const auto q_scaling = mru::scaling_from_samples(query);
+
+    const auto z_ref = event_z(query, ref_scaling, cfg);
+    const auto z_qry = event_z(query, q_scaling, cfg);
+    const std::size_t n_events = std::min(z_ref.size(), z_qry.size());
+    if (n_events < cfg.events_per_key) continue;
+    r.n_events += n_events;
+
+    std::vector<mru::QEvent> b_ref(n_events), b_qry(n_events);
+    for (std::size_t i = 0; i < n_events; ++i) {
+      b_ref[i] = mru::quantise_z(z_ref[i], cfg);
+      b_qry[i] = mru::quantise_z(z_qry[i], cfg);
+      if (b_ref[i] != b_qry[i]) ++disagreements;
+    }
+
+    const std::size_t keys_here = n_events - cfg.events_per_key + 1;
+    r.n_keys += keys_here;
+    for (std::size_t i = 0; i < keys_here; ++i) {
+      const std::uint64_t want = mru::pack_key(b_ref.data() + i, cfg);
+      std::array<std::uint64_t, 4> keys{};
+      const std::size_t nk = variant_keys(b_qry, z_qry, i, cfg, 4, keys);
+      if (keys[0] == want) {
+        ++exact;
+        ++p2;
+        ++p4;
+        continue;
+      }
+      if (nk > 1 && keys[1] == want) {
+        ++p2;
+        ++p4;
+        continue;
+      }
+      for (std::size_t k = 2; k < nk; ++k) {
+        if (keys[k] == want) {
+          ++p4;
+          break;
+        }
+      }
+    }
+  }
+
+  if (r.n_events > 0) {
+    r.disagree_rate = static_cast<double>(disagreements) / static_cast<double>(r.n_events);
+  }
+  if (r.n_keys > 0) {
+    const auto n = static_cast<double>(r.n_keys);
+    r.exact_pct = 100.0 * static_cast<double>(exact) / n;
+    r.p2_pct = 100.0 * static_cast<double>(p2) / n;
+    r.p4_pct = 100.0 * static_cast<double>(p4) / n;
+  }
+  return r;
+}
+
+void test_geometry_sweep() {
+  banner("geometry_sweep");
+
+  const auto reference = synth_signal(400000, 99);
+  const auto ref_scaling = mru::scaling_from_samples(reference);
+
+  constexpr double kHumanEvents = 3.1e9;  // ~3.1 Gbp, ~1 event per base
+  constexpr double kCap = 8.0;            // MinimizerIndex::build default
+
+  std::printf("        MEASURED (40 windows x 4000 samples)        | DERIVED (human 3.1e9 events)\n");
+  std::printf("        bits ev  kbits    disagr  exact   2pr   4pr | keyspace  occup   capsurv  proj4pr\n");
+
+  struct Row {
+    std::uint32_t bits, events;
+    double proj;
+  };
+  std::vector<Row> rows;
+
+  // 2 bits included deliberately: the trend says fewer bits is better, and
+  // starting the sweep at 3 would have been an artefact of the old default
+  // rather than a real boundary.
+  for (std::uint32_t bits : {2u, 3u, 4u, 5u}) {
+    for (std::uint32_t events : {8u, 10u, 11u, 12u, 13u, 15u, 18u, 20u}) {
+      mru::QuantConfig cfg;
+      cfg.bits_per_event = bits;
+      cfg.events_per_key = events;
+      cfg.minimizer_window = 1;
+      if (!cfg.valid()) continue;  // keys wider than 64 bits
+      if (cfg.key_bits() < 27) continue;  // below this the cap destroys recall anyway
+
+      const GeometryResult g = measure_geometry(reference, ref_scaling, cfg);
+
+      const double keyspace = std::pow(2.0, static_cast<double>(cfg.key_bits()));
+      const double occupancy = kHumanEvents / keyspace;
+      const double capsurv = occupancy <= kCap ? 1.0 : kCap / occupancy;
+      const double proj = g.p4_pct * capsurv;
+      rows.push_back(Row{bits, events, proj});
+
+      std::printf("        %4u %2u  %5u   %6.2f%% %5.1f%% %5.1f%% %5.1f%% | %8.1e %6.2f  %6.1f%%  %6.1f%%\n",
+                  bits, events, cfg.key_bits(), 100.0 * g.disagree_rate, g.exact_pct,
+                  g.p2_pct, g.p4_pct, keyspace, occupancy, 100.0 * capsurv, proj);
+    }
+  }
+
+  // Best projected human-scale 4-probe recall.
+  const auto best = std::max_element(rows.begin(), rows.end(),
+                                     [](const Row& a, const Row& b) { return a.proj < b.proj; });
+  if (best != rows.end()) {
+    std::printf("\n        best projected human-scale 4-probe recall: "
+                "%u bits x %u events = %u-bit keys -> %.1f%%\n",
+                best->bits, best->events, best->bits * best->events, best->proj);
+  }
+
+  CHECK(!rows.empty(), "sweep produced rows");
+}
+
 }  // namespace
 
 int main() {
@@ -890,6 +1052,7 @@ int main() {
   test_recall_harness();
   test_bucket_disagreement();
   test_specificity_scaling();
+  test_geometry_sweep();
 
   std::printf("\n%s  (%d failure%s)\n", g_failures == 0 ? "PASSED" : "FAILED",
               g_failures, g_failures == 1 ? "" : "s");
