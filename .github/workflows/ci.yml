@@ -66,9 +66,18 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install toolchain
+        # libclang-rt-dev is NOT optional and is easy to miss: the sanitizer runtime
+        # archives (libclang_rt.tsan-x86_64.a and friends) live there, not in `clang`.
+        # The GitHub runner image happens to preinstall clang WITH its runtimes, so
+        # this matrix passed without it -- but a clean Ubuntu with
+        # `--no-install-recommends clang` fails at LINK time with "cannot find
+        # libclang_rt.tsan-x86_64.a", which is exactly what happened on a local WSL
+        # box. Listing it explicitly means the workflow does not depend on what the
+        # image happens to ship.
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ninja-build clang
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build clang libclang-rt-dev
 
       - name: Record environment
         run: |
