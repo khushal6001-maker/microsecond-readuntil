@@ -1402,6 +1402,244 @@ void test_minimizer_window_penalty() {
   CHECK(true, "measurement completed");
 }
 
+// Signal from an EXISTING level table but different DNA. Needed for the off-target
+// control: a real off-target read comes off the same pore chemistry, so only the
+// sequence may differ. Regenerating the level table too would make the control
+// trivially easy and the result meaningless.
+std::vector<std::int16_t> synth_signal_from_levels(const std::vector<float>& levels,
+                                                   std::uint32_t k, std::size_t n_events,
+                                                   std::uint64_t dna_seed,
+                                                   std::uint32_t samples_per_event) {
+  std::vector<std::int16_t> raw;
+  std::mt19937_64 rng(dna_seed);
+  static const char kBases[] = "ACGT";
+  std::uniform_int_distribution<int> base_pick(0, 3);
+  std::normal_distribution<float> noise(0.0f, 15.0f);
+
+  std::string dna(n_events + k - 1, 'A');
+  for (char& c : dna) c = kBases[base_pick(rng)];
+
+  raw.reserve(n_events * samples_per_event);
+  std::uint64_t kmer = 0;
+  std::uint32_t have = 0;
+  const std::uint64_t mask = (std::uint64_t{1} << (2 * k)) - 1;
+  for (char c : dna) {
+    int code = 0;
+    switch (c) {
+      case 'C': code = 1; break;
+      case 'G': code = 2; break;
+      case 'T': code = 3; break;
+      default: code = 0; break;
+    }
+    kmer = ((kmer << 2) | static_cast<std::uint64_t>(code)) & mask;
+    if (++have < k) continue;
+    const float level = levels[kmer];
+    for (std::uint32_t t = 0; t < samples_per_event; ++t) {
+      raw.push_back(
+          static_cast<std::int16_t>(std::clamp(level + noise(rng), -30000.0f, 30000.0f)));
+    }
+  }
+  return raw;
+}
+
+struct VoteResult {
+  std::size_t candidates = 0;
+  std::size_t best_votes = 0;
+  std::size_t second_votes = 0;
+  std::int64_t best_diag = 0;
+};
+
+// One read through the index: select query minimizers, probe with the given budget,
+// bin candidates by diagonal, return the winner and runner-up.
+VoteResult vote_for_read(const mru::MinimizerIndex& idx,
+                         const std::vector<std::int16_t>& query,
+                         const mru::QuantConfig& cfg, int budget) {
+  VoteResult r;
+  const auto q_scaling = mru::scaling_from_samples(query);
+  const auto z_qry = event_z(query, q_scaling, cfg);
+  if (z_qry.size() < cfg.events_per_key) return r;
+
+  std::vector<mru::QEvent> b_qry(z_qry.size());
+  for (std::size_t j = 0; j < z_qry.size(); ++j) b_qry[j] = mru::quantise_z(z_qry[j], cfg);
+
+  const std::size_t n_pos = z_qry.size() - cfg.events_per_key + 1;
+  std::vector<mru::SeedHash> q_all;
+  q_all.reserve(n_pos);
+  for (std::size_t j = 0; j < n_pos; ++j) {
+    q_all.push_back(mru::SeedHash{mru::hash64(mru::pack_key(b_qry.data() + j, cfg)),
+                                  static_cast<std::uint32_t>(j)});
+  }
+  std::vector<mru::SeedHash> q_min;
+  mru::select_minimizers(q_all, cfg.minimizer_window, q_min);
+
+  std::vector<std::int64_t> diags;
+  for (const mru::SeedHash& qm : q_min) {
+    std::array<std::uint64_t, 4> keys{};
+    const std::size_t nk = variant_keys(b_qry, z_qry, qm.offset, cfg, budget, keys);
+    for (std::size_t k = 0; k < nk; ++k) {
+      std::uint64_t pos[16];
+      const std::size_t n = idx.query(mru::hash64(keys[k]), pos);
+      for (std::size_t q = 0; q < n; ++q) {
+        diags.push_back(static_cast<std::int64_t>(pos[q]) -
+                        static_cast<std::int64_t>(qm.offset));
+      }
+    }
+  }
+  r.candidates = diags.size();
+  if (diags.empty()) return r;
+
+  std::sort(diags.begin(), diags.end());
+  std::size_t run = 1;
+  for (std::size_t j = 1; j <= diags.size(); ++j) {
+    if (j < diags.size() && diags[j] == diags[j - 1]) {
+      ++run;
+      continue;
+    }
+    if (run > r.best_votes) {
+      r.second_votes = r.best_votes;
+      r.best_votes = run;
+      r.best_diag = diags[j - 1];
+    } else if (run > r.second_votes) {
+      r.second_votes = run;
+    }
+    run = 1;
+  }
+  return r;
+}
+
+double percentile_of(std::vector<std::size_t> v, double q) {
+  if (v.empty()) return 0.0;
+  std::sort(v.begin(), v.end());
+  const auto idx = static_cast<std::size_t>(q * static_cast<double>(v.size() - 1));
+  return static_cast<double>(v[idx]);
+}
+
+// ---------------------------------------------------------------------------
+// Off-target false positives: the measurement the decision actually rests on
+// ---------------------------------------------------------------------------
+//
+// Every earlier measurement queried a read drawn FROM the reference, so all of them
+// measured sensitivity and none measured specificity of the DECISION. Adaptive
+// sampling unblocks when a read is not from the target, so the false-positive rate
+// is the whole game: 41% seed recall is irrelevant if an off-target read also
+// produces a dominant diagonal.
+//
+// Controls, both deliberately unflattering:
+//   * off-target reads use the SAME pore model and the same noise, differing only in
+//     DNA. A white-noise control would separate trivially and prove nothing.
+//   * the 3.2M-event reference is ~1000x smaller than a genome, so chance collisions
+//     are ~1000x rarer here than they would really be. The second configuration has
+//     its occupancy matched to human scale so the collision regime is realistic,
+//     which is the best that can be done without a 69 GB index.
+void test_offtarget_false_positives() {
+  banner("offtarget_false_positives");
+
+  constexpr std::size_t kRefEvents = 3200000;
+  constexpr std::uint32_t kPoreK = 9;
+  constexpr std::size_t kQueryLen = 4000;
+  constexpr std::size_t kReads = 200;
+  constexpr double kHumanEvents = 3.1e9;
+
+  mru::QuantConfig base;
+  base.samples_per_event = 10;
+  const KmerRef km = synth_signal_kmer(kRefEvents, kPoreK, 7, base.samples_per_event);
+  const auto sc_ref = mru::scaling_from_samples(km.raw);
+
+  // Off-target: same pore model, different DNA.
+  const auto off_raw = synth_signal_from_levels(km.levels, kPoreK, 120000, 424242,
+                                                base.samples_per_event);
+
+  struct Cfg {
+    std::uint32_t bits, events, window;
+    const char* note;
+  };
+  const Cfg configs[] = {
+      {3, 15, 10, "chosen geometry (optimistic: ref 1000x smaller than genome)"},
+      {3, 11, 10, "occupancy-matched analogue of human scale"},
+      {3, 10, 10, "occupancy-matched, slightly pessimistic"},
+  };
+
+  for (const Cfg& c : configs) {
+    mru::QuantConfig cfg = base;
+    cfg.bits_per_event = c.bits;
+    cfg.events_per_key = c.events;
+    cfg.minimizer_window = c.window;
+    if (!cfg.valid()) continue;
+
+    std::vector<mru::QEvent> ref_ev;
+    mru::quantise_signal(km.raw, sc_ref, cfg, ref_ev);
+    std::vector<mru::SeedHash> ref_all;
+    mru::hash_all_keys(ref_ev, cfg, ref_all);
+    std::vector<mru::SeedHash> ref_min;
+    mru::select_minimizers(ref_all, cfg.minimizer_window, ref_min);
+    mru::MinimizerIndex idx;
+    idx.build(ref_min);
+
+    const std::size_t fit_positions = ref_all.size();
+    const std::size_t distinct = distinct_keys_in(km.raw, sc_ref, cfg);
+    const double keff = effective_key_space(fit_positions, distinct);
+    const double this_occ = static_cast<double>(ref_min.size()) / keff;
+    const double human_occ = kHumanEvents * (static_cast<double>(ref_min.size()) /
+                                             static_cast<double>(ref_all.size())) / keff;
+
+    std::vector<std::size_t> on_votes, off_votes, on_cands, off_cands;
+    std::size_t on_diag_ok = 0;
+
+    for (std::size_t r = 0; r < kReads; ++r) {
+      const std::size_t raw_off = (km.raw.size() - kQueryLen) * (r + 1) / (kReads + 1);
+      const std::size_t aligned = (raw_off / cfg.samples_per_event) * cfg.samples_per_event;
+      const std::vector<std::int16_t> q(
+          km.raw.begin() + static_cast<std::ptrdiff_t>(aligned),
+          km.raw.begin() + static_cast<std::ptrdiff_t>(aligned + kQueryLen));
+      const VoteResult v = vote_for_read(idx, q, cfg, 4);
+      on_votes.push_back(v.best_votes);
+      on_cands.push_back(v.candidates);
+      const auto true_diag = static_cast<std::int64_t>(aligned / cfg.samples_per_event);
+      if (v.best_votes > 0 && std::llabs(v.best_diag - true_diag) <= 1) ++on_diag_ok;
+    }
+
+    for (std::size_t r = 0; r < kReads; ++r) {
+      const std::size_t raw_off = (off_raw.size() - kQueryLen) * (r + 1) / (kReads + 1);
+      const std::size_t aligned = (raw_off / cfg.samples_per_event) * cfg.samples_per_event;
+      const std::vector<std::int16_t> q(
+          off_raw.begin() + static_cast<std::ptrdiff_t>(aligned),
+          off_raw.begin() + static_cast<std::ptrdiff_t>(aligned + kQueryLen));
+      const VoteResult v = vote_for_read(idx, q, cfg, 4);
+      off_votes.push_back(v.best_votes);
+      off_cands.push_back(v.candidates);
+    }
+
+    // Smallest vote threshold with zero false positives, and the TPR it gives.
+    const std::size_t off_max = *std::max_element(off_votes.begin(), off_votes.end());
+    const std::size_t thresh = off_max + 1;
+    std::size_t tp = 0;
+    for (std::size_t v : on_votes) {
+      if (v >= thresh) ++tp;
+    }
+    const double tpr = 100.0 * static_cast<double>(tp) / static_cast<double>(on_votes.size());
+
+    std::printf("\n        %u bits x %u ev, w=%u  --  %s\n", c.bits, c.events, c.window,
+                c.note);
+    std::printf("          effective key space %.2e | this ref occupancy %.4f | "
+                "human-scale occupancy %.3f\n",
+                keff, this_occ, human_occ);
+    std::printf("          ON-target : cands med %.0f | best votes min %.0f med %.0f max %.0f "
+                "| correct diag %zu/%zu\n",
+                percentile_of(on_cands, 0.5), percentile_of(on_votes, 0.0),
+                percentile_of(on_votes, 0.5), percentile_of(on_votes, 1.0), on_diag_ok,
+                on_votes.size());
+    std::printf("          OFF-target: cands med %.0f | best votes med %.0f p95 %.0f max %.0f\n",
+                percentile_of(off_cands, 0.5), percentile_of(off_votes, 0.5),
+                percentile_of(off_votes, 0.95), percentile_of(off_votes, 1.0));
+    std::printf("          threshold >=%zu votes -> FPR 0/%zu, TPR %.1f%%  (separation gap "
+                "%.0f -> %.0f)\n",
+                thresh, off_votes.size(), tpr, percentile_of(off_votes, 1.0),
+                percentile_of(on_votes, 0.0));
+  }
+
+  CHECK(true, "measurement completed");
+}
+
 }  // namespace
 
 int main() {
@@ -1416,6 +1654,7 @@ int main() {
   test_specificity_scaling();
   test_geometry_sweep();
   test_minimizer_window_penalty();
+  test_offtarget_false_positives();
 
   std::printf("\n%s  (%d failure%s)\n", g_failures == 0 ? "PASSED" : "FAILED",
               g_failures, g_failures == 1 ? "" : "s");
