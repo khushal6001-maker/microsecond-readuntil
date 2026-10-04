@@ -84,7 +84,7 @@ void test_quantisation() {
   mru::QuantConfig cfg;
   CHECK(cfg.valid(), "default config is valid");
   CHECK_EQ(cfg.levels(), 8u, "3 bits == 8 levels");
-  CHECK_EQ(cfg.key_bits(), 45u, "15 events x 3 bits (frozen geometry)");
+  CHECK_EQ(cfg.key_bits(), 39u, "13 events x 3 bits (frozen geometry)");
 
   mru::QuantConfig bad = cfg;
   bad.bits_per_event = 9;
@@ -1681,9 +1681,11 @@ void test_frozen_geometry() {
   const mru::QuantConfig cfg;  // defaults
 
   CHECK_EQ(cfg.bits_per_event, 3u, "FROZEN bits_per_event");
-  CHECK_EQ(cfg.events_per_key, 15u, "FROZEN events_per_key");
+  CHECK_EQ(cfg.events_per_key, 13u, "FROZEN events_per_key");
   CHECK_EQ(cfg.minimizer_window, 10u, "FROZEN minimizer_window");
-  CHECK_EQ(cfg.key_bits(), 45u, "FROZEN 45-bit keys");
+  CHECK_EQ(cfg.key_bits(), 39u, "FROZEN 39-bit keys");
+  CHECK(!cfg.adaptive(), "FROZEN uniform quantiser: adaptive costs more recall than "
+                         "the key space it buys");
   CHECK_EQ(cfg.levels(), 8u, "8 quantisation levels");
   CHECK_EQ(cfg.samples_per_event, 10u, "10 samples/event at 4 kHz and ~400 b/s");
   CHECK(cfg.valid(), "frozen config is valid");

@@ -80,32 +80,41 @@ struct SignalScaling {
 // THE DEFAULTS BELOW ARE FROZEN, and they are measurements rather than guesses. The
 // full derivation lives in test/index_test.cpp; the short version:
 //
-//   3 bits/event   Per-event bucket disagreement is set almost entirely by bucket
-//                  width and halves for each bit removed: 5 bits 30.9%, 4 bits
-//                  15.9%, 3 bits 6.9%, 2 bits 3.3%. Fewer bits looks strictly
-//                  better until key space is accounted for, and then 2 bits
-//                  collapses (see below).
+//   3 bits/event   Measured on human chr20 with a real R10 9-mer model, per-event
+//                  bucket disagreement is 19.9% at 3 bits and 36.5% at 4. Because a
+//                  key needs every event to agree, that is the difference between
+//                  38.0% and 17.3% four-probe recall. 3 bits wins decisively.
 //
-//   15 events      Key space is the binding constraint at mammalian scale. 27-bit
-//                  keys give 1.34e8 distinct values, which a 3.1e9-event reference
-//                  occupies 23x over, capping recall at ~35% by pigeonhole before
-//                  any noise. Worse, k-mer correlation makes the EFFECTIVE key space
-//                  far smaller than the representable one -- measured 1066x smaller
-//                  at this geometry. 2 bits x 15 events looked optimal (89.9%) under
-//                  an i.i.d. signal model and collapses to 0.8% once adjacent events
-//                  are correlated as a real pore makes them. 3 x 15 was chosen over
-//                  the nominal optimum 3 x 13 (76.1%) for headroom: random DNA has
-//                  no repeats, a real genome is ~50% repetitive, and 3 x 13 leaves
-//                  only 25% margin against the occurrence cap where 3 x 15 leaves
-//                  30x.
+//   13 events      Shorter keys recall better and cost almost nothing in specificity
+//                  on real sequence. Four-probe recall is 38.0% / 33.2% / 27.5% at 13 /
+//                  15 / 18 events, while the share of positions surviving an occurrence
+//                  cap of 8 is 84.1% / 85.8% / 87.4%. The product, which is what
+//                  matters, is 32.0% / 28.5% / 24.0%.
 //
-//   window 10      Not a tuning choice, a memory constraint. At one entry per base
-//                  and 8-byte entries at 0.5 load factor a mammalian index is
-//                  ~49 GB at w=1. w=10 keeps 18.2% of positions for ~9.0 GB.
-//                  It costs recall -- 68.2% of available seeds at w=1 falls to
-//                  41.4% at w=10 -- which is affordable because locus
-//                  identification, not seed recall, is what the decision needs:
-//                  200/200 correct loci with a 29.6x diagonal vote margin.
+//                  This supersedes an earlier freeze at 15 events. That was justified
+//                  by "30x headroom instead of 25%" against the cap, computed from a
+//                  Poisson fit that assumed uniform key probability -- an assumption
+//                  real DNA violates so badly that the fit's output tracked reference
+//                  size instead of converging. On real sequence cap survival barely
+//                  depends on geometry at all (84-89% across every candidate), so the
+//                  decision belongs to recall, and recall prefers the shorter key.
+//
+//   uniform        NOT adaptive, and this was measured twice because I twice guessed
+//                  wrong. Equal-occupancy boundaries do recover the full alphabet:
+//                  entropy 2.34 -> 2.99 of 3 bits, unique keys 82.7% -> 90.7%. But
+//                  quantile boundaries are narrowest where the level distribution is
+//                  densest, which is where most events live, so a fixed normalisation
+//                  error flips a bucket far more often: disagreement 19.9% -> 32.7%
+//                  and four-probe recall 38.0% -> 18.4%. It gives back more than double
+//                  what it buys. The code is kept and tested because the trade-off is
+//                  worth having measured, but the default is uniform.
+//
+//   window 10      Not a tuning choice, a memory constraint. At one entry per base and
+//                  8-byte entries at 0.5 load factor a mammalian index is ~49 GB at
+//                  w=1. w=10 keeps 18.2% of positions for ~9.0 GB. It costs recall,
+//                  which is affordable because locus identification rather than seed
+//                  recall is what the decision needs: 200/200 correct loci at a 29.6x
+//                  diagonal vote margin.
 //
 // Changing any of these invalidates the off-target separation that sets the unblock
 // threshold, so test/index_test.cpp asserts them.
@@ -119,8 +128,8 @@ struct QuantConfig {
   // Bits per quantised event. 3 bits = 8 levels. FROZEN.
   std::uint32_t bits_per_event = 3;
 
-  // Events combined into one key. 15 at 3 bits = 45-bit keys. FROZEN.
-  std::uint32_t events_per_key = 15;
+  // Events combined into one key. 13 at 3 bits = 39-bit keys. FROZEN.
+  std::uint32_t events_per_key = 13;
 
   // z-scores are clipped to +/- this before bucketing, so outliers cannot drag
   // the whole scale.
@@ -435,16 +444,81 @@ inline bool PoreModel::reference_to_events(std::span<const char> dna,
   if (!loaded() || k_ == 0 || !cfg.valid()) return false;
   if (dna.size() < k_) return false;
 
-  // Levels are in pA; normalise them the same way read signal is normalised, so
-  // the two sides land in the same buckets. Using the model's own distribution
-  // rather than a read's keeps reference keys independent of any single read.
-  float mean = 0.0f;
-  for (float v : levels_) mean += v;
-  mean /= static_cast<float>(levels_.size());
-  float var = 0.0f;
-  for (float v : levels_) var += (v - mean) * (v - mean);
-  var /= static_cast<float>(levels_.size());
-  const float sd = std::max(1e-6f, std::sqrt(var));
+  // Normalise by the distribution of levels AS THEY OCCUR IN THIS SEQUENCE, using
+  // exactly the estimator reads use (median and 1.4826 * MAD).
+  //
+  // Two separate bugs were fixed here, both found only once a real pore model and real
+  // DNA were in play, and both invisible to synthetic tests.
+  //
+  // 1. Estimator mismatch. The original used mean/standard deviation while reads went
+  //    through scaling_from_samples (median/MAD), and a comment claimed the two were
+  //    the same. For a non-Gaussian level distribution they disagree systematically, so
+  //    every reference event sat at a slightly different z than the same query event.
+  //    Measured on human chr20: 34.5% of events in a different bucket, 99.5% off by
+  //    exactly one, exact key match 1.4%. Fixing it took that to 20.5% and 18.6%.
+  //
+  // 2. Wrong population. Estimating from the raw level TABLE weights all 4^k k-mers
+  //    equally, but a read encounters levels weighted by the k-mer usage of the actual
+  //    sequence -- GC content, CpG depletion, repeats. Those distributions differ, so a
+  //    residual systematic offset survived fix 1. The reference therefore estimates
+  //    from the levels this sequence actually produces.
+  //
+  // The read side is the one that cannot change: it needs a robust estimator because of
+  // stalls and spikes, and it has only its own samples. So the reference is matched to
+  // the read, never the other way round.
+  //
+  // Strided sampling bounds the cost: an exact median over a 3 Gbp reference would need
+  // a 12 GB vector, and a quarter-million strided samples estimate it to well inside
+  // the error a 450-base read carries anyway.
+  const auto base_code_for_scan = [](char c) -> int {
+    switch (c) {
+      case 'A': case 'a': return 0;
+      case 'C': case 'c': return 1;
+      case 'G': case 'g': return 2;
+      case 'T': case 't': return 3;
+      default: return -1;
+    }
+  };
+  constexpr std::size_t kMaxScaleSamples = 262144;
+  const std::size_t stride = std::max<std::size_t>(1, dna.size() / kMaxScaleSamples);
+  std::vector<float> seen;
+  seen.reserve(std::min(dna.size(), kMaxScaleSamples) + 1);
+  {
+    std::uint64_t scan_kmer = 0;
+    std::uint32_t scan_have = 0;
+    const std::uint64_t scan_mask =
+        (k_ >= 32) ? ~std::uint64_t{0} : ((std::uint64_t{1} << (2 * k_)) - 1);
+    std::size_t pos = 0;
+    for (char c : dna) {
+      const int code = base_code_for_scan(c);
+      if (code < 0) {
+        scan_have = 0;
+        scan_kmer = 0;
+        ++pos;
+        continue;
+      }
+      scan_kmer = ((scan_kmer << 2) | static_cast<std::uint64_t>(code)) & scan_mask;
+      if (++scan_have < k_) {
+        ++pos;
+        continue;
+      }
+      if (pos % stride == 0) seen.push_back(level(scan_kmer));
+      ++pos;
+    }
+  }
+  if (seen.empty()) return false;
+
+  const std::size_t mid = seen.size() / 2;
+  std::nth_element(seen.begin(), seen.begin() + static_cast<std::ptrdiff_t>(mid),
+                   seen.end());
+  const float mean = seen[mid];  // median; named for the arithmetic below
+  std::vector<float> dev;
+  dev.reserve(seen.size());
+  for (float v : seen) dev.push_back(std::fabs(v - mean));
+  const std::size_t dmid = dev.size() / 2;
+  std::nth_element(dev.begin(), dev.begin() + static_cast<std::ptrdiff_t>(dmid),
+                   dev.end());
+  const float sd = std::max(1e-6f, 1.4826f * dev[dmid]);
 
   const auto base_code = [](char c) -> int {
     switch (c) {

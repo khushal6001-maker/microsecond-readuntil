@@ -228,6 +228,9 @@ endif()
 add_executable(mru_real_reference bench/real_reference.cpp)
 target_link_libraries(mru_real_reference PRIVATE mru_core mru_warnings mru_sanitizers)
 
+add_executable(mru_brittleness bench/brittleness.cpp)
+target_link_libraries(mru_brittleness PRIVATE mru_core mru_warnings mru_sanitizers)
+
 if(MRU_BUILD_TESTS)
   enable_testing()
 
