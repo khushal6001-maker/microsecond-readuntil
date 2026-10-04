@@ -686,6 +686,198 @@ void test_bucket_disagreement() {
   CHECK(with_two_flips >= with_one_flip, "more flips cannot lose matches");
 }
 
+// ---------------------------------------------------------------------------
+// Specificity, and how it scales with reference size
+// ---------------------------------------------------------------------------
+//
+// Multi-probe buys recall (51.5% -> 84.2% at 4 probes/key) by querying variant
+// keys. Each extra probe also returns extra candidate positions, so the question
+// is whether chaining can reject them cheaply or becomes the new bottleneck.
+//
+// The thing that must not be measured on a toy reference: with 3-bit events and
+// 9 events per key the key space is 2^27 = 1.34e8. A 40k-event reference occupies
+// 0.03% of it and essentially every key is unique, which makes any specificity
+// number look wonderful. A 3.1e9-event human reference would occupy it ~23x over,
+// so every key collides ~23 times BY PIGEONHOLE, before any noise. Measuring at
+// one size would therefore be self-deception; this sweeps reference size and
+// reports the trend so the extrapolation is explicit.
+//
+// Chaining model: for a true locus, every seed satisfies
+// ref_position - query_offset = constant (the diagonal). So bin candidates by
+// diagonal and take the mode. That is O(n) with a hash, needs no alignment, and is
+// the cheapest useful consensus test -- exactly the "monotonically increasing
+// positions in a narrow window" idea, expressed in the form that is one pass.
+
+struct Candidate {
+  std::uint32_t key_offset;
+  std::uint64_t ref_position;
+};
+
+// Builds the variant keys for one key position under a probe budget of 1, 2 or 4,
+// ranking marginality from query-side information only.
+std::size_t variant_keys(const std::vector<mru::QEvent>& b_qry,
+                         const std::vector<float>& z_qry, std::size_t i,
+                         const mru::QuantConfig& cfg, int budget,
+                         std::array<std::uint64_t, 4>& keys_out) {
+  std::vector<mru::QEvent> t(cfg.events_per_key);
+  for (std::uint32_t e = 0; e < cfg.events_per_key; ++e) t[e] = b_qry[i + e];
+  keys_out[0] = mru::pack_key(t.data(), cfg);
+  if (budget <= 1) return 1;
+
+  std::array<std::pair<float, std::uint32_t>, 32> marg{};
+  for (std::uint32_t e = 0; e < cfg.events_per_key; ++e) {
+    marg[e] = std::pair<float, std::uint32_t>(boundary_distance(z_qry[i + e], cfg), e);
+  }
+  std::sort(marg.begin(), marg.begin() + cfg.events_per_key);
+  const std::uint32_t m0 = marg[0].second;
+  const std::uint32_t m1 = marg[1].second;
+  const auto nb0 = static_cast<mru::QEvent>(neighbour_bucket(z_qry[i + m0], cfg));
+  const auto nb1 = static_cast<mru::QEvent>(neighbour_bucket(z_qry[i + m1], cfg));
+
+  t[m0] = nb0;
+  keys_out[1] = mru::pack_key(t.data(), cfg);
+  if (budget <= 2) return 2;
+
+  t[m0] = b_qry[i + m0];
+  t[m1] = nb1;
+  keys_out[2] = mru::pack_key(t.data(), cfg);
+  t[m0] = nb0;
+  keys_out[3] = mru::pack_key(t.data(), cfg);
+  return 4;
+}
+
+void test_specificity_scaling() {
+  banner("specificity_scaling");
+  mru::QuantConfig cfg;
+  cfg.minimizer_window = 1;
+
+  const double key_space = std::pow(2.0, static_cast<double>(cfg.key_bits()));
+  std::printf("        key space: %u bits = %.3g distinct keys\n", cfg.key_bits(),
+              key_space);
+  std::printf("        a 3.1e9-event (human-scale) reference would occupy it %.1fx over\n\n",
+              3.1e9 / key_space);
+
+  constexpr std::size_t kQueryLen = 4000;   // ~2.5 chunks
+  constexpr std::size_t kWindows = 12;
+
+  std::printf("        ref events | probes | cand/key | true%% | top-diag correct | "
+              "margin\n");
+
+  for (std::size_t ref_events : {40000u, 320000u, 2560000u}) {
+    const std::size_t ref_samples = ref_events * cfg.samples_per_event + kQueryLen;
+    const auto reference = synth_signal(ref_samples, 99);
+    const auto ref_scaling = mru::scaling_from_samples(reference);
+
+    std::vector<mru::QEvent> ref_ev;
+    mru::quantise_signal(reference, ref_scaling, cfg, ref_ev);
+    std::vector<mru::SeedHash> ref_seeds;
+    mru::hash_all_keys(ref_ev, cfg, ref_seeds);
+
+    mru::MinimizerIndex idx;
+    idx.build(ref_seeds);
+
+    for (int budget : {1, 2, 4}) {
+      std::size_t cand_total = 0, cand_true = 0, keys_total = 0;
+      std::size_t diag_correct = 0, windows_scored = 0;
+      double margin_sum = 0.0;
+
+      for (std::size_t wi = 0; wi < kWindows; ++wi) {
+        const std::size_t off =
+            (reference.size() - kQueryLen) * (wi + 1) / (kWindows + 1);
+        const std::size_t aligned = (off / cfg.samples_per_event) * cfg.samples_per_event;
+        const std::vector<std::int16_t> query(
+            reference.begin() + static_cast<std::ptrdiff_t>(aligned),
+            reference.begin() + static_cast<std::ptrdiff_t>(aligned + kQueryLen));
+        const auto q_scaling = mru::scaling_from_samples(query);
+        const auto z_qry = event_z(query, q_scaling, cfg);
+        if (z_qry.size() < cfg.events_per_key) continue;
+
+        std::vector<mru::QEvent> b_qry(z_qry.size());
+        for (std::size_t i = 0; i < z_qry.size(); ++i) {
+          b_qry[i] = mru::quantise_z(z_qry[i], cfg);
+        }
+        const auto true_diag =
+            static_cast<std::int64_t>(aligned / cfg.samples_per_event);
+
+        std::vector<Candidate> cands;
+        const std::size_t n_keys = z_qry.size() - cfg.events_per_key + 1;
+        for (std::size_t i = 0; i < n_keys; ++i) {
+          std::array<std::uint64_t, 4> keys{};
+          const std::size_t nk = variant_keys(b_qry, z_qry, i, cfg, budget, keys);
+          ++keys_total;
+          for (std::size_t k = 0; k < nk; ++k) {
+            std::uint64_t pos[16];
+            const std::size_t n = idx.query(mru::hash64(keys[k]), pos);
+            for (std::size_t j = 0; j < n; ++j) {
+              cands.push_back(Candidate{static_cast<std::uint32_t>(i), pos[j]});
+            }
+          }
+        }
+
+        cand_total += cands.size();
+        for (const Candidate& c : cands) {
+          const auto want = static_cast<std::int64_t>(true_diag) +
+                            static_cast<std::int64_t>(c.key_offset);
+          const auto got = static_cast<std::int64_t>(c.ref_position);
+          if (std::llabs(got - want) <= 1) ++cand_true;
+        }
+
+        // Diagonal voting: the cheapest useful chaining test.
+        if (!cands.empty()) {
+          std::vector<std::int64_t> diags;
+          diags.reserve(cands.size());
+          for (const Candidate& c : cands) {
+            diags.push_back(static_cast<std::int64_t>(c.ref_position) -
+                            static_cast<std::int64_t>(c.key_offset));
+          }
+          std::sort(diags.begin(), diags.end());
+          std::int64_t best_diag = diags[0];
+          std::size_t best_votes = 0, second_votes = 0;
+          std::size_t run = 1;
+          for (std::size_t i = 1; i <= diags.size(); ++i) {
+            if (i < diags.size() && diags[i] == diags[i - 1]) {
+              ++run;
+              continue;
+            }
+            if (run > best_votes) {
+              second_votes = best_votes;
+              best_votes = run;
+              best_diag = diags[i - 1];
+            } else if (run > second_votes) {
+              second_votes = run;
+            }
+            run = 1;
+          }
+          ++windows_scored;
+          if (std::llabs(best_diag - true_diag) <= 1) ++diag_correct;
+          margin_sum += static_cast<double>(best_votes) /
+                        static_cast<double>(std::max<std::size_t>(1, second_votes));
+        }
+      }
+
+      const double cand_per_key =
+          keys_total == 0 ? 0.0
+                          : static_cast<double>(cand_total) / static_cast<double>(keys_total);
+      const double true_pct =
+          cand_total == 0 ? 0.0
+                          : 100.0 * static_cast<double>(cand_true) /
+                                static_cast<double>(cand_total);
+      std::printf("        %10zu | %6d | %8.2f | %5.1f | %10zu/%-5zu | %6.1fx\n",
+                  ref_events, budget, cand_per_key, true_pct, diag_correct,
+                  windows_scored,
+                  windows_scored == 0 ? 0.0
+                                      : margin_sum / static_cast<double>(windows_scored));
+    }
+    std::printf("        %10zu | index: %llu distinct keys, %llu capped, load %.2f\n",
+                ref_events, static_cast<unsigned long long>(idx.distinct_keys()),
+                static_cast<unsigned long long>(idx.capped_seeds()), idx.load_factor());
+  }
+
+  std::printf("\n        Chaining cost: candidates/chunk = cand/key x ~152 keys.\n"
+              "        Diagonal voting is one pass plus a sort, so chaining stays\n"
+              "        linear in candidates; the number above is what bounds it.\n");
+}
+
 }  // namespace
 
 int main() {
@@ -697,6 +889,7 @@ int main() {
   test_batched_throughput();
   test_recall_harness();
   test_bucket_disagreement();
+  test_specificity_scaling();
 
   std::printf("\n%s  (%d failure%s)\n", g_failures == 0 ? "PASSED" : "FAILED",
               g_failures, g_failures == 1 ? "" : "s");
