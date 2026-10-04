@@ -213,6 +213,11 @@ if(MRU_WITH_TRANSPORT)
   # Switches on PbArenaPool in arena_pool.hpp and ChunkRef in chunk_ref.hpp.
   target_compile_definitions(mru_core INTERFACE MRU_WITH_PROTOBUF=1)
   target_link_libraries(mru_core INTERFACE minknow_proto)
+
+  # The daemon. Needs a real server to talk to, so it is built but not tested here;
+  # Icarust or a sequencer is the only thing that can exercise it.
+  add_executable(mru_daemon src/daemon/main.cpp src/transport/auth.cpp)
+  target_link_libraries(mru_daemon PRIVATE mru_core mru_warnings mru_sanitizers)
 endif()
 
 # ---------------------------------------------------------------------------
