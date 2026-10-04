@@ -84,7 +84,7 @@ void test_quantisation() {
   mru::QuantConfig cfg;
   CHECK(cfg.valid(), "default config is valid");
   CHECK_EQ(cfg.levels(), 8u, "3 bits == 8 levels");
-  CHECK_EQ(cfg.key_bits(), 27u, "9 events x 3 bits");
+  CHECK_EQ(cfg.key_bits(), 45u, "15 events x 3 bits (frozen geometry)");
 
   mru::QuantConfig bad = cfg;
   bad.bits_per_event = 9;
@@ -403,22 +403,31 @@ void test_recall_harness() {
     mru::ProbeScratch scratch;
     scratch.reserve_for(query.size(), cfg);
     mru::IndexStats stats;
-    (void)mru::match_signal(idx, query, sc, cfg, scratch, &stats);
+    (void)mru::match_signal(idx, query, sc, cfg, scratch,
+                            mru::kDefaultProbeBudget, &stats);
 
-    // A seed is recovered if any returned position is its correct reference
+    // A seed is recovered if ANY of its probed keys returns its correct reference
     // position, within one event of slop for window alignment.
-    std::size_t recovered = 0;
-    for (std::size_t i = 0; i < scratch.minimizers.size(); ++i) {
-      const std::uint64_t want = expected_first_event + scratch.minimizers[i].offset;
-      const mru::SeedMatches& m = scratch.matches[i];
+    //
+    // Keyed by seed_offset rather than by index: match_signal now returns one entry
+    // per PROBE, not per minimizer, so with a budget of 4 there are 4x as many
+    // entries and positional indexing would silently read the wrong seed's results.
+    // That is exactly how this broke when multi-probe landed.
+    std::vector<char> recovered_at(scratch.events.size() + 1, 0);
+    for (const mru::SeedMatches& m : scratch.matches) {
+      const std::uint64_t want = expected_first_event + m.seed_offset;
       for (std::uint32_t j = 0; j < m.count; ++j) {
         const std::uint64_t got = m.positions[j];
         const std::uint64_t diff = got > want ? got - want : want - got;
-        if (diff <= 1) {
-          ++recovered;
+        if (diff <= 1 && m.seed_offset < recovered_at.size()) {
+          recovered_at[m.seed_offset] = 1;
           break;
         }
       }
+    }
+    std::size_t recovered = 0;
+    for (const mru::SeedHash& mm : scratch.minimizers) {
+      if (mm.offset < recovered_at.size() && recovered_at[mm.offset] != 0) ++recovered;
     }
     const std::size_t n = scratch.minimizers.size();
     return n == 0 ? 0.0 : static_cast<double>(recovered) / static_cast<double>(n);
@@ -489,28 +498,9 @@ std::vector<float> event_z(const std::vector<std::int16_t>& raw,
   return out;
 }
 
-// Where z sits inside its bucket: 0.0 exactly on a boundary, 1.0 dead centre.
-// This is the quantity that decides whether a small error flips a bucket.
-float boundary_distance(float z, const mru::QuantConfig& cfg) {
-  const float zc = cfg.z_clip;
-  const float clamped = std::clamp(z, -zc, zc);
-  const float unit = (clamped + zc) / (2.0f * zc);
-  const float pos = unit * static_cast<float>(cfg.levels());
-  const float frac = pos - std::floor(pos);
-  return 2.0f * std::min(frac, 1.0f - frac);
-}
-
-// The neighbouring bucket on the side of the nearest boundary.
-int neighbour_bucket(float z, const mru::QuantConfig& cfg) {
-  const float zc = cfg.z_clip;
-  const float clamped = std::clamp(z, -zc, zc);
-  const float unit = (clamped + zc) / (2.0f * zc);
-  const float pos = unit * static_cast<float>(cfg.levels());
-  const int bucket = static_cast<int>(mru::quantise_z(z, cfg));
-  const float frac = pos - std::floor(pos);
-  const int nb = frac < 0.5f ? bucket - 1 : bucket + 1;
-  return std::clamp(nb, 0, static_cast<int>(cfg.levels()) - 1);
-}
+// boundary_distance() and neighbour_bucket() now live in index/quantise.hpp,
+// since multi-probe in the library needs them too. Unqualified calls below
+// resolve to mru:: by ADL.
 
 void test_bucket_disagreement() {
   banner("bucket_disagreement");
@@ -609,7 +599,7 @@ void test_bucket_disagreement() {
       const std::uint32_t m1 = marg[1].second;
 
       for (std::uint32_t e = 0; e < cfg.events_per_key; ++e) trial[e] = b_qry[i + e];
-      trial[m0] = static_cast<mru::QEvent>(neighbour_bucket(z_qry[i + m0], cfg));
+      trial[m0] = mru::QEvent(neighbour_bucket(z_qry[i + m0], cfg));
       if (mru::pack_key(trial.data(), cfg) == want) {
         ++with_one_flip;
         ++with_two_flips;
@@ -622,10 +612,10 @@ void test_bucket_disagreement() {
           if (fa == 0 && fb == 0) continue;
           for (std::uint32_t e = 0; e < cfg.events_per_key; ++e) trial[e] = b_qry[i + e];
           if (fa == 1) {
-            trial[m0] = static_cast<mru::QEvent>(neighbour_bucket(z_qry[i + m0], cfg));
+            trial[m0] = mru::QEvent(neighbour_bucket(z_qry[i + m0], cfg));
           }
           if (fb == 1) {
-            trial[m1] = static_cast<mru::QEvent>(neighbour_bucket(z_qry[i + m1], cfg));
+            trial[m1] = mru::QEvent(neighbour_bucket(z_qry[i + m1], cfg));
           }
           if (mru::pack_key(trial.data(), cfg) == want) ok2 = true;
         }
@@ -731,8 +721,8 @@ std::size_t variant_keys(const std::vector<mru::QEvent>& b_qry,
   std::sort(marg.begin(), marg.begin() + cfg.events_per_key);
   const std::uint32_t m0 = marg[0].second;
   const std::uint32_t m1 = marg[1].second;
-  const auto nb0 = static_cast<mru::QEvent>(neighbour_bucket(z_qry[i + m0], cfg));
-  const auto nb1 = static_cast<mru::QEvent>(neighbour_bucket(z_qry[i + m1], cfg));
+  const auto nb0 = mru::QEvent(neighbour_bucket(z_qry[i + m0], cfg));
+  const auto nb1 = mru::QEvent(neighbour_bucket(z_qry[i + m1], cfg));
 
   t[m0] = nb0;
   keys_out[1] = mru::pack_key(t.data(), cfg);
@@ -1640,11 +1630,125 @@ void test_offtarget_false_positives() {
   CHECK(true, "measurement completed");
 }
 
+// ---------------------------------------------------------------------------
+// Frozen geometry tripwire, and multi-probe through the library API
+// ---------------------------------------------------------------------------
+//
+// The defaults are not preferences, they are the conclusion of a measurement chain:
+// key space vs pigeonhole, k-mer correlation vs effective key space, bucket width vs
+// per-event disagreement, window size vs index memory, and finally the off-target
+// vote separation that sets the unblock threshold at >= 4 votes.
+//
+// Changing any default silently invalidates that threshold. This test exists to make
+// that impossible to do by accident: if it fails, the off-target separation must be
+// re-measured before the engine can be trusted to decide anything.
+void test_frozen_geometry() {
+  banner("frozen_geometry");
+  const mru::QuantConfig cfg;  // defaults
+
+  CHECK_EQ(cfg.bits_per_event, 3u, "FROZEN bits_per_event");
+  CHECK_EQ(cfg.events_per_key, 15u, "FROZEN events_per_key");
+  CHECK_EQ(cfg.minimizer_window, 10u, "FROZEN minimizer_window");
+  CHECK_EQ(cfg.key_bits(), 45u, "FROZEN 45-bit keys");
+  CHECK_EQ(cfg.levels(), 8u, "8 quantisation levels");
+  CHECK_EQ(cfg.samples_per_event, 10u, "10 samples/event at 4 kHz and ~400 b/s");
+  CHECK(cfg.valid(), "frozen config is valid");
+
+  CHECK_EQ(mru::kDefaultProbeBudget, 4, "default probe budget is 4 keys/minimizer");
+  CHECK_EQ(static_cast<int>(mru::ProbeBudget::kExact), 1, "kExact == 1 probe");
+  CHECK_EQ(static_cast<int>(mru::ProbeBudget::kOneFlip), 2, "kOneFlip == 2 probes");
+  CHECK_EQ(static_cast<int>(mru::ProbeBudget::kTwoFlips), 4, "kTwoFlips == 4 probes");
+
+  std::printf("        %u bits x %u events = %u-bit keys, window %u, %u levels\n",
+              cfg.bits_per_event, cfg.events_per_key, cfg.key_bits(),
+              cfg.minimizer_window, cfg.levels());
+}
+
+void test_multiprobe_api() {
+  banner("multiprobe_api");
+  const mru::QuantConfig cfg;  // frozen defaults, window 10
+
+  // Correlated reference, as the real thing will be.
+  const KmerRef km = synth_signal_kmer(200000, 9, 11, cfg.samples_per_event);
+  const auto sc_ref = mru::scaling_from_samples(km.raw);
+
+  std::vector<mru::QEvent> ref_ev;
+  mru::quantise_signal(km.raw, sc_ref, cfg, ref_ev);
+  std::vector<mru::SeedHash> ref_all, ref_min;
+  mru::hash_all_keys(ref_ev, cfg, ref_all);
+  mru::select_minimizers(ref_all, cfg.minimizer_window, ref_min);
+  mru::MinimizerIndex idx;
+  idx.build(ref_min);
+  CHECK_EQ(idx.insert_failures(), 0u, "index built without hitting the probe bound");
+
+  // quantise_signal must now be able to hand back the pre-quantisation z values,
+  // because expand_multiprobe cannot recover them from the buckets.
+  constexpr std::size_t kOff = 40000, kLen = 4000;
+  const std::vector<std::int16_t> query(km.raw.begin() + kOff,
+                                        km.raw.begin() + kOff + kLen);
+  const auto q_sc = mru::scaling_from_samples(query);
+  std::vector<mru::QEvent> q_ev;
+  std::vector<float> q_z;
+  mru::quantise_signal(query, q_sc, cfg, q_ev, &q_z);
+  CHECK_EQ(q_ev.size(), q_z.size(), "one z value per quantised event");
+  CHECK_EQ(q_ev.size(), kLen / cfg.samples_per_event, "event count");
+
+  std::vector<mru::SeedHash> q_all, q_min;
+  mru::hash_all_keys(q_ev, cfg, q_all);
+  mru::select_minimizers(q_all, cfg.minimizer_window, q_min);
+  CHECK(!q_min.empty(), "query selected minimizers");
+
+  // Expansion arity, and that variants inherit the original seed's offset so chaining
+  // sees one seed position however many keys were probed for it.
+  for (int budget : {1, 2, 4}) {
+    std::vector<mru::SeedHash> probes;
+    mru::expand_multiprobe(q_ev, q_z, q_min, cfg, budget, probes);
+    CHECK_EQ(probes.size(), q_min.size() * static_cast<std::size_t>(budget),
+             "one group of `budget` keys per minimizer");
+
+    bool offsets_ok = true, exact_first = true;
+    for (std::size_t j = 0; j < q_min.size(); ++j) {
+      const std::size_t base = j * static_cast<std::size_t>(budget);
+      if (probes[base].hash != q_min[j].hash) exact_first = false;
+      for (int k = 0; k < budget; ++k) {
+        if (probes[base + static_cast<std::size_t>(k)].offset != q_min[j].offset) {
+          offsets_ok = false;
+        }
+      }
+    }
+    CHECK(exact_first, "the first key of each group is the unmodified key");
+    CHECK(offsets_ok, "every variant carries the original minimizer's offset");
+  }
+
+  // End to end: more probes must never find fewer matches.
+  mru::ProbeScratch scratch;
+  scratch.reserve_for(kLen, cfg);
+  mru::IndexStats s1, s4;
+  const std::size_t m1 = mru::match_signal(idx, query, q_sc, cfg, scratch, 1, &s1);
+  const std::size_t probes1 = scratch.probes.size();
+  const std::size_t m4 = mru::match_signal(idx, query, q_sc, cfg, scratch, 4, &s4);
+  const std::size_t probes4 = scratch.probes.size();
+
+  CHECK_EQ(probes4, probes1 * 4, "4x the probes for budget 4");
+  CHECK(m4 >= m1, "more probes cannot find fewer matches");
+  CHECK(m1 > 0, "the exact-key path finds something on an on-target read");
+
+  std::printf("        %zu minimizers | budget 1: %zu probes -> %zu hits | "
+              "budget 4: %zu probes -> %zu hits (+%.0f%%)\n",
+              q_min.size(), probes1, m1, probes4, m4,
+              m1 == 0 ? 0.0 : 100.0 * (static_cast<double>(m4) - static_cast<double>(m1)) /
+                                  static_cast<double>(m1));
+  std::printf("        reminder: at the frozen w=10 this gain is ~+5 points of seed\n"
+              "        recall, not the +74%% seen at w=1. See batched_probe.hpp.\n");
+}
+
 }  // namespace
 
 int main() {
   std::printf("quantised-event index tests\n\n");
 
+  test_frozen_geometry();
+  test_multiprobe_api();
   test_quantisation();
   test_index_basics();
   test_batched_equals_scalar();

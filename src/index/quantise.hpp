@@ -74,8 +74,40 @@ struct SignalScaling {
 }
 
 // All the knobs in one place, so a sweep is a loop over configs rather than a
-// recompile. Defaults are a starting point for R10.4.1 DNA at 4 kHz, NOT tuned
-// values -- tuning them against measured recall is the actual research work.
+// recompile.
+//
+// THE DEFAULTS BELOW ARE FROZEN, and they are measurements rather than guesses. The
+// full derivation lives in test/index_test.cpp; the short version:
+//
+//   3 bits/event   Per-event bucket disagreement is set almost entirely by bucket
+//                  width and halves for each bit removed: 5 bits 30.9%, 4 bits
+//                  15.9%, 3 bits 6.9%, 2 bits 3.3%. Fewer bits looks strictly
+//                  better until key space is accounted for, and then 2 bits
+//                  collapses (see below).
+//
+//   15 events      Key space is the binding constraint at mammalian scale. 27-bit
+//                  keys give 1.34e8 distinct values, which a 3.1e9-event reference
+//                  occupies 23x over, capping recall at ~35% by pigeonhole before
+//                  any noise. Worse, k-mer correlation makes the EFFECTIVE key space
+//                  far smaller than the representable one -- measured 1066x smaller
+//                  at this geometry. 2 bits x 15 events looked optimal (89.9%) under
+//                  an i.i.d. signal model and collapses to 0.8% once adjacent events
+//                  are correlated as a real pore makes them. 3 x 15 was chosen over
+//                  the nominal optimum 3 x 13 (76.1%) for headroom: random DNA has
+//                  no repeats, a real genome is ~50% repetitive, and 3 x 13 leaves
+//                  only 25% margin against the occurrence cap where 3 x 15 leaves
+//                  30x.
+//
+//   window 10      Not a tuning choice, a memory constraint. At one entry per base
+//                  and 8-byte entries at 0.5 load factor a mammalian index is
+//                  ~49 GB at w=1. w=10 keeps 18.2% of positions for ~9.0 GB.
+//                  It costs recall -- 68.2% of available seeds at w=1 falls to
+//                  41.4% at w=10 -- which is affordable because locus
+//                  identification, not seed recall, is what the decision needs:
+//                  200/200 correct loci with a 29.6x diagonal vote margin.
+//
+// Changing any of these invalidates the off-target separation that sets the unblock
+// threshold, so test/index_test.cpp asserts them.
 struct QuantConfig {
   // ~10 samples per base at 4 kHz and ~400 b/s. Averaging this many raw samples
   // gives one event. Fixed-window downsampling, not true event segmentation:
@@ -83,18 +115,19 @@ struct QuantConfig {
   // worth the cycles is an experiment, not an assumption.
   std::uint32_t samples_per_event = 10;
 
-  // Bits per quantised event. 3 bits = 8 levels.
+  // Bits per quantised event. 3 bits = 8 levels. FROZEN.
   std::uint32_t bits_per_event = 3;
 
-  // Events combined into one key. 9 events at 3 bits = 27 bits of signal.
-  std::uint32_t events_per_key = 9;
+  // Events combined into one key. 15 at 3 bits = 45-bit keys. FROZEN.
+  std::uint32_t events_per_key = 15;
 
   // z-scores are clipped to +/- this before bucketing, so outliers cannot drag
   // the whole scale.
   float z_clip = 3.0f;
 
   // Minimizer window, in keys. 1 disables subsampling and indexes every key.
-  std::uint32_t minimizer_window = 5;
+  // FROZEN at 10: this is what brings a mammalian index to ~9.0 GB.
+  std::uint32_t minimizer_window = 10;
 
   [[nodiscard]] bool valid() const noexcept {
     return samples_per_event > 0 && bits_per_event > 0 && bits_per_event <= 8 &&
@@ -123,23 +156,56 @@ using QEvent = std::uint8_t;
   return static_cast<QEvent>(bucket);
 }
 
+// Where z sits inside its bucket: 0.0 exactly on a boundary, 1.0 dead centre.
+//
+// This is the quantity multi-probe is built on. Measured: 94% of per-event bucket
+// disagreements occur within 0.3 of a boundary, and across 16000 events not one was
+// ever off by more than a single bucket. So an event near a boundary is the one worth
+// probing both ways, and an event near the centre never needs it.
+[[nodiscard]] inline float boundary_distance(float z, const QuantConfig& cfg) noexcept {
+  const float clamped = std::clamp(z, -cfg.z_clip, cfg.z_clip);
+  const float unit = (clamped + cfg.z_clip) / (2.0f * cfg.z_clip);
+  const float pos = unit * static_cast<float>(cfg.levels());
+  const float frac = pos - std::floor(pos);
+  return 2.0f * std::min(frac, 1.0f - frac);
+}
+
+// The neighbouring bucket on the side of the nearest boundary -- the only plausible
+// alternative, since disagreements are never off by more than one.
+[[nodiscard]] inline QEvent neighbour_bucket(float z, const QuantConfig& cfg) noexcept {
+  const float clamped = std::clamp(z, -cfg.z_clip, cfg.z_clip);
+  const float unit = (clamped + cfg.z_clip) / (2.0f * cfg.z_clip);
+  const float pos = unit * static_cast<float>(cfg.levels());
+  const auto bucket = static_cast<int>(quantise_z(z, cfg));
+  const float frac = pos - std::floor(pos);
+  const int nb = frac < 0.5f ? bucket - 1 : bucket + 1;
+  return static_cast<QEvent>(std::clamp(nb, 0, static_cast<int>(cfg.levels()) - 1));
+}
+
 // Downsample raw signal into quantised events. Appends to `out`, which the caller
 // reuses across chunks so the hot path never allocates.
+// `out_z`, when non-null, receives the pre-quantisation z of each event. Multi-probe
+// needs it to rank which events sit nearest a bucket boundary, and it cannot be
+// recovered from the quantised value afterwards.
 inline void quantise_signal(std::span<const std::int16_t> raw, const SignalScaling& sc,
-                            const QuantConfig& cfg, std::vector<QEvent>& out) {
+                            const QuantConfig& cfg, std::vector<QEvent>& out,
+                            std::vector<float>* out_z = nullptr) {
   if (!sc.valid() || !cfg.valid()) return;
   const std::size_t w = cfg.samples_per_event;
   if (raw.size() < w) return;
 
   const std::size_t n_events = raw.size() / w;
   out.reserve(out.size() + n_events);
+  if (out_z != nullptr) out_z->reserve(out_z->size() + n_events);
   for (std::size_t e = 0; e < n_events; ++e) {
     // Mean of the window in float. int32 accumulation would be enough for int16
     // but float keeps this identical to the reference implementation in tests.
     float sum = 0.0f;
     const std::size_t base = e * w;
     for (std::size_t i = 0; i < w; ++i) sum += sc.apply(raw[base + i]);
-    out.push_back(quantise_z(sum / static_cast<float>(w), cfg));
+    const float z = sum / static_cast<float>(w);
+    if (out_z != nullptr) out_z->push_back(z);
+    out.push_back(quantise_z(z, cfg));
   }
 }
 
