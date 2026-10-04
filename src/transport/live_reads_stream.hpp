@@ -337,9 +337,21 @@ inline bool LiveReadsStream::start() {
 inline void LiveReadsStream::stop() {
   if (!running_.exchange(false, std::memory_order_acq_rel)) return;
 
-  // Close the write side first so the server finishes the stream and the
-  // reader's Read() returns false rather than blocking forever.
+  // Half-close, then CANCEL. Both are needed, and the cancel is the part that
+  // actually works.
+  //
+  // The original version called only WritesDone() on the theory that the server
+  // would then finish the stream and the reader's Read() would return false. Against
+  // a real server that is false: Icarust keeps streaming live reads regardless, so
+  // Read() stays blocked, request_stop() cannot interrupt a thread parked inside a
+  // blocking gRPC call, and join() never returns. The daemon hung on exit after
+  // streaming 11254 chunks perfectly well.
+  //
+  // TryCancel() aborts the RPC, which forces the pending Read() to return false and
+  // lets the reader loop observe the stop token. It makes Finish() report CANCELLED,
+  // which is expected here and not an error.
   if (stream_ != nullptr) stream_->WritesDone();
+  if (ctx_ != nullptr) ctx_->TryCancel();
 
   reader_.request_stop();
   writer_.request_stop();
@@ -354,7 +366,11 @@ inline void LiveReadsStream::stop() {
 
   if (stream_ != nullptr) {
     const grpc::Status status = stream_->Finish();
-    if (!status.ok() && last_error_.empty()) {
+    // CANCELLED is how a clean shutdown looks, because stop() cancels the RPC to
+    // unblock the reader. Reporting it as an error would make every normal exit look
+    // like a failure.
+    if (!status.ok() && status.error_code() != grpc::StatusCode::CANCELLED &&
+        last_error_.empty()) {
       last_error_ = "stream finished: " + status.error_message();
     }
   }
