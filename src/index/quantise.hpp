@@ -22,6 +22,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -125,14 +126,48 @@ struct QuantConfig {
   // the whole scale.
   float z_clip = 3.0f;
 
+  // ADAPTIVE (equal-occupancy) BUCKET BOUNDARIES.
+  //
+  // Uniform bucketing over +/-z_clip wastes the alphabet, because a real pore model's
+  // normalised level distribution is nowhere near uniform. Measured on Icarust's R10
+  // 9-mer table over human chr20, uniform bucketing into 8 levels gives occupancies
+  //     0:0.0%  1:5.0%  2:28.6%  3:12.0%  4:27.3%  5:21.7%  6:5.1%  7:0.3%
+  // One bucket of eight is never used and another takes 0.3%, so the quantiser
+  // delivers about 2.3 bits per event instead of 3. Key space is the scarce resource
+  // in this design, and that is 0.7 bits per event thrown away.
+  //
+  // Boundaries placed at the empirical QUANTILES of the level distribution make every
+  // bucket equally likely by construction, so entropy is exactly bits_per_event. That
+  // is the information-theoretic optimum for a fixed level count, and strictly better
+  // than a two-piece fine/coarse split when the distribution is actually available --
+  // which it is, since it comes from the pore model.
+  //
+  // Both sides MUST use the same boundaries. Deriving them from the pore model rather
+  // than from any particular read guarantees that.
+  //
+  // Empty (n_boundaries == 0) means uniform bucketing, which stays the default so
+  // existing measurements remain reproducible.
+  static constexpr std::size_t kMaxBoundaries = 31;
+  std::array<float, kMaxBoundaries> boundaries{};
+  std::uint32_t n_boundaries = 0;
+
+  [[nodiscard]] bool adaptive() const noexcept { return n_boundaries != 0; }
+
   // Minimizer window, in keys. 1 disables subsampling and indexes every key.
   // FROZEN at 10: this is what brings a mammalian index to ~9.0 GB.
   std::uint32_t minimizer_window = 10;
 
   [[nodiscard]] bool valid() const noexcept {
-    return samples_per_event > 0 && bits_per_event > 0 && bits_per_event <= 8 &&
-           events_per_key > 0 && bits_per_event * events_per_key <= 64 &&
-           z_clip > 0.0f && minimizer_window > 0;
+    if (!(samples_per_event > 0 && bits_per_event > 0 && bits_per_event <= 8 &&
+          events_per_key > 0 && bits_per_event * events_per_key <= 64 &&
+          z_clip > 0.0f && minimizer_window > 0)) {
+      return false;
+    }
+    // A partial boundary table would silently mis-bucket, so require exactly
+    // levels()-1 interior boundaries or none at all.
+    if (n_boundaries != 0 && n_boundaries + 1 != levels()) return false;
+    if (n_boundaries > kMaxBoundaries) return false;
+    return true;
   }
   [[nodiscard]] std::uint32_t levels() const noexcept { return 1u << bits_per_event; }
   [[nodiscard]] std::uint32_t key_bits() const noexcept {
@@ -143,8 +178,17 @@ struct QuantConfig {
 // One quantised event: a small integer, so a whole key packs into a uint64.
 using QEvent = std::uint8_t;
 
-// Clip to +/-z_clip, then map linearly onto [0, levels).
+// Maps z onto [0, levels).
+//
+// Adaptive path: a linear scan of at most levels()-1 ascending boundaries. For 8
+// levels that is 7 float compares, which is a few cycles against a per-chunk budget
+// of hundreds of microseconds, and it buys back 0.7 bits per event.
 [[nodiscard]] inline QEvent quantise_z(float z, const QuantConfig& cfg) noexcept {
+  if (cfg.n_boundaries != 0) {
+    std::uint32_t b = 0;
+    while (b < cfg.n_boundaries && z >= cfg.boundaries[b]) ++b;
+    return static_cast<QEvent>(b);
+  }
   const float clipped = std::clamp(z, -cfg.z_clip, cfg.z_clip);
   const float unit = (clipped + cfg.z_clip) / (2.0f * cfg.z_clip);  // -> [0, 1]
   const auto levels = static_cast<float>(cfg.levels());
@@ -156,30 +200,77 @@ using QEvent = std::uint8_t;
   return static_cast<QEvent>(bucket);
 }
 
+// The edges of the bucket containing z, in z units.
+inline void bucket_edges(float z, const QuantConfig& cfg, float& lo, float& hi) noexcept {
+  if (cfg.n_boundaries != 0) {
+    const auto b = static_cast<std::uint32_t>(quantise_z(z, cfg));
+    lo = b == 0 ? -cfg.z_clip : cfg.boundaries[b - 1];
+    hi = b >= cfg.n_boundaries ? cfg.z_clip : cfg.boundaries[b];
+    return;
+  }
+  const float width = 2.0f * cfg.z_clip / static_cast<float>(cfg.levels());
+  const auto b = static_cast<float>(quantise_z(z, cfg));
+  lo = -cfg.z_clip + b * width;
+  hi = lo + width;
+}
+
 // Where z sits inside its bucket: 0.0 exactly on a boundary, 1.0 dead centre.
 //
 // This is the quantity multi-probe is built on. Measured: 94% of per-event bucket
 // disagreements occur within 0.3 of a boundary, and across 16000 events not one was
 // ever off by more than a single bucket. So an event near a boundary is the one worth
 // probing both ways, and an event near the centre never needs it.
+//
+// Normalised by the LOCAL bucket width, so it remains comparable across buckets when
+// adaptive boundaries make them unequal in z.
 [[nodiscard]] inline float boundary_distance(float z, const QuantConfig& cfg) noexcept {
-  const float clamped = std::clamp(z, -cfg.z_clip, cfg.z_clip);
-  const float unit = (clamped + cfg.z_clip) / (2.0f * cfg.z_clip);
-  const float pos = unit * static_cast<float>(cfg.levels());
-  const float frac = pos - std::floor(pos);
-  return 2.0f * std::min(frac, 1.0f - frac);
+  float lo = 0.0f, hi = 0.0f;
+  bucket_edges(z, cfg, lo, hi);
+  const float width = hi - lo;
+  if (!(width > 0.0f)) return 1.0f;
+  const float clamped = std::clamp(z, lo, hi);
+  return 2.0f * std::min(clamped - lo, hi - clamped) / width;
 }
 
 // The neighbouring bucket on the side of the nearest boundary -- the only plausible
 // alternative, since disagreements are never off by more than one.
 [[nodiscard]] inline QEvent neighbour_bucket(float z, const QuantConfig& cfg) noexcept {
-  const float clamped = std::clamp(z, -cfg.z_clip, cfg.z_clip);
-  const float unit = (clamped + cfg.z_clip) / (2.0f * cfg.z_clip);
-  const float pos = unit * static_cast<float>(cfg.levels());
+  float lo = 0.0f, hi = 0.0f;
+  bucket_edges(z, cfg, lo, hi);
   const auto bucket = static_cast<int>(quantise_z(z, cfg));
-  const float frac = pos - std::floor(pos);
-  const int nb = frac < 0.5f ? bucket - 1 : bucket + 1;
+  const float clamped = std::clamp(z, lo, hi);
+  const int nb = (clamped - lo) < (hi - clamped) ? bucket - 1 : bucket + 1;
   return static_cast<QEvent>(std::clamp(nb, 0, static_cast<int>(cfg.levels()) - 1));
+}
+
+// Fits equal-occupancy boundaries from observed z values.
+//
+// Sorts a copy and takes the levels()-1 interior quantiles, so each bucket receives
+// 1/levels of the mass and entropy is exactly bits_per_event. Offline only -- this is
+// an index-build step, never on the decision path.
+//
+// Pass the pore model's own normalised levels, not a read's: both sides must bucket
+// identically, and the model is the one thing both sides share.
+[[nodiscard]] inline bool fit_adaptive_boundaries(std::span<const float> z_samples,
+                                                  QuantConfig& cfg) {
+  const std::uint32_t n_edges = cfg.levels() - 1;
+  if (z_samples.size() < cfg.levels() || n_edges > QuantConfig::kMaxBoundaries) {
+    return false;
+  }
+  std::vector<float> v(z_samples.begin(), z_samples.end());
+  std::sort(v.begin(), v.end());
+  for (std::uint32_t e = 0; e < n_edges; ++e) {
+    const double q = static_cast<double>(e + 1) / static_cast<double>(cfg.levels());
+    auto idx = static_cast<std::size_t>(q * static_cast<double>(v.size() - 1));
+    if (idx >= v.size()) idx = v.size() - 1;
+    cfg.boundaries[e] = v[idx];
+  }
+  // Must be strictly ascending, or quantise_z's scan would produce empty buckets.
+  for (std::uint32_t e = 1; e < n_edges; ++e) {
+    if (!(cfg.boundaries[e] > cfg.boundaries[e - 1])) return false;
+  }
+  cfg.n_boundaries = n_edges;
+  return true;
 }
 
 // Downsample raw signal into quantised events. Appends to `out`, which the caller

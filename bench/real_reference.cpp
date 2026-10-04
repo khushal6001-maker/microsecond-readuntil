@@ -133,7 +133,7 @@ bool load_fasta_acgt(const std::string& path, std::size_t max_bases, std::string
   return true;
 }
 
-std::size_t count_distinct(std::vector<std::uint64_t>& keys) {
+[[maybe_unused]] std::size_t count_distinct(std::vector<std::uint64_t>& keys) {
   std::sort(keys.begin(), keys.end());
   return static_cast<std::size_t>(std::unique(keys.begin(), keys.end()) - keys.begin());
 }
@@ -143,6 +143,7 @@ std::size_t count_distinct(std::vector<std::uint64_t>& keys) {
 int main(int argc, char** argv) {
   std::string model_path, fasta_path;
   std::size_t max_bases = 10'000'000;
+  bool adaptive = false;
   mru::QuantConfig cfg;  // frozen defaults: 3 bits, 15 events, window 10
 
   for (int i = 1; i < argc; ++i) {
@@ -161,6 +162,8 @@ int main(int argc, char** argv) {
     } else if (k == "--events") {
       const char* v = val(); if (v == nullptr) return 2;
       cfg.events_per_key = static_cast<std::uint32_t>(std::atoi(v));
+    } else if (k == "--adaptive") {
+      adaptive = true;
     } else if (k == "--window") {
       const char* v = val(); if (v == nullptr) return 2;
       cfg.minimizer_window = static_cast<std::uint32_t>(std::atoi(v));
@@ -192,6 +195,32 @@ int main(int argc, char** argv) {
     std::printf("model: load_levels rejected %zu entries\n", levels.size());
     return 1;
   }
+  // Equal-occupancy boundaries, fitted from the MODEL's normalised levels rather than
+  // from any read: both sides must bucket identically, and the model is what they
+  // share. reference_to_events normalises by the table's own mean/sd, so the same
+  // transform is applied here.
+  if (adaptive) {
+    double mean = 0.0;
+    for (float v : levels) mean += static_cast<double>(v);
+    mean /= static_cast<double>(levels.size());
+    double var = 0.0;
+    for (float v : levels) {
+      const double d = static_cast<double>(v) - mean;
+      var += d * d;
+    }
+    var /= static_cast<double>(levels.size());
+    const double sd = std::max(1e-6, std::sqrt(var));
+    std::vector<float> zs;
+    zs.reserve(levels.size());
+    for (float v : levels) {
+      zs.push_back(static_cast<float>((static_cast<double>(v) - mean) / sd));
+    }
+    if (!mru::fit_adaptive_boundaries(zs, cfg)) {
+      std::printf("fit_adaptive_boundaries failed\n");
+      return 1;
+    }
+  }
+
   const auto lo = *std::min_element(levels.begin(), levels.end());
   const auto hi = *std::max_element(levels.begin(), levels.end());
   std::printf("pore model : %s\n", model_path.c_str());
@@ -208,6 +237,8 @@ int main(int argc, char** argv) {
   std::printf("reference  : %s\n", fasta_path.c_str());
   std::printf("             %zu ACGT bases used, %zu non-ACGT skipped (N runs)\n",
               dna.size(), skipped);
+  std::printf("quantiser  : %s\n",
+              cfg.adaptive() ? "ADAPTIVE (equal-occupancy)" : "uniform");
   std::printf("geometry   : %u bits x %u events = %u-bit keys, window %u\n\n",
               cfg.bits_per_event, cfg.events_per_key, cfg.key_bits(),
               cfg.minimizer_window);
@@ -237,7 +268,15 @@ int main(int argc, char** argv) {
                 100.0 * static_cast<double>(bucket_hist[b]) /
                     static_cast<double>(events.size()));
   }
-  std::printf("\n");
+  double entropy = 0.0;
+  for (std::uint64_t c : bucket_hist) {
+    if (c == 0) continue;
+    const double q = static_cast<double>(c) / static_cast<double>(events.size());
+    entropy -= q * std::log2(q);
+  }
+  std::printf("\n             entropy %.2f of %u bits (%.0f%% of the alphabet used)\n",
+              entropy, cfg.bits_per_event,
+              100.0 * entropy / static_cast<double>(cfg.bits_per_event));
 
   // --- key diversity on real sequence --------------------------------------
   const std::size_t n_positions = events.size() - cfg.events_per_key + 1;
@@ -323,20 +362,33 @@ int main(int argc, char** argv) {
   std::printf("slots %zu, load %.2f, %.1f MiB\n", idx.capacity(), idx.load_factor(),
               static_cast<double>(idx.capacity() * sizeof(std::uint64_t)) / (1024.0 * 1024.0));
 
-  // --- extrapolation to a whole mammalian genome ---------------------------
-  // Occupancy scales with reference size against a fixed effective key space, so the
-  // measured keff is what makes this extrapolation meaningful rather than a guess.
+  // --- cap behaviour, measured rather than extrapolated ---------------------
+  //
+  // This replaces a projection that was mathematically invalid. The previous version
+  // fitted an "effective key space" K from E[distinct] = K(1-exp(-n/K)) and projected
+  // genome-scale occupancy from it. That model assumes every key is equally likely;
+  // real DNA is wildly skewed -- 91.8% of keys occur exactly once while the most
+  // frequent occurs 4211 times. The diagnostic that killed it: the fitted K tracked
+  // reference size instead of converging (5.0e6, 1.2e7, 2.6e7, 3.7e7 at 1, 3, 10 and
+  // 30 Mbp), and a genuine fixed key space would give one value at every size.
+  //
+  // The model-free quantity is the fraction of POSITIONS whose key occurs at most
+  // `cap` times -- the freq<=N table above, which needs no distributional assumption.
+  // Read it as a TREND across --bases rather than extrapolating one point: diversity
+  // genuinely saturates, so a single reading cannot be projected.
   constexpr double kHumanBases = 3.1e9;
-  constexpr double kCap = 8.0;
-  const double human_occ = kHumanBases / std::max(1.0, keff);
-  const double capsurv = human_occ <= kCap ? 1.0 : kCap / human_occ;
+  const std::size_t kept_at_cap =
+      minimizers.size() - static_cast<std::size_t>(idx.capped_seeds());
   const double human_gb = kHumanBases * kept / 0.5 * 8.0 / 1e9;
 
-  std::printf("\n--- extrapolated to 3.1e9 bases ---\n");
-  std::printf("occupancy           : %.2f keys per distinct value\n", human_occ);
-  std::printf("cap survival (cap 8): %.1f%%\n", 100.0 * capsurv);
-  std::printf("index size          : %.1f GB\n", human_gb);
-  std::printf("\nVERDICT: cap %s at this geometry on real sequence\n",
-              human_occ <= kCap ? "does NOT bite" : "BITES -- recall is capped");
+  std::printf("\n--- cap behaviour at THIS reference size ---\n");
+  std::printf("minimizer occurrences kept : %zu of %zu (%.1f%%)\n", kept_at_cap,
+              minimizers.size(),
+              100.0 * static_cast<double>(kept_at_cap) /
+                  static_cast<double>(std::max<std::size_t>(1, minimizers.size())));
+  std::printf("index size at 3.1e9 bases  : %.1f GB (scales with kept%%, not with skew)\n",
+              human_gb);
+  std::printf("\nCap survival is the freq<=N table. Run several --bases values for the\n"
+              "trend; one point cannot be extrapolated.\n");
   return 0;
 }

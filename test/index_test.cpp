@@ -972,25 +972,43 @@ std::size_t distinct_keys_in(const std::vector<std::int16_t>& reference,
   return keys.size();
 }
 
-// Poisson occupancy: drawing n positions from a space of K distinct keys yields
-// E[distinct] = K(1 - exp(-n/K)). Measuring distinct and n, solve for K to get the
-// EFFECTIVE key space. Monotone in K, so bisection is enough.
-double effective_key_space(std::size_t n_positions, std::size_t distinct) {
-  const auto n = static_cast<double>(n_positions);
-  const auto d = static_cast<double>(distinct);
-  if (d <= 0.0) return 0.0;
-  if (d >= n * 0.9999) return 1e18;  // no measurable collisions; space is >> n
-  double lo = d, hi = 1e18;
-  for (int it = 0; it < 200; ++it) {
-    const double mid = 0.5 * (lo + hi);
-    const double pred = mid * (1.0 - std::exp(-n / mid));
-    if (pred < d) {
-      lo = mid;
-    } else {
-      hi = mid;
-    }
+// Fraction of POSITIONS whose key occurs at most `cap` times, plus the distinct key
+// count. Model-free: no distributional assumption at all.
+//
+// This replaces a Poisson fit, effective_key_space(), which solved
+// E[distinct] = K(1-exp(-n/K)) for an "effective key space" K and projected
+// genome-scale occupancy from it. That model assumes every key is equally likely, and
+// real DNA violates it violently: measured on human chr20, 91.8% of keys occur exactly
+// once while the most frequent occurs 4211 times. The diagnostic that condemned it is
+// that the fitted K tracked reference size instead of converging -- 5.0e6, 1.2e7,
+// 2.6e7, 3.7e7 at 1, 3, 10 and 30 Mbp -- where a genuine fixed key space would give
+// one value at every size. Every number derived from it was therefore meaningless,
+// including the occupancy and cap-survival columns this sweep used to print.
+//
+// Caveat that applies to the synthetic references below as well: cap survival measured
+// at one reference size cannot be extrapolated, because key diversity saturates. It is
+// a trend to be read across sizes. bench/real_reference.cpp measures it on real DNA.
+struct KeyStats {
+  std::size_t distinct = 0;
+  double frac_positions_within_cap = 0.0;
+};
+
+KeyStats key_stats(std::vector<std::uint64_t>& keys, std::size_t cap) {
+  KeyStats out;
+  if (keys.empty()) return out;
+  std::sort(keys.begin(), keys.end());
+  std::size_t within = 0;
+  for (std::size_t i = 0; i < keys.size();) {
+    std::size_t j = i;
+    while (j < keys.size() && keys[j] == keys[i]) ++j;
+    ++out.distinct;
+    const std::size_t run = j - i;
+    if (run <= cap) within += run;
+    i = j;
   }
-  return 0.5 * (lo + hi);
+  out.frac_positions_within_cap =
+      static_cast<double>(within) / static_cast<double>(keys.size());
+  return out;
 }
 
 struct GeometryResult {
@@ -1081,7 +1099,6 @@ void test_geometry_sweep() {
   constexpr std::size_t kRefEvents = 40000;
   constexpr std::uint32_t kSpe = 10;   // samples per event, matches QuantConfig default
   constexpr std::uint32_t kPoreK = 9;  // R10-like 9-mer
-  constexpr double kHumanEvents = 3.1e9;
   constexpr double kCap = 8.0;
 
   // Control: independent levels (the old, wrong fixture).
@@ -1133,7 +1150,7 @@ void test_geometry_sweep() {
     double km_disagr = 0.0, km_exact = 0.0, km_p2 = 0.0, km_p4 = 0.0;
     double iid_p4 = 0.0;
     std::size_t distinct = 0;
-    double keff = 0.0, occ = 0.0, capsurv = 0.0, proj = 0.0;
+    double within_cap = 0.0, proj = 0.0;
   };
   std::vector<Row> rows;
 
@@ -1161,11 +1178,24 @@ void test_geometry_sweep() {
 
       const std::size_t fit_positions =
           km_big.raw.size() / kSpe >= events ? km_big.raw.size() / kSpe - events + 1 : 0;
-      r.distinct = distinct_keys_in(km_big.raw, sc_km_big, cfg);
-      r.keff = effective_key_space(fit_positions, r.distinct);
-      r.occ = r.keff > 0.0 ? kHumanEvents / r.keff : 0.0;
-      r.capsurv = r.occ <= kCap ? 1.0 : kCap / r.occ;
-      r.proj = r.km_p4 * r.capsurv;
+      // Empirical: distinct keys and the share of positions surviving the cap.
+      std::vector<std::uint64_t> big_keys;
+      {
+        std::vector<mru::QEvent> ev;
+        mru::quantise_signal(km_big.raw, sc_km_big, cfg, ev);
+        if (ev.size() >= cfg.events_per_key) {
+          const std::size_t np = ev.size() - cfg.events_per_key + 1;
+          big_keys.reserve(np);
+          for (std::size_t q = 0; q < np; ++q) {
+            big_keys.push_back(mru::pack_key(ev.data() + q, cfg));
+          }
+        }
+      }
+      const KeyStats ks = key_stats(big_keys, static_cast<std::size_t>(kCap));
+      r.distinct = ks.distinct;
+      r.within_cap = ks.frac_positions_within_cap;
+      r.proj = r.km_p4 * r.within_cap;
+      (void)fit_positions;
       rows.push_back(r);
 
       std::printf("        %4u %2u %5u | %10.2f%% %7.1f%% | %11.2f%% %8.1f%% | %+8.1f\n",
@@ -1176,13 +1206,13 @@ void test_geometry_sweep() {
 
   std::printf("\n        TABLE B -- effective key space from the correlated reference,\n");
   std::printf("        and the human-scale projection that follows from it\n");
-  std::printf("        bits ev kbits | representable  distinct@%zu   effective | occup  capsurv  proj4pr\n",
+  std::printf("        bits ev kbits | representable  distinct@%zu | freq<=8%%  proj4pr\n",
               kBigEvents);
   for (const Row& r : rows) {
     const double representable = std::pow(2.0, static_cast<double>(r.kbits));
-    std::printf("        %4u %2u %5u | %13.2e %12zu %11.2e | %5.2f %7.1f%% %8.1f%%\n",
-                r.bits, r.events, r.kbits, representable, r.distinct, r.keff, r.occ,
-                100.0 * r.capsurv, r.proj);
+    std::printf("        %4u %2u %5u | %13.2e %12zu | %7.1f%% %8.1f%%\n", r.bits,
+                r.events, r.kbits, representable, r.distinct,
+                100.0 * r.within_cap, r.proj);
   }
 
   const auto best = std::max_element(rows.begin(), rows.end(),
@@ -1193,9 +1223,8 @@ void test_geometry_sweep() {
                 "(exact %.1f%%, 2-probe %.1f%%)\n",
                 best->bits, best->events, best->kbits, best->proj, best->km_exact,
                 best->km_p2);
-    std::printf("          effective key space %.2e vs %.2e representable (%.1fx smaller)\n",
-                best->keff, std::pow(2.0, static_cast<double>(best->kbits)),
-                std::pow(2.0, static_cast<double>(best->kbits)) / std::max(1.0, best->keff));
+    std::printf("          %.1f%% of positions survive a cap of %.0f at this reference size\n",
+                100.0 * best->within_cap, kCap);
   }
 
   CHECK(!rows.empty(), "sweep produced rows");
@@ -1233,7 +1262,6 @@ void test_minimizer_window_penalty() {
   constexpr std::uint32_t kPoreK = 9;
   constexpr std::size_t kQueryLen = 4000;  // ~2.5 chunks
   constexpr std::size_t kWindows = 20;
-  constexpr double kHumanEvents = 3.1e9;
 
   const KmerRef km = synth_signal_kmer(kRefEvents, kPoreK, 7, base.samples_per_event);
   const auto sc_ref = mru::scaling_from_samples(km.raw);
@@ -1267,7 +1295,10 @@ void test_minimizer_window_penalty() {
     const double kept = ref_all.empty() ? 0.0
                                         : static_cast<double>(ref_min.size()) /
                                               static_cast<double>(ref_all.size());
-    // Human-scale index: entries x 8 bytes, at 0.5 load factor.
+    // Human-scale index: entries x 8 bytes, at 0.5 load factor. This scaling is
+    // legitimate -- it depends only on the fraction of positions kept, not on any
+    // assumption about how key probability is distributed.
+    constexpr double kHumanEvents = 3.1e9;
     const double human_gb = kHumanEvents * kept / 0.5 * 8.0 / 1e9;
 
     std::size_t avail_total = 0, rec1 = 0, rec2 = 0, rec4 = 0, qmins_total = 0;
@@ -1532,7 +1563,6 @@ void test_offtarget_false_positives() {
   constexpr std::uint32_t kPoreK = 9;
   constexpr std::size_t kQueryLen = 4000;
   constexpr std::size_t kReads = 200;
-  constexpr double kHumanEvents = 3.1e9;
 
   mru::QuantConfig base;
   base.samples_per_event = 10;
@@ -1571,10 +1601,7 @@ void test_offtarget_false_positives() {
 
     const std::size_t fit_positions = ref_all.size();
     const std::size_t distinct = distinct_keys_in(km.raw, sc_ref, cfg);
-    const double keff = effective_key_space(fit_positions, distinct);
-    const double this_occ = static_cast<double>(ref_min.size()) / keff;
-    const double human_occ = kHumanEvents * (static_cast<double>(ref_min.size()) /
-                                             static_cast<double>(ref_all.size())) / keff;
+    (void)fit_positions;
 
     std::vector<std::size_t> on_votes, off_votes, on_cands, off_cands;
     std::size_t on_diag_ok = 0;
@@ -1614,9 +1641,12 @@ void test_offtarget_false_positives() {
 
     std::printf("\n        %u bits x %u ev, w=%u  --  %s\n", c.bits, c.events, c.window,
                 c.note);
-    std::printf("          effective key space %.2e | this ref occupancy %.4f | "
-                "human-scale occupancy %.3f\n",
-                keff, this_occ, human_occ);
+    // The configurations below are labelled by their collision behaviour, which is
+    // now stated as the measured distinct-key ratio rather than a fitted occupancy.
+    std::printf("          %zu distinct keys over %zu positions (%.1f%% unique)\n",
+                distinct, fit_positions,
+                100.0 * static_cast<double>(distinct) /
+                    static_cast<double>(std::max<std::size_t>(1, fit_positions)));
     std::printf("          ON-target : cands med %.0f | best votes min %.0f med %.0f max %.0f "
                 "| correct diag %zu/%zu\n",
                 percentile_of(on_cands, 0.5), percentile_of(on_votes, 0.0),
