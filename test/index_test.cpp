@@ -902,6 +902,107 @@ void test_specificity_scaling() {
 // after sorting, which would systematically drop positions late in the reference --
 // that needs fixing before the projection is trustworthy as more than a bound.
 
+// Reference signal with REALISTIC EVENT CORRELATION.
+//
+// The i.i.d. fixture draws each event's level independently, which is wrong in a way
+// that matters: a nanopore reads overlapping k-mers, so consecutive events share
+// k-1 bases and their levels are strongly correlated. Independence inflates the
+// effective entropy of a key, and inflates it most for long keys over few levels --
+// exactly the geometries the first sweep selected.
+//
+// This builds the real structure: one random level per k-mer drawn once (a synthetic
+// stand-in for ONT's table, which this repo does not vendor), random DNA, then slide
+// the k-mer window. Level spread and per-sample noise are identical to the i.i.d.
+// fixture so the comparison isolates CORRELATION and not signal-to-noise.
+struct KmerRef {
+  std::vector<std::int16_t> raw;
+  std::vector<float> levels;  // 4^k, in lexicographic k-mer order
+  std::string dna;
+  std::uint32_t k = 0;
+};
+
+KmerRef synth_signal_kmer(std::size_t n_events, std::uint32_t k, std::uint64_t seed,
+                          std::uint32_t samples_per_event) {
+  KmerRef out;
+  out.k = k;
+  std::mt19937_64 rng(seed);
+
+  // One level per k-mer, drawn once. Same distribution as the i.i.d. fixture.
+  const std::size_t n_kmers = static_cast<std::size_t>(1) << (2 * k);
+  std::normal_distribution<float> level_dist(500.0f, 60.0f);
+  out.levels.resize(n_kmers);
+  for (float& v : out.levels) v = level_dist(rng);
+
+  // Random DNA. n_events positions need n_events + k - 1 bases.
+  static const char kBases[] = "ACGT";
+  std::uniform_int_distribution<int> base_pick(0, 3);
+  out.dna.resize(n_events + k - 1);
+  for (char& c : out.dna) c = kBases[base_pick(rng)];
+
+  // Slide the k-mer window; emit samples_per_event noisy samples per position.
+  std::normal_distribution<float> noise(0.0f, 15.0f);
+  out.raw.reserve(n_events * samples_per_event);
+  std::uint64_t kmer = 0;
+  std::uint32_t have = 0;
+  const std::uint64_t mask = (std::uint64_t{1} << (2 * k)) - 1;
+  for (char c : out.dna) {
+    int code = 0;
+    switch (c) {
+      case 'C': code = 1; break;
+      case 'G': code = 2; break;
+      case 'T': code = 3; break;
+      default: code = 0; break;
+    }
+    kmer = ((kmer << 2) | static_cast<std::uint64_t>(code)) & mask;
+    if (++have < k) continue;
+    const float level = out.levels[kmer];
+    for (std::uint32_t s = 0; s < samples_per_event; ++s) {
+      out.raw.push_back(
+          static_cast<std::int16_t>(std::clamp(level + noise(rng), -30000.0f, 30000.0f)));
+    }
+  }
+  return out;
+}
+
+// Distinct packed keys over a reference, for one geometry. This is the empirical
+// replacement for the theoretical 2^key_bits: correlation means the reachable key
+// space is smaller than the representable one, and only measurement knows by how
+// much.
+std::size_t distinct_keys_in(const std::vector<std::int16_t>& reference,
+                             const mru::SignalScaling& sc, const mru::QuantConfig& cfg) {
+  std::vector<mru::QEvent> ev;
+  mru::quantise_signal(reference, sc, cfg, ev);
+  if (ev.size() < cfg.events_per_key) return 0;
+  const std::size_t n = ev.size() - cfg.events_per_key + 1;
+  std::vector<std::uint64_t> keys;
+  keys.reserve(n);
+  for (std::size_t i = 0; i < n; ++i) keys.push_back(mru::pack_key(ev.data() + i, cfg));
+  std::sort(keys.begin(), keys.end());
+  keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
+  return keys.size();
+}
+
+// Poisson occupancy: drawing n positions from a space of K distinct keys yields
+// E[distinct] = K(1 - exp(-n/K)). Measuring distinct and n, solve for K to get the
+// EFFECTIVE key space. Monotone in K, so bisection is enough.
+double effective_key_space(std::size_t n_positions, std::size_t distinct) {
+  const auto n = static_cast<double>(n_positions);
+  const auto d = static_cast<double>(distinct);
+  if (d <= 0.0) return 0.0;
+  if (d >= n * 0.9999) return 1e18;  // no measurable collisions; space is >> n
+  double lo = d, hi = 1e18;
+  for (int it = 0; it < 200; ++it) {
+    const double mid = 0.5 * (lo + hi);
+    const double pred = mid * (1.0 - std::exp(-n / mid));
+    if (pred < d) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  return 0.5 * (lo + hi);
+}
+
 struct GeometryResult {
   double disagree_rate = 0.0;
   double exact_pct = 0.0;
@@ -987,57 +1088,318 @@ GeometryResult measure_geometry(const std::vector<std::int16_t>& reference,
 void test_geometry_sweep() {
   banner("geometry_sweep");
 
-  const auto reference = synth_signal(400000, 99);
-  const auto ref_scaling = mru::scaling_from_samples(reference);
+  constexpr std::size_t kRefEvents = 40000;
+  constexpr std::uint32_t kSpe = 10;   // samples per event, matches QuantConfig default
+  constexpr std::uint32_t kPoreK = 9;  // R10-like 9-mer
+  constexpr double kHumanEvents = 3.1e9;
+  constexpr double kCap = 8.0;
 
-  constexpr double kHumanEvents = 3.1e9;  // ~3.1 Gbp, ~1 event per base
-  constexpr double kCap = 8.0;            // MinimizerIndex::build default
+  // Control: independent levels (the old, wrong fixture).
+  const auto ref_iid = synth_signal(kRefEvents * kSpe, 99);
+  const auto sc_iid = mru::scaling_from_samples(ref_iid);
 
-  std::printf("        MEASURED (40 windows x 4000 samples)        | DERIVED (human 3.1e9 events)\n");
-  std::printf("        bits ev  kbits    disagr  exact   2pr   4pr | keyspace  occup   capsurv  proj4pr\n");
+  // Treatment: overlapping k-mers, identical level spread and noise.
+  const KmerRef km = synth_signal_kmer(kRefEvents, kPoreK, 99, kSpe);
+  const auto sc_km = mru::scaling_from_samples(km.raw);
+
+  // A larger correlated reference, for the effective-key-space fit. More positions
+  // make the collision count, and therefore the fit, far better determined.
+  // 3.2M positions, not 320k: at 320k the longer geometries showed only ~90
+  // collisions, so the fitted key space had ~10%% counting error and the
+  // geometries with zero collisions could not be bounded at all. Ten times the
+  // positions makes the fit for the candidate winners actually load-bearing.
+  constexpr std::size_t kBigEvents = 3200000;
+  const KmerRef km_big = synth_signal_kmer(kBigEvents, kPoreK, 7, kSpe);
+  const auto sc_km_big = mru::scaling_from_samples(km_big.raw);
+
+  std::printf("        pore model: %u-mer, %zu levels; DNA %zu bases; "
+              "reference %zu events (fit reference %zu)\n",
+              kPoreK, km.levels.size(), km.dna.size(), kRefEvents, kBigEvents);
+
+  // Exercise the real PoreModel path on the same data, so the seam is not dead code.
+  mru::PoreModel model;
+  CHECK(model.load_levels(km.levels), "synthetic level table loads (4^k entries)");
+  CHECK(model.k() == kPoreK, "pore model k inferred from table size");
+  {
+    mru::QuantConfig probe_cfg;
+    std::vector<mru::QEvent> model_ev;
+    CHECK(model.reference_to_events(km.dna, probe_cfg, model_ev),
+          "PoreModel converts reference DNA to events");
+    CHECK(model_ev.size() >= kRefEvents - 1, "one event per k-mer position");
+  }
+  {
+    mru::PoreModel empty;
+    std::vector<mru::QEvent> ev;
+    mru::QuantConfig c;
+    CHECK(!empty.reference_to_events(km.dna, c, ev),
+          "an unloaded model refuses rather than inventing levels");
+  }
+
+  std::printf("\n        TABLE A -- measured recall: independent levels vs correlated k-mers\n");
+  std::printf("        bits ev kbits |   iid disagr  iid 4pr |   kmer disagr  kmer 4pr | 4pr delta\n");
 
   struct Row {
-    std::uint32_t bits, events;
-    double proj;
+    std::uint32_t bits = 0, events = 0, kbits = 0;
+    double km_disagr = 0.0, km_exact = 0.0, km_p2 = 0.0, km_p4 = 0.0;
+    double iid_p4 = 0.0;
+    std::size_t distinct = 0;
+    double keff = 0.0, occ = 0.0, capsurv = 0.0, proj = 0.0;
   };
   std::vector<Row> rows;
 
-  // 2 bits included deliberately: the trend says fewer bits is better, and
-  // starting the sweep at 3 would have been an artefact of the old default
-  // rather than a real boundary.
   for (std::uint32_t bits : {2u, 3u, 4u, 5u}) {
     for (std::uint32_t events : {8u, 10u, 11u, 12u, 13u, 15u, 18u, 20u}) {
       mru::QuantConfig cfg;
       cfg.bits_per_event = bits;
       cfg.events_per_key = events;
       cfg.minimizer_window = 1;
-      if (!cfg.valid()) continue;  // keys wider than 64 bits
-      if (cfg.key_bits() < 27) continue;  // below this the cap destroys recall anyway
+      if (!cfg.valid()) continue;
+      if (cfg.key_bits() < 27) continue;
 
-      const GeometryResult g = measure_geometry(reference, ref_scaling, cfg);
+      const GeometryResult g_iid = measure_geometry(ref_iid, sc_iid, cfg);
+      const GeometryResult g_km = measure_geometry(km.raw, sc_km, cfg);
 
-      const double keyspace = std::pow(2.0, static_cast<double>(cfg.key_bits()));
-      const double occupancy = kHumanEvents / keyspace;
-      const double capsurv = occupancy <= kCap ? 1.0 : kCap / occupancy;
-      const double proj = g.p4_pct * capsurv;
-      rows.push_back(Row{bits, events, proj});
+      Row r;
+      r.bits = bits;
+      r.events = events;
+      r.kbits = cfg.key_bits();
+      r.km_disagr = g_km.disagree_rate;
+      r.km_exact = g_km.exact_pct;
+      r.km_p2 = g_km.p2_pct;
+      r.km_p4 = g_km.p4_pct;
+      r.iid_p4 = g_iid.p4_pct;
 
-      std::printf("        %4u %2u  %5u   %6.2f%% %5.1f%% %5.1f%% %5.1f%% | %8.1e %6.2f  %6.1f%%  %6.1f%%\n",
-                  bits, events, cfg.key_bits(), 100.0 * g.disagree_rate, g.exact_pct,
-                  g.p2_pct, g.p4_pct, keyspace, occupancy, 100.0 * capsurv, proj);
+      const std::size_t fit_positions =
+          km_big.raw.size() / kSpe >= events ? km_big.raw.size() / kSpe - events + 1 : 0;
+      r.distinct = distinct_keys_in(km_big.raw, sc_km_big, cfg);
+      r.keff = effective_key_space(fit_positions, r.distinct);
+      r.occ = r.keff > 0.0 ? kHumanEvents / r.keff : 0.0;
+      r.capsurv = r.occ <= kCap ? 1.0 : kCap / r.occ;
+      r.proj = r.km_p4 * r.capsurv;
+      rows.push_back(r);
+
+      std::printf("        %4u %2u %5u | %10.2f%% %7.1f%% | %11.2f%% %8.1f%% | %+8.1f\n",
+                  bits, events, cfg.key_bits(), 100.0 * g_iid.disagree_rate, g_iid.p4_pct,
+                  100.0 * g_km.disagree_rate, g_km.p4_pct, g_km.p4_pct - g_iid.p4_pct);
     }
   }
 
-  // Best projected human-scale 4-probe recall.
+  std::printf("\n        TABLE B -- effective key space from the correlated reference,\n");
+  std::printf("        and the human-scale projection that follows from it\n");
+  std::printf("        bits ev kbits | representable  distinct@%zu   effective | occup  capsurv  proj4pr\n",
+              kBigEvents);
+  for (const Row& r : rows) {
+    const double representable = std::pow(2.0, static_cast<double>(r.kbits));
+    std::printf("        %4u %2u %5u | %13.2e %12zu %11.2e | %5.2f %7.1f%% %8.1f%%\n",
+                r.bits, r.events, r.kbits, representable, r.distinct, r.keff, r.occ,
+                100.0 * r.capsurv, r.proj);
+  }
+
   const auto best = std::max_element(rows.begin(), rows.end(),
                                      [](const Row& a, const Row& b) { return a.proj < b.proj; });
   if (best != rows.end()) {
-    std::printf("\n        best projected human-scale 4-probe recall: "
-                "%u bits x %u events = %u-bit keys -> %.1f%%\n",
-                best->bits, best->events, best->bits * best->events, best->proj);
+    std::printf("\n        best projected human-scale 4-probe recall on CORRELATED signal:\n"
+                "          %u bits x %u events = %u-bit keys -> %.1f%% "
+                "(exact %.1f%%, 2-probe %.1f%%)\n",
+                best->bits, best->events, best->kbits, best->proj, best->km_exact,
+                best->km_p2);
+    std::printf("          effective key space %.2e vs %.2e representable (%.1fx smaller)\n",
+                best->keff, std::pow(2.0, static_cast<double>(best->kbits)),
+                std::pow(2.0, static_cast<double>(best->kbits)) / std::max(1.0, best->keff));
   }
 
   CHECK(!rows.empty(), "sweep produced rows");
+}
+
+// ---------------------------------------------------------------------------
+// Minimizer window penalty
+// ---------------------------------------------------------------------------
+//
+// Subsampling is not optional: at one entry per base, 8-byte entries and a 0.5 load
+// factor, a human-scale index is ~69 GB at w=1. It has to come under ~10 GB, which
+// means w of about 10 or more.
+//
+// The cost is a COMPOUND failure that the earlier measurements could not see. A seed
+// survives only if BOTH hold:
+//   1. the query's key equals the reference's key at that position (6.89% per-event
+//      disagreement, amplified over the key), and
+//   2. that position wins its minimizer window on BOTH sides
+// A single bucket flip changes the key's HASH, which can hand the window to a
+// different position entirely -- so the seed is lost before the key match is ever
+// evaluated. Condition 2 is the unmeasured one.
+//
+// Also measured: whether diagonal voting still has enough votes once subsampling
+// thins the true seeds. Chaining margins of 40x+ were measured with hundreds of
+// candidates; at w=20 a 400-event read offers only a few dozen reference minimizers,
+// and consensus could become fragile.
+void test_minimizer_window_penalty() {
+  banner("minimizer_window_penalty");
+
+  mru::QuantConfig base;
+  base.bits_per_event = 3;
+  base.events_per_key = 15;  // the candidate geometry from the corrected sweep
+
+  constexpr std::size_t kRefEvents = 3200000;
+  constexpr std::uint32_t kPoreK = 9;
+  constexpr std::size_t kQueryLen = 4000;  // ~2.5 chunks
+  constexpr std::size_t kWindows = 20;
+  constexpr double kHumanEvents = 3.1e9;
+
+  const KmerRef km = synth_signal_kmer(kRefEvents, kPoreK, 7, base.samples_per_event);
+  const auto sc_ref = mru::scaling_from_samples(km.raw);
+
+  std::vector<mru::QEvent> ref_ev;
+  mru::quantise_signal(km.raw, sc_ref, base, ref_ev);
+  std::vector<mru::SeedHash> ref_all;
+  mru::hash_all_keys(ref_ev, base, ref_all);
+
+  std::printf("        geometry %u bits x %u events = %u-bit keys, correlated %u-mer signal\n",
+              base.bits_per_event, base.events_per_key, base.key_bits(), kPoreK);
+  std::printf("        reference %zu events, %zu keys at w=1\n\n", ref_ev.size(),
+              ref_all.size());
+
+  std::printf("        w | idx entries  kept%%  human idx | ref mins  recovered @1  @2   @4 "
+              "| recall@4  diag ok  margin\n");
+
+  for (std::uint32_t w : {1u, 5u, 10u, 20u}) {
+    mru::QuantConfig cfg = base;
+    cfg.minimizer_window = w;
+
+    std::vector<mru::SeedHash> ref_min;
+    mru::select_minimizers(ref_all, w, ref_min);
+    std::vector<std::uint32_t> ref_off;
+    ref_off.reserve(ref_min.size());
+    for (const mru::SeedHash& sh : ref_min) ref_off.push_back(sh.offset);
+
+    mru::MinimizerIndex idx;
+    idx.build(ref_min);
+
+    const double kept = ref_all.empty() ? 0.0
+                                        : static_cast<double>(ref_min.size()) /
+                                              static_cast<double>(ref_all.size());
+    // Human-scale index: entries x 8 bytes, at 0.5 load factor.
+    const double human_gb = kHumanEvents * kept / 0.5 * 8.0 / 1e9;
+
+    std::size_t avail_total = 0, rec1 = 0, rec2 = 0, rec4 = 0, qmins_total = 0;
+    std::size_t diag_ok = 0, scored = 0;
+    double margin_sum = 0.0;
+
+    for (std::size_t wi = 0; wi < kWindows; ++wi) {
+      const std::size_t raw_off =
+          (km.raw.size() - kQueryLen) * (wi + 1) / (kWindows + 1);
+      const std::size_t aligned =
+          (raw_off / base.samples_per_event) * base.samples_per_event;
+      const std::vector<std::int16_t> query(
+          km.raw.begin() + static_cast<std::ptrdiff_t>(aligned),
+          km.raw.begin() + static_cast<std::ptrdiff_t>(aligned + kQueryLen));
+      const auto q_scaling = mru::scaling_from_samples(query);
+      const auto z_qry = event_z(query, q_scaling, cfg);
+      if (z_qry.size() < cfg.events_per_key) continue;
+
+      std::vector<mru::QEvent> b_qry(z_qry.size());
+      for (std::size_t j = 0; j < z_qry.size(); ++j) {
+        b_qry[j] = mru::quantise_z(z_qry[j], cfg);
+      }
+      const auto true_diag =
+          static_cast<std::int64_t>(aligned / base.samples_per_event);
+      const std::size_t n_pos = z_qry.size() - cfg.events_per_key + 1;
+
+      // How many reference minimizers exist in this region at all? That is the
+      // ceiling on what any query can recover.
+      const auto lo = std::lower_bound(ref_off.begin(), ref_off.end(),
+                                       static_cast<std::uint32_t>(true_diag));
+      const auto hi = std::upper_bound(ref_off.begin(), ref_off.end(),
+                                       static_cast<std::uint32_t>(true_diag + static_cast<std::int64_t>(n_pos)));
+      avail_total += static_cast<std::size_t>(hi - lo);
+
+      // Query side selects its own minimizers from its own noisy keys.
+      std::vector<mru::SeedHash> q_all;
+      q_all.reserve(n_pos);
+      for (std::size_t j = 0; j < n_pos; ++j) {
+        q_all.push_back(mru::SeedHash{mru::hash64(mru::pack_key(b_qry.data() + j, cfg)),
+                                      static_cast<std::uint32_t>(j)});
+      }
+      std::vector<mru::SeedHash> q_min;
+      mru::select_minimizers(q_all, w, q_min);
+      qmins_total += q_min.size();
+
+      std::vector<Candidate> cands;
+      for (const mru::SeedHash& qm : q_min) {
+        const std::size_t j = qm.offset;
+        std::array<std::uint64_t, 4> keys{};
+        const std::size_t nk = variant_keys(b_qry, z_qry, j, cfg, 4, keys);
+        const auto want = true_diag + static_cast<std::int64_t>(j);
+
+        bool hit1 = false, hit2 = false, hit4 = false;
+        for (std::size_t k = 0; k < nk; ++k) {
+          std::uint64_t pos[16];
+          const std::size_t n = idx.query(mru::hash64(keys[k]), pos);
+          for (std::size_t q = 0; q < n; ++q) {
+            cands.push_back(Candidate{static_cast<std::uint32_t>(j), pos[q]});
+            if (std::llabs(static_cast<std::int64_t>(pos[q]) - want) <= 1) {
+              if (k == 0) hit1 = true;
+              if (k <= 1) hit2 = true;
+              hit4 = true;
+            }
+          }
+        }
+        if (hit1) ++rec1;
+        if (hit2) ++rec2;
+        if (hit4) ++rec4;
+      }
+
+      if (!cands.empty()) {
+        std::vector<std::int64_t> diags;
+        diags.reserve(cands.size());
+        for (const Candidate& c : cands) {
+          diags.push_back(static_cast<std::int64_t>(c.ref_position) -
+                          static_cast<std::int64_t>(c.key_offset));
+        }
+        std::sort(diags.begin(), diags.end());
+        std::int64_t best_diag = diags[0];
+        std::size_t best_votes = 0, second_votes = 0, run = 1;
+        for (std::size_t j = 1; j <= diags.size(); ++j) {
+          if (j < diags.size() && diags[j] == diags[j - 1]) {
+            ++run;
+            continue;
+          }
+          if (run > best_votes) {
+            second_votes = best_votes;
+            best_votes = run;
+            best_diag = diags[j - 1];
+          } else if (run > second_votes) {
+            second_votes = run;
+          }
+          run = 1;
+        }
+        ++scored;
+        if (std::llabs(best_diag - true_diag) <= 1) ++diag_ok;
+        margin_sum += static_cast<double>(best_votes) /
+                      static_cast<double>(std::max<std::size_t>(1, second_votes));
+      }
+    }
+
+    const double recall4 = avail_total == 0
+                               ? 0.0
+                               : 100.0 * static_cast<double>(rec4) /
+                                     static_cast<double>(avail_total);
+    std::printf("        %2u | %11zu %5.1f%% %7.1f GB | %8.1f %12.1f %5.1f %5.1f | "
+                "%7.1f%% %6zu/%-3zu %6.1fx\n",
+                w, ref_min.size(), 100.0 * kept, human_gb,
+                static_cast<double>(avail_total) / static_cast<double>(kWindows),
+                static_cast<double>(rec1) / static_cast<double>(kWindows),
+                static_cast<double>(rec2) / static_cast<double>(kWindows),
+                static_cast<double>(rec4) / static_cast<double>(kWindows), recall4,
+                diag_ok, scored,
+                scored == 0 ? 0.0 : margin_sum / static_cast<double>(scored));
+  }
+
+  std::printf("\n        'ref mins' and 'recovered' are per query window (%zu events).\n"
+              "        recall@4 is recovered/available: the ceiling is the reference\n"
+              "        minimizers that exist in the region, not the query's own count.\n",
+              kQueryLen / base.samples_per_event);
+
+  CHECK(true, "measurement completed");
 }
 
 }  // namespace
@@ -1053,6 +1415,7 @@ int main() {
   test_bucket_disagreement();
   test_specificity_scaling();
   test_geometry_sweep();
+  test_minimizer_window_penalty();
 
   std::printf("\n%s  (%d failure%s)\n", g_failures == 0 ? "PASSED" : "FAILED",
               g_failures, g_failures == 1 ? "" : "s");
