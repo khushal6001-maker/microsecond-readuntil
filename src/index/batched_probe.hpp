@@ -80,37 +80,68 @@ inline std::size_t probe_batch(const MinimizerIndex& index,
 
   std::size_t matched_seeds = 0;
 
-  for (std::size_t base = 0; base < seeds.size(); base += kProbeBatch) {
-    const std::size_t n = std::min(kProbeBatch, seeds.size() - base);
+  // PREFETCH DISTANCE, and why the obvious version did not work.
+  //
+  // The first cut of this issued all 16 prefetches and then immediately resolved
+  // the same 16. That gives each prefetch only the handful of instructions that
+  // follow it as cover -- tens of cycles against the ~80-100 ns it needs -- so the
+  // loads still stalled, and the extra bookkeeping made it a net LOSS. Measured:
+  // 60.8 ns/query scalar versus 69.3 ns/query batched, a 0.88x "speedup".
+  //
+  // Two ping-ponged buffers fix it: stage and prefetch batch i+1, THEN resolve
+  // batch i. Now each prefetch has a whole batch of resolution work to hide behind.
+  std::size_t slot[2][kProbeBatch];
+  std::uint64_t fp[2][kProbeBatch];
+  std::size_t staged[2] = {0, 0};
+  int cur = 0;
 
-    // ---- phase 1: issue every prefetch before touching any result ----
-    // Nothing here dereferences the table. That is the whole point: the loop must
-    // not stall, so all n misses are outstanding together.
-    std::size_t slot[kProbeBatch];
-    std::uint64_t fp[kProbeBatch];
+  // Computes slots and issues prefetches for one batch. Deliberately touches
+  // nothing in the table: that is what keeps the misses outstanding together.
+  const auto stage = [&](std::size_t base, int buf) -> std::size_t {
+    const std::size_t n = std::min(kProbeBatch, seeds.size() - base);
     for (std::size_t i = 0; i < n; ++i) {
       const std::uint64_t h = seeds[base + i].hash;
-      slot[i] = index.slot_of(h);
-      fp[i] = MinimizerIndex::fingerprint_of(h);
-      prefetch_for_read(&table[slot[i]]);
+      slot[buf][i] = index.slot_of(h);
+      fp[buf][i] = MinimizerIndex::fingerprint_of(h);
+      prefetch_for_read(&table[slot[buf][i]]);
     }
+    return n;
+  };
 
-    // ---- phase 2: resolve, lines now resident ----
+  std::size_t base = 0;
+  staged[cur] = stage(base, cur);
+
+  while (staged[cur] > 0) {
+    const std::size_t n = staged[cur];
+    const std::size_t next_base = base + n;
+    const int nxt = cur ^ 1;
+
+    // Stage the NEXT batch first, so its prefetches are in flight while this one
+    // is resolved.
+    staged[nxt] = next_base < seeds.size() ? stage(next_base, nxt) : 0;
+
     for (std::size_t i = 0; i < n; ++i) {
       SeedMatches& m = out[base + i];
       m.seed_offset = seeds[base + i].offset;
       m.count = 0;
 
-      std::size_t s = slot[i];
+      std::size_t s = slot[cur][i];
       std::size_t probes = 0;
+      std::size_t lines = 0;
+      std::size_t last_line = ~std::size_t{0};
       std::uint64_t rejects = 0;
 
       // Identical walk to MinimizerIndex::query(); see the correctness contract.
       for (std::size_t p = 0; p < MinimizerIndex::kMaxProbe; ++p) {
         ++probes;
+        const std::size_t line = s / kEntriesPerLine;
+        if (line != last_line) {
+          ++lines;
+          last_line = line;
+        }
         const MinimizerIndex::Entry e = table[s];
         if (e == MinimizerIndex::kEmpty) break;
-        if (MinimizerIndex::entry_fingerprint(e) == fp[i]) {
+        if (MinimizerIndex::entry_fingerprint(e) == fp[cur][i]) {
           m.positions[m.count++] = MinimizerIndex::entry_position(e);
           if (m.count == SeedMatches::kMaxPerSeed) break;
         } else {
@@ -128,9 +159,12 @@ inline std::size_t probe_batch(const MinimizerIndex& index,
           ++stats->misses;
         }
         stats->fingerprint_rejects += rejects;
-        stats->note_probe(probes);
+        stats->note_probe(probes, lines);
       }
     }
+
+    base = next_base;
+    cur = nxt;
   }
   return matched_seeds;
 }

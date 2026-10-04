@@ -44,34 +44,60 @@ namespace mru {
 // single-probe in practice; actual LLC miss counts come from `perf stat`, which
 // bench/perf/index_probe.sh wraps. Both belong in the paper: the histogram shows
 // the data structure behaves as designed, perf shows it translates to hardware.
+// Telemetry.
+//
+// A note on what "single probe" can honestly mean here. This index is a MULTIMAP:
+// a minimizer legitimately occurs many times, so a lookup cannot stop at the first
+// match -- it has to walk to the end of the run to find the duplicates. That means
+// any HIT necessarily touches at least two slots: the matching one and the empty
+// terminator. "One slot per query" is therefore not achievable by construction,
+// and measuring it would be measuring the wrong thing.
+//
+// The claim that is both true and useful is ONE CACHELINE. Eight 8-byte entries
+// per 64-byte line means a short probe run usually stays inside the line already
+// paid for, so the cost is one memory reference even though it is two or three
+// slot touches. cachelines[] measures exactly that, and it is the number that
+// belongs in the paper next to `perf stat`'s LLC-load-misses.
 struct IndexStats {
   std::uint64_t queries = 0;
   std::uint64_t hits = 0;
   std::uint64_t misses = 0;
   std::uint64_t fingerprint_rejects = 0;  // right slot, wrong fingerprint
-  // probe_len[i] = queries that touched i+1 slots; last bucket is saturating.
-  static constexpr std::size_t kMaxProbeBuckets = 16;
-  std::uint64_t probe_len[kMaxProbeBuckets] = {};
 
-  void note_probe(std::size_t probes) noexcept {
-    const std::size_t b = std::min(probes == 0 ? std::size_t{0} : probes - 1,
-                                   kMaxProbeBuckets - 1);
-    ++probe_len[b];
+  static constexpr std::size_t kMaxProbeBuckets = 16;
+  // slots[i]      = queries that touched i+1 slots
+  // cachelines[i] = queries that touched i+1 distinct cachelines
+  std::uint64_t slots[kMaxProbeBuckets] = {};
+  std::uint64_t cachelines[kMaxProbeBuckets] = {};
+
+  void note_probe(std::size_t slot_touches, std::size_t line_touches) noexcept {
+    const auto bucket = [](std::size_t n) {
+      return std::min(n == 0 ? std::size_t{0} : n - 1, kMaxProbeBuckets - 1);
+    };
+    ++slots[bucket(slot_touches)];
+    ++cachelines[bucket(line_touches)];
   }
 
-  [[nodiscard]] double mean_probes() const noexcept {
+  [[nodiscard]] static double mean_of(const std::uint64_t (&h)[kMaxProbeBuckets]) noexcept {
     std::uint64_t n = 0, total = 0;
     for (std::size_t i = 0; i < kMaxProbeBuckets; ++i) {
-      n += probe_len[i];
-      total += probe_len[i] * (i + 1);
+      n += h[i];
+      total += h[i] * (i + 1);
     }
     return n ? static_cast<double>(total) / static_cast<double>(n) : 0.0;
   }
-  // Fraction of queries resolved in a single slot touch.
-  [[nodiscard]] double single_probe_fraction() const noexcept {
+  [[nodiscard]] static double first_bucket_fraction(
+      const std::uint64_t (&h)[kMaxProbeBuckets]) noexcept {
     std::uint64_t n = 0;
-    for (std::size_t i = 0; i < kMaxProbeBuckets; ++i) n += probe_len[i];
-    return n ? static_cast<double>(probe_len[0]) / static_cast<double>(n) : 0.0;
+    for (std::size_t i = 0; i < kMaxProbeBuckets; ++i) n += h[i];
+    return n ? static_cast<double>(h[0]) / static_cast<double>(n) : 0.0;
+  }
+
+  [[nodiscard]] double mean_slots() const noexcept { return mean_of(slots); }
+  [[nodiscard]] double mean_cachelines() const noexcept { return mean_of(cachelines); }
+  // THE design claim: the probe run fits in one cacheline.
+  [[nodiscard]] double single_cacheline_fraction() const noexcept {
+    return first_bucket_fraction(cachelines);
   }
 
   void merge(const IndexStats& o) noexcept {
@@ -79,9 +105,15 @@ struct IndexStats {
     hits += o.hits;
     misses += o.misses;
     fingerprint_rejects += o.fingerprint_rejects;
-    for (std::size_t i = 0; i < kMaxProbeBuckets; ++i) probe_len[i] += o.probe_len[i];
+    for (std::size_t i = 0; i < kMaxProbeBuckets; ++i) {
+      slots[i] += o.slots[i];
+      cachelines[i] += o.cachelines[i];
+    }
   }
 };
+
+// Entries per 64-byte cacheline, given 8-byte entries.
+inline constexpr std::size_t kEntriesPerLine = kCacheline / sizeof(std::uint64_t);
 
 class MinimizerIndex {
  public:
@@ -118,7 +150,28 @@ class MinimizerIndex {
   // Returns false if the probe bound was hit (counted in insert_failures()).
   [[nodiscard]] bool insert(std::uint64_t hash, std::uint64_t position);
 
-  void build(std::span<const SeedHash> seeds);
+  // Builds the table, capping how many times any one key may be stored.
+  //
+  // The cap is NOT tuning, it is required for the structure to work at all.
+  // Quantised signal keys are violently skewed: a slowly varying signal emits long
+  // runs of identical keys, they all hash to one slot, the cluster grows past
+  // kMaxProbe, and inserts start failing. Measured before the cap existed: 39992
+  // seeds in a 131072-slot table stored only ~3900 of them, load 0.03, and recall
+  // at zero noise collapsed from the expected ~100% to 20.9%. The index had
+  // silently discarded 90% of itself and nothing complained.
+  //
+  // Capping is also the right thing on the merits. A key occurring thousands of
+  // times carries almost no positional information; it costs a long probe walk to
+  // return matches that chaining will discard anyway. Real minimizer indexes
+  // discard high-occurrence seeds for exactly this reason.
+  //
+  // Check insert_failures() after building. It should be zero; anything else means
+  // the cap is still too loose or the table too small for this key distribution.
+  void build(std::span<const SeedHash> seeds, std::uint32_t max_occurrences = 8);
+
+  // Keys dropped by the occurrence cap during the last build().
+  [[nodiscard]] std::uint64_t capped_seeds() const noexcept { return capped_seeds_; }
+  [[nodiscard]] std::uint64_t distinct_keys() const noexcept { return distinct_keys_; }
 
   // Up to out.size() positions for `hash`. Returns how many were written.
   // This is the scalar reference implementation: batched_probe.hpp must agree
@@ -156,6 +209,8 @@ class MinimizerIndex {
   std::size_t mask_ = 0;
   std::size_t count_ = 0;
   std::uint64_t insert_failures_ = 0;
+  std::uint64_t capped_seeds_ = 0;
+  std::uint64_t distinct_keys_ = 0;
 };
 
 inline void MinimizerIndex::reserve(std::size_t expected_seeds) {
@@ -198,10 +253,48 @@ inline bool MinimizerIndex::insert(std::uint64_t hash, std::uint64_t position) {
   return false;
 }
 
-inline void MinimizerIndex::build(std::span<const SeedHash> seeds) {
-  reserve(seeds.size());
-  for (const SeedHash& s : seeds) {
-    (void)insert(s.hash, s.offset);
+inline void MinimizerIndex::build(std::span<const SeedHash> seeds,
+                                  std::uint32_t max_occurrences) {
+  capped_seeds_ = 0;
+  distinct_keys_ = 0;
+  if (seeds.empty() || max_occurrences == 0) {
+    reserve(1);
+    return;
+  }
+
+  // Sort by hash so runs of one key are contiguous and can be counted in a single
+  // pass. Sorting the build input is fine: build is offline, and only query latency
+  // is on the critical path.
+  std::vector<SeedHash> sorted(seeds.begin(), seeds.end());
+  std::sort(sorted.begin(), sorted.end(), [](const SeedHash& a, const SeedHash& b) {
+    return a.hash != b.hash ? a.hash < b.hash : a.offset < b.offset;
+  });
+
+  // Pass 1: how many entries survive the cap, so the table is sized for what is
+  // actually stored rather than for the raw seed count.
+  std::size_t keep = 0;
+  for (std::size_t i = 0; i < sorted.size();) {
+    std::size_t j = i;
+    while (j < sorted.size() && sorted[j].hash == sorted[i].hash) ++j;
+    const std::size_t run = j - i;
+    ++distinct_keys_;
+    const std::size_t take = std::min<std::size_t>(run, max_occurrences);
+    keep += take;
+    capped_seeds_ += run - take;
+    i = j;
+  }
+
+  reserve(keep);
+
+  // Pass 2: insert, keeping at most max_occurrences per key.
+  for (std::size_t i = 0; i < sorted.size();) {
+    std::size_t j = i;
+    while (j < sorted.size() && sorted[j].hash == sorted[i].hash) ++j;
+    const std::size_t take = std::min<std::size_t>(j - i, max_occurrences);
+    for (std::size_t k = 0; k < take; ++k) {
+      (void)insert(sorted[i + k].hash, sorted[i + k].offset);
+    }
+    i = j;
   }
 }
 
@@ -212,10 +305,17 @@ inline std::size_t MinimizerIndex::query(std::uint64_t hash, std::span<std::uint
   std::size_t slot = slot_of(hash);
   std::size_t found = 0;
   std::size_t probes = 0;
+  std::size_t lines = 0;
+  std::size_t last_line = ~std::size_t{0};
   std::uint64_t rejects = 0;
 
   for (std::size_t p = 0; p < kMaxProbe; ++p) {
     ++probes;
+    const std::size_t line = slot / kEntriesPerLine;
+    if (line != last_line) {
+      ++lines;
+      last_line = line;
+    }
     const Entry e = table_[slot];
     if (e == kEmpty) break;  // open addressing: empty slot ends the run
     if (entry_fingerprint(e) == fp) {
@@ -235,7 +335,7 @@ inline std::size_t MinimizerIndex::query(std::uint64_t hash, std::span<std::uint
       ++stats->misses;
     }
     stats->fingerprint_rejects += rejects;
-    stats->note_probe(probes);
+    stats->note_probe(probes, lines);
   }
   return found;
 }
