@@ -1248,7 +1248,7 @@ void test_minimizer_window_penalty() {
   std::printf("        reference %zu events, %zu keys at w=1\n\n", ref_ev.size(),
               ref_all.size());
 
-  std::printf("        w | idx entries  kept%%  human idx | ref mins  recovered @1  @2   @4 "
+  std::printf("        w | idx entries  kept%%  human idx | ref mins q mins  rec@1  @2   @4 "
               "| recall@4  diag ok  margin\n");
 
   for (std::uint32_t w : {1u, 5u, 10u, 20u}) {
@@ -1373,10 +1373,14 @@ void test_minimizer_window_penalty() {
                                ? 0.0
                                : 100.0 * static_cast<double>(rec4) /
                                      static_cast<double>(avail_total);
-    std::printf("        %2u | %11zu %5.1f%% %7.1f GB | %8.1f %12.1f %5.1f %5.1f | "
+    // q mins is reported, not merely accumulated: the gap between the reference's
+    // minimizers in a region and the query's own selections is the SELECTION
+    // mismatch, which is the failure multi-probe cannot repair.
+    std::printf("        %2u | %11zu %5.1f%% %7.1f GB | %8.1f %6.1f %6.1f %5.1f %5.1f | "
                 "%7.1f%% %6zu/%-3zu %6.1fx\n",
                 w, ref_min.size(), 100.0 * kept, human_gb,
                 static_cast<double>(avail_total) / static_cast<double>(kWindows),
+                static_cast<double>(qmins_total) / static_cast<double>(kWindows),
                 static_cast<double>(rec1) / static_cast<double>(kWindows),
                 static_cast<double>(rec2) / static_cast<double>(kWindows),
                 static_cast<double>(rec4) / static_cast<double>(kWindows), recall4,
