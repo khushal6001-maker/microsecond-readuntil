@@ -223,6 +223,11 @@ endif()
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+# Bench tools: need real data (a reference FASTA, an ONT pore model), so they are
+# built but never registered as tests -- CI has neither.
+add_executable(mru_real_reference bench/real_reference.cpp)
+target_link_libraries(mru_real_reference PRIVATE mru_core mru_warnings mru_sanitizers)
+
 if(MRU_BUILD_TESTS)
   enable_testing()
 
