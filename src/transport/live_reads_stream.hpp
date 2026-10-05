@@ -142,6 +142,19 @@ struct StreamConfig {
   unsigned shard_count = 4;  // power of two
   CorePlan cores{};
 
+  // Whether to pin the data-plane threads at all.
+  //
+  // This is a real switch, not a convenience. The daemon originally expressed "do not
+  // pin" by pointing every role at core 0, and since the stream pinned unconditionally
+  // that put the reader, the writer and every worker on ONE core. Six threads sharing a
+  // core is strictly worse than letting the scheduler place them, and it showed up as a
+  // decision-path p99 sixteen times the median -- preemption, not work.
+  //
+  // Pinning is right on a host prepared for it (isolcpus, nohz_full, IRQs moved off the
+  // measured cores). On a shared or virtualised box it is actively harmful. Defaulting to
+  // true keeps the production intent; the daemon turns it off unless asked.
+  bool pin_threads = true;
+
   std::size_t arena_slots = 32;
   std::size_t arena_block_bytes = 4u * 1024 * 1024;  // size from measurement
 
@@ -378,7 +391,7 @@ inline void LiveReadsStream::stop() {
 
 inline void LiveReadsStream::reader_loop(std::stop_token st) {
   (void)set_thread_name("mru-reader");
-  (void)pin_this_thread_to_core(cfg_.cores.reader_core);
+  if (cfg_.pin_threads) (void)pin_this_thread_to_core(cfg_.cores.reader_core);
 
   IdleWait idle;
   while (!st.stop_requested()) {
@@ -456,7 +469,7 @@ inline void LiveReadsStream::note_action_responses(const Resp& resp) {
 
 inline void LiveReadsStream::worker_loop(std::stop_token st, unsigned shard) {
   (void)set_thread_name("mru-worker");
-  (void)pin_this_thread_to_core(cfg_.cores.worker_core(shard));
+  if (cfg_.pin_threads) (void)pin_this_thread_to_core(cfg_.cores.worker_core(shard));
 
   // This worker owns a disjoint subset of channels for the whole run, so none of
   // this state needs synchronisation. The table covers the full range; only the
@@ -512,7 +525,7 @@ inline void LiveReadsStream::worker_loop(std::stop_token st, unsigned shard) {
 
 inline void LiveReadsStream::writer_loop(std::stop_token st) {
   (void)set_thread_name("mru-writer");
-  (void)pin_this_thread_to_core(cfg_.cores.writer_core);
+  if (cfg_.pin_threads) (void)pin_this_thread_to_core(cfg_.cores.writer_core);
 
   // One reused request message: clear_actions() recycles the repeated field's
   // storage, so the action ids and read id strings do not reallocate every tick.

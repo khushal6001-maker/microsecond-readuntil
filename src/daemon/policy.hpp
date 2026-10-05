@@ -183,13 +183,25 @@ class SignalPolicy {
     // ReadData and would remove the sort entirely. They are not currently carried in
     // ChunkRef; adding them costs 8 bytes and the struct has exactly that much room
     // before it outgrows a cacheline.
+    // Per-worker scratch, reserved once. Chunks are sharded by channel, so each thread
+    // owns its own buffers and nothing here allocates after the first chunk -- which is
+    // the whole point: allocation on this path produced a p99 of 223 us and a 9.5 ms
+    // maximum against a 27.8 us median.
+    thread_local ProbeScratch scratch;
+    thread_local ScalingScratch scaling_scratch;
+    thread_local bool reserved = false;
+    if (!reserved) {
+      scratch.reserve_for(raw.size() * 2, cfg_.quant, cfg_.probe_budget);
+      scaling_scratch.reserve(raw.size() * 2);
+      reserved = true;
+    }
+
     if (!v.have_scaling) {
-      v.scaling = scaling_from_samples(raw);
+      v.scaling = scaling_from_samples(raw, scaling_scratch);
       v.have_scaling = v.scaling.valid();
       if (!v.have_scaling) return std::nullopt;
     }
 
-    thread_local ProbeScratch scratch;
     const std::size_t matched =
         match_signal(index_, raw, v.scaling, cfg_.quant, scratch, cfg_.probe_budget);
     (void)matched;

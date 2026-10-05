@@ -263,12 +263,22 @@ int main(int argc, char** argv) {
   cfg.arena_block_bytes = 4u * 1024 * 1024;
   cfg.writer_tick = std::chrono::microseconds(500);
   cfg.cores.worker_count = args.shards;
-  if (!args.pin) {
-    // Park every role on core 0 so an unpinned run does not fight the scheduler;
-    // IdleWait yields, so this stays correct, just not latency-optimal.
+  // Pin only when asked, and then to distinct cores. The previous version expressed
+  // "do not pin" by pointing every role at core 0, which, because the stream pinned
+  // unconditionally, crowded six threads onto one core and inflated the decision-path
+  // p99 to sixteen times the median.
+  cfg.pin_threads = args.pin;
+  if (args.pin) {
+    const unsigned cores = mru::hardware_cores();
     cfg.cores.reader_core = 0;
-    cfg.cores.writer_core = 0;
-    cfg.cores.first_worker_core = 0;
+    cfg.cores.writer_core = cores > 1 ? 1u : 0u;
+    cfg.cores.first_worker_core = cores > 2 ? 2u : 0u;
+    if (!cfg.cores.fits_on_host()) {
+      std::printf("WARNING: --pin needs %u cores for %s but the host has %u; "
+                  "pinning anyway, expect contention\n",
+                  cfg.cores.first_worker_core + cfg.cores.worker_count,
+                  cfg.cores.describe().c_str(), cores);
+    }
   }
   if (!cfg.valid()) {
     std::printf("invalid configuration: shards must be a power of two and "

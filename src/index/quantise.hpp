@@ -52,26 +52,68 @@ struct SignalScaling {
   }
 };
 
-// Median and MAD-derived scale, for tests and for the case where MinKNOW's
-// medians are unavailable. Sorts a copy, so NOT for the hot path.
-[[nodiscard]] inline SignalScaling scaling_from_samples(std::span<const std::int16_t> s) {
-  if (s.empty()) return {};
-  std::vector<std::int16_t> tmp(s.begin(), s.end());
-  const std::size_t mid = tmp.size() / 2;
-  std::nth_element(tmp.begin(), tmp.begin() + static_cast<std::ptrdiff_t>(mid), tmp.end());
-  const float median = static_cast<float>(tmp[mid]);
-
+// Reusable buffers for median/MAD estimation.
+//
+// This exists because of a measured latency tail, not on principle. The allocating form
+// below does TWO heap allocations per read -- a copy of the samples and a vector of
+// absolute deviations -- and with four workers calling it concurrently that showed up as
+// a decision-path p99 of 223 us and a 9.5 ms maximum against a 27.8 us median. The
+// nth_element itself is only a microsecond or two at 1600 samples; the allocator and the
+// first-touch page faults were the tail.
+//
+// One per worker, reused across reads. The arithmetic is unchanged, deliberately: the
+// frozen geometry and the >= 4 vote threshold were both measured against this exact
+// estimator, so altering the maths here would invalidate them.
+struct ScalingScratch {
+  std::vector<std::int16_t> samples;
   std::vector<float> dev;
-  dev.reserve(tmp.size());
-  for (std::int16_t v : s) dev.push_back(std::fabs(static_cast<float>(v) - median));
-  const std::size_t dmid = dev.size() / 2;
-  std::nth_element(dev.begin(), dev.begin() + static_cast<std::ptrdiff_t>(dmid), dev.end());
+
+  void reserve(std::size_t n) {
+    samples.reserve(n);
+    dev.reserve(n);
+  }
+};
+
+// Median and MAD-derived scale. Allocation-free given warmed scratch.
+//
+// Nanopore reads need per-read normalisation: every pore has its own offset and gain.
+// Median/MAD is the standard robust choice because stalls and spikes would wreck a
+// mean/stddev estimate -- and PoreModel::reference_to_events uses the SAME estimator, so
+// the two sides agree on a bucket. They did not always; see the note there.
+//
+// MinKNOW does send `median` and `median_before` in ReadData, which would remove the
+// shift estimate entirely. They are not used yet because switching the estimator changes
+// recall, and recall is what the geometry and the vote threshold were chosen against.
+// Taking that shortcut means re-measuring both.
+[[nodiscard]] inline SignalScaling scaling_from_samples(std::span<const std::int16_t> s,
+                                                       ScalingScratch& scratch) {
+  if (s.empty()) return {};
+  scratch.samples.assign(s.begin(), s.end());
+  const std::size_t mid = scratch.samples.size() / 2;
+  std::nth_element(scratch.samples.begin(),
+                   scratch.samples.begin() + static_cast<std::ptrdiff_t>(mid),
+                   scratch.samples.end());
+  const float median = static_cast<float>(scratch.samples[mid]);
+
+  scratch.dev.clear();
+  for (std::int16_t v : s) scratch.dev.push_back(std::fabs(static_cast<float>(v) - median));
+  const std::size_t dmid = scratch.dev.size() / 2;
+  std::nth_element(scratch.dev.begin(),
+                   scratch.dev.begin() + static_cast<std::ptrdiff_t>(dmid),
+                   scratch.dev.end());
 
   SignalScaling out;
   out.shift = median;
   // 1.4826 * MAD estimates sigma for a normal distribution.
-  out.scale = std::max(1e-3f, 1.4826f * dev[dmid]);
+  out.scale = std::max(1e-3f, 1.4826f * scratch.dev[dmid]);
   return out;
+}
+
+// Convenience form for tests and offline tools, where one allocation per call does not
+// matter. Identical arithmetic; never use it on the decision path.
+[[nodiscard]] inline SignalScaling scaling_from_samples(std::span<const std::int16_t> s) {
+  ScalingScratch scratch;
+  return scaling_from_samples(s, scratch);
 }
 
 // All the knobs in one place, so a sweep is a loop over configs rather than a
