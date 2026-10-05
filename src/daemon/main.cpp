@@ -36,6 +36,7 @@
 #include <fstream>
 
 #include "core/affinity.hpp"
+#include "core/hdr_latency.hpp"
 #include "core/tsc.hpp"
 #include "daemon/policy.hpp"
 #include "index/minimizer_index.hpp"
@@ -66,6 +67,7 @@ struct Args {
   std::uint32_t max_chunks = 10;
   int probe_budget = mru::kDefaultProbeBudget;
   bool pin = false;  // off by default: pinning a dev box is rarely what you want
+  std::string latency_out;  // write the full percentile distribution here
 };
 
 void usage() {
@@ -86,7 +88,8 @@ void usage() {
       "  --accept-votes N        diagonal votes to call on-target, default 5\n"
       "  --max-chunks N          defer up to N chunks before unblocking, default 10\n"
       "  --probes N              keys probed per seed (1, 2 or 4), default 4\n"
-      "  --pin                   pin data-plane threads to cores\n");
+      "  --pin                   pin data-plane threads to cores\n"
+      "  --latency-out PATH      write the full latency distribution for plotting\n");
 }
 
 [[nodiscard]] bool parse_args(int argc, char** argv, Args& a) {
@@ -104,6 +107,10 @@ void usage() {
       return false;
     } else if (k == "--insecure") {
       a.insecure = true;
+    } else if (k == "--latency-out") {
+      const char* v = next("--latency-out");
+      if (v == nullptr) return false;
+      a.latency_out = v;
     } else if (k == "--pin") {
       a.pin = true;
     } else if (k == "--target") {
@@ -362,7 +369,9 @@ int main(int argc, char** argv) {
   // This times the POLICY ONLY: quantise, probe, vote, decide. It excludes gRPC receive
   // and protobuf parse, which is deliberate, because it is the number comparable to what
   // a basecall-free orchestration loop reports for its own per-read work.
-  std::vector<mru::CycleHistogram> policy_hist(cfg.shard_count);
+  std::vector<mru::LatencyRecorder> policy_hist;
+  policy_hist.reserve(cfg.shard_count);
+  for (unsigned i = 0; i < cfg.shard_count; ++i) policy_hist.emplace_back();
   const unsigned shard_mask = cfg.shard_count - 1;
 
   std::atomic<std::uint64_t> policy_calls{0};
@@ -429,21 +438,34 @@ int main(int argc, char** argv) {
   std::printf("\n%s", stream.stats().describe().c_str());
   if (use_index) std::printf("%s", pstats.describe().c_str());
 
-  mru::CycleHistogram merged;
+  mru::LatencyRecorder merged;
   for (const auto& h : policy_hist) merged.merge(h);
   if (merged.count() > 0) {
     const auto& clk = mru::TscClock::instance();
-    std::printf("decision path (policy only, %llu calls): p50 %.2f us, p99 %.2f us, "
-                "p99.9 %.2f us, max %.2f us, mean %.2f us\n",
-                static_cast<unsigned long long>(merged.count()),
-                clk.to_us(merged.percentile(0.50)), clk.to_us(merged.percentile(0.99)),
-                clk.to_us(merged.percentile(0.999)), clk.to_us(merged.max()),
-                clk.to_ns(static_cast<std::uint64_t>(merged.mean())) / 1000.0);
-    if (!clk.invariant()) {
-      std::printf("  WARNING: TSC is not invariant here, so these are indicative only.\n");
+    std::printf("decision path (policy only): %s\n",
+                mru::format_latency_us(merged, clk).c_str());
+    std::printf("  histogram: %s\n", mru::LatencyRecorder::backend());
+    if (merged.out_of_range() > 0) {
+      std::printf("  WARNING: %llu samples exceeded the histogram ceiling and are NOT in\n"
+                  "  the percentiles above -- the real tail is worse than reported.\n",
+                  static_cast<unsigned long long>(merged.out_of_range()));
     }
-    std::printf("  NOTE: power-of-two histogram buckets, so percentiles are upper bounds\n"
-                "  at ~2x resolution. Use HdrHistogram for publication figures.\n");
+    if (!clk.invariant()) {
+      std::printf("  WARNING: TSC is not invariant on this host, so these are indicative\n"
+                  "  only. Publication numbers need an invariant TSC.\n");
+    }
+    if (!args.latency_out.empty()) {
+      std::FILE* f = std::fopen(args.latency_out.c_str(), "w");
+      if (f != nullptr) {
+        // Scale cycles to microseconds so the dumped distribution is in real units.
+        const bool ok = merged.print_distribution(f, clk.cycles_per_ns() * 1000.0);
+        std::fclose(f);
+        std::printf("  distribution %s to %s\n", ok ? "written" : "NOT written (fallback "
+                    "histogram cannot produce one)", args.latency_out.c_str());
+      } else {
+        std::printf("  could not open %s for writing\n", args.latency_out.c_str());
+      }
+    }
   }
   std::printf("policy calls: %llu\n",
               static_cast<unsigned long long>(policy_calls.load()));

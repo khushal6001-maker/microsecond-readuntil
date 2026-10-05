@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
-project(microsecond_readuntil VERSION 0.1.0 LANGUAGES CXX)
+# C is enabled for exactly one reason: the vendored HdrHistogram core is C.
+project(microsecond_readuntil VERSION 0.1.0 LANGUAGES C CXX)
 
 # ---------------------------------------------------------------------------
 # Standard / defaults
@@ -136,6 +137,37 @@ if(MRU_NATIVE)
 endif()
 
 # ---------------------------------------------------------------------------
+# HdrHistogram: latency percentiles with bounded relative error
+# ---------------------------------------------------------------------------
+#
+# Auto-enabled when the submodule is present. Only the core translation unit is built:
+# hdr_histogram_log.c and hdr_packed_histogram.c need zlib and we use neither, and the
+# core has no dependency beyond libm.
+#
+# Without it, core/hdr_latency.hpp falls back to the power-of-two CycleHistogram and says
+# so in every line it prints, because a bucketed upper bound must not be mistaken for a
+# measured percentile.
+set(MRU_HDR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/HdrHistogram_c")
+if(EXISTS "${MRU_HDR_DIR}/src/hdr_histogram.c")
+  add_library(mru_hdr STATIC "${MRU_HDR_DIR}/src/hdr_histogram.c")
+  target_include_directories(mru_hdr SYSTEM PUBLIC "${MRU_HDR_DIR}/include")
+  target_include_directories(mru_hdr PRIVATE "${MRU_HDR_DIR}/src")
+  target_compile_definitions(mru_hdr PRIVATE HDR_MALLOC_INCLUDE="hdr_malloc.h")
+  if(NOT MSVC)
+    # Vendored C, not ours to keep warning-clean under -Werror.
+    target_compile_options(mru_hdr PRIVATE -w)
+    target_link_libraries(mru_hdr PUBLIC m)
+  endif()
+
+  target_compile_definitions(mru_core INTERFACE MRU_WITH_HDR=1)
+  target_link_libraries(mru_core INTERFACE mru_hdr)
+  message(STATUS "mru: HdrHistogram enabled (vendored 0.12.0)")
+else()
+  message(STATUS "mru: HdrHistogram submodule absent -- latency percentiles fall back to "
+                 "power-of-two buckets. git submodule update --init --recursive")
+endif()
+
+# ---------------------------------------------------------------------------
 # Optional transport layer (step 3; off by default so step 1-2 needs no deps)
 # ---------------------------------------------------------------------------
 if(MRU_WITH_TRANSPORT)
@@ -256,6 +288,17 @@ if(MRU_BUILD_TESTS)
 
   add_test(NAME index.quantise_and_probe COMMAND mru_index_test)
   set_tests_properties(index.quantise_and_probe PROPERTIES TIMEOUT 600)
+
+  # The latency instrument is tested in every configuration, and the test adapts to
+  # which backend is compiled in: with HdrHistogram it enforces the 0.1% relative-error
+  # guarantee, with the fallback it enforces only that a percentile is an upper bound.
+  # Both are worth checking -- the sanitizer jobs build one and the transport job the
+  # other, and an untested percentile path is what made the earlier tail figures wrong.
+  add_executable(mru_hdr_latency_test test/hdr_latency_test.cpp)
+  target_link_libraries(mru_hdr_latency_test PRIVATE mru_core mru_warnings mru_sanitizers)
+
+  add_test(NAME core.hdr_latency COMMAND mru_hdr_latency_test)
+  set_tests_properties(core.hdr_latency PROPERTIES TIMEOUT 300)
 
   # Credential discovery has no gRPC dependency, so it is tested in every
   # configuration rather than only in the transport build.

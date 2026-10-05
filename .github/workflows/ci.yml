@@ -65,6 +65,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Only the HdrHistogram submodule, not `submodules: recursive`. These jobs do not
+      # build the proto tree, and minknow_api is large. Without this the sanitizer
+      # matrix would compile the power-of-two FALLBACK and the real percentile code --
+      # the code every published latency figure now depends on -- would be built under
+      # no sanitizer and tested in no configuration.
+      - name: Fetch HdrHistogram submodule
+        run: git submodule update --init --depth 1 third_party/HdrHistogram_c
+
       - name: Install toolchain
         # libclang-rt-dev is NOT optional and is easy to miss: the sanitizer runtime
         # archives (libclang_rt.tsan-x86_64.a and friends) live there, not in `clang`.
