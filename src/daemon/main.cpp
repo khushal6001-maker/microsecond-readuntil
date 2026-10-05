@@ -36,6 +36,7 @@
 #include <fstream>
 
 #include "core/affinity.hpp"
+#include "core/tsc.hpp"
 #include "daemon/policy.hpp"
 #include "index/minimizer_index.hpp"
 #include "index/quantise.hpp"
@@ -342,22 +343,41 @@ int main(int argc, char** argv) {
                 args.unblock_after_chunks);
   }
 
+  // Decision-path latency, for comparison against other adaptive-sampling clients.
+  //
+  // One histogram per shard, indexed by channel. Chunks are sharded by channel, so each
+  // histogram is touched by exactly one worker and needs no synchronisation -- the same
+  // argument that makes the per-channel policy state safe.
+  //
+  // This times the POLICY ONLY: quantise, probe, vote, decide. It excludes gRPC receive
+  // and protobuf parse, which is deliberate, because it is the number comparable to what
+  // a basecall-free orchestration loop reports for its own per-read work.
+  std::vector<mru::CycleHistogram> policy_hist(cfg.shard_count);
+  const unsigned shard_mask = cfg.shard_count - 1;
+
   std::atomic<std::uint64_t> policy_calls{0};
   const std::uint32_t after = args.unblock_after_chunks;
   mru::LiveReadsStream::PolicyFn policy;
   if (signal_policy) {
-    policy = [&policy_calls, &signal_policy](const mru::ChunkRef& c,
-                                             const mru::ChannelState& s)
+    policy = [&policy_calls, &signal_policy, &policy_hist, shard_mask](
+                 const mru::ChunkRef& c, const mru::ChannelState& s)
         -> std::optional<mru::Decision> {
       policy_calls.fetch_add(1, std::memory_order_relaxed);
-      return (*signal_policy)(c, s);
+      const std::uint64_t t0 = mru::rdtscp();
+      auto d = (*signal_policy)(c, s);
+      policy_hist[c.channel & shard_mask].record(mru::rdtscp() - t0);
+      return d;
     };
   } else {
-    policy = [&policy_calls, after](const mru::ChunkRef& c, const mru::ChannelState& s)
+    policy = [&policy_calls, after, &policy_hist, shard_mask](
+                 const mru::ChunkRef& c, const mru::ChannelState& s)
         -> std::optional<mru::Decision> {
       policy_calls.fetch_add(1, std::memory_order_relaxed);
-      if (s.chunks_seen < after) return std::nullopt;
-      return mru::Decision::reject(c, 0, 0.1);
+      const std::uint64_t t0 = mru::rdtscp();
+      std::optional<mru::Decision> d;
+      if (s.chunks_seen >= after) d = mru::Decision::reject(c, 0, 0.1);
+      policy_hist[c.channel & shard_mask].record(mru::rdtscp() - t0);
+      return d;
     };
   }
 
@@ -398,6 +418,23 @@ int main(int argc, char** argv) {
 
   std::printf("\n%s", stream.stats().describe().c_str());
   if (use_index) std::printf("%s", pstats.describe().c_str());
+
+  mru::CycleHistogram merged;
+  for (const auto& h : policy_hist) merged.merge(h);
+  if (merged.count() > 0) {
+    const auto& clk = mru::TscClock::instance();
+    std::printf("decision path (policy only, %llu calls): p50 %.2f us, p99 %.2f us, "
+                "p99.9 %.2f us, max %.2f us, mean %.2f us\n",
+                static_cast<unsigned long long>(merged.count()),
+                clk.to_us(merged.percentile(0.50)), clk.to_us(merged.percentile(0.99)),
+                clk.to_us(merged.percentile(0.999)), clk.to_us(merged.max()),
+                clk.to_ns(static_cast<std::uint64_t>(merged.mean())) / 1000.0);
+    if (!clk.invariant()) {
+      std::printf("  WARNING: TSC is not invariant here, so these are indicative only.\n");
+    }
+    std::printf("  NOTE: power-of-two histogram buckets, so percentiles are upper bounds\n"
+                "  at ~2x resolution. Use HdrHistogram for publication figures.\n");
+  }
   std::printf("policy calls: %llu\n",
               static_cast<unsigned long long>(policy_calls.load()));
   if (!stream.last_error().empty()) {
