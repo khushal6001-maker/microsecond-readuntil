@@ -272,6 +272,12 @@ target_link_libraries(mru_offtarget PRIVATE mru_core mru_warnings mru_sanitizers
 add_executable(mru_geometry_sweep bench/geometry_sweep.cpp)
 target_link_libraries(mru_geometry_sweep PRIVATE mru_core mru_warnings mru_sanitizers)
 
+# Does the diagonal vote survive variable dwell time? Every synthetic read in this
+# project was generated at a fixed samples-per-event, which makes the query-to-reference
+# event mapping exact by construction -- an assumption quantise.hpp flags as untested.
+add_executable(mru_dwell_robustness bench/dwell_robustness.cpp)
+target_link_libraries(mru_dwell_robustness PRIVATE mru_core mru_warnings mru_sanitizers)
+
 if(MRU_BUILD_TESTS)
   enable_testing()
 
