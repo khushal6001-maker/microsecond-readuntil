@@ -278,6 +278,12 @@ target_link_libraries(mru_geometry_sweep PRIVATE mru_core mru_warnings mru_sanit
 add_executable(mru_dwell_robustness bench/dwell_robustness.cpp)
 target_link_libraries(mru_dwell_robustness PRIVATE mru_core mru_warnings mru_sanitizers)
 
+# Feasibility probe for the one fix that could survive variable dwell: keying on
+# run-length compressed buckets instead of fixed time slices. Standalone on purpose --
+# own index, own vote map -- because the question is whether the idea works at all.
+add_executable(mru_rlc_feasibility bench/rlc_feasibility.cpp)
+target_link_libraries(mru_rlc_feasibility PRIVATE mru_core mru_warnings mru_sanitizers)
+
 if(MRU_BUILD_TESTS)
   enable_testing()
 
