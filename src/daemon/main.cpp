@@ -67,6 +67,7 @@ struct Args {
   std::uint32_t max_chunks = 10;
   int probe_budget = mru::kDefaultProbeBudget;
   bool pin = false;  // off by default: pinning a dev box is rarely what you want
+  bool detect = false;       // segment the query by detected events
   std::uint32_t bits = 0;    // 0 = keep the frozen default
   std::uint32_t events = 0;  // 0 = keep the frozen default
   std::string latency_out;  // write the full percentile distribution here
@@ -90,7 +91,9 @@ void usage() {
       "  --accept-votes N        diagonal votes to call on-target, default 5\n"
       "  --max-chunks N          defer up to N chunks before unblocking, default 10\n"
       "  --bits N                bits per quantised event (default 3)\n"
-      "  --events N              events per key (default 13)\n"
+      "  --events N              events per key (default 14)\n"
+      "  --detect                segment the query by detected level changes rather\n"
+      "                          than fixed time slices (needed for variable dwell)\n"
       "  --probes N              keys probed per seed (1, 2 or 4), default 4\n"
       "  --pin                   pin data-plane threads to cores\n"
       "  --latency-out PATH      write the full latency distribution for plotting\n");
@@ -173,6 +176,8 @@ void usage() {
       const char* v = next("--events");
       if (v == nullptr) return false;
       a.events = static_cast<std::uint32_t>(std::atoi(v));
+    } else if (k == "--detect") {
+      a.detect = true;
     } else if (k == "--probes") {
       const char* v = next("--probes");
       if (v == nullptr) return false;
@@ -314,6 +319,7 @@ int main(int argc, char** argv) {
   // instead of a rebuild. 0 keeps the frozen default.
   if (args.bits != 0) pcfg.quant.bits_per_event = args.bits;
   if (args.events != 0) pcfg.quant.events_per_key = args.events;
+  pcfg.quant.event_detection = args.detect;
   mru::PolicyStats pstats;
   std::unique_ptr<mru::SignalPolicy> signal_policy;
 

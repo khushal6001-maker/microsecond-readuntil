@@ -160,8 +160,12 @@ class SignalPolicy {
     thread_local std::vector<std::int64_t> diags;
     if (diags.capacity() == 0) diags.reserve(kDiagCapacity);
     std::uint64_t dropped = 0;
-    const std::size_t cands = accumulate_chunk_votes(
-        scratch, v, diags, dropped, raw.size() / cfg_.quant.samples_per_event);
+    // Advance the read's diagonal base by the events THIS CHUNK produced, not by
+    // raw.size()/samples_per_event. The two agree under fixed-width slicing and do not
+    // agree under event detection, where a chunk's event count depends on how many level
+    // changes were in it.
+    const std::size_t cands =
+        accumulate_chunk_votes(scratch, v, diags, dropped, scratch.events.size());
     stats_.candidates.fetch_add(cands, std::memory_order_relaxed);
     if (dropped != 0) {
       stats_.candidates_dropped.fetch_add(dropped, std::memory_order_relaxed);

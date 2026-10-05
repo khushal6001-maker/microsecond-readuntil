@@ -29,6 +29,8 @@
 #include <span>
 #include <vector>
 
+#include "index/event_detect.hpp"
+
 namespace mru {
 
 // z = (raw - shift) / scale
@@ -206,6 +208,21 @@ struct QuantConfig {
   // the whole scale.
   float z_clip = 3.0f;
 
+  // Segment the QUERY by detected level changes instead of fixed time slices.
+  //
+  // Fixed-width slicing assumes the pore translocates at a constant rate. It does not,
+  // and bench/dwell_robustness.cpp measures the cost: TPR 64.7% at dwell CV 0.00 falling
+  // to 1.7% at CV 0.30, with zero reads of 300 finding the correct diagonal, because a
+  // key packs 14 CONSECUTIVE events and a slipped boundary changes the key bits
+  // themselves. Published raw-signal mappers (UNCALLED, Sigmap, RawHash) all segment by
+  // detected events for this reason.
+  //
+  // Off by default so the frozen geometry's measurements remain reproducible; the daemon
+  // turns it on with --detect. The REFERENCE side is unaffected either way, since
+  // reference_to_events already emits one event per k-mer and a reference has no dwell.
+  bool event_detection = false;
+  EventDetectConfig detect{};
+
   // ADAPTIVE (equal-occupancy) BUCKET BOUNDARIES.
   //
   // Uniform bucketing over +/-z_clip wastes the alphabet, because a real pore model's
@@ -358,6 +375,29 @@ inline void bucket_edges(float z, const QuantConfig& cfg, float& lo, float& hi) 
 // `out_z`, when non-null, receives the pre-quantisation z of each event. Multi-probe
 // needs it to rank which events sit nearest a bucket boundary, and it cannot be
 // recovered from the quantised value afterwards.
+// Quantise a query segmented by DETECTED events rather than fixed windows.
+//
+// detect_events returns the mean of each detected segment in RAW units. SignalScaling is
+// affine -- (x - shift) / scale -- so normalising that mean is exactly equal to taking the
+// mean of the normalised samples, which is what the fixed-width path does. No second pass
+// over the samples is needed and the two paths agree bit for bit when boundaries agree.
+inline void quantise_signal_detected(std::span<const std::int16_t> raw,
+                                     const SignalScaling& sc, const QuantConfig& cfg,
+                                     EventScratch& es, std::vector<float>& means,
+                                     std::vector<QEvent>& out,
+                                     std::vector<float>* out_z = nullptr) {
+  if (!sc.valid() || !cfg.valid()) return;
+  (void)detect_events(raw, cfg.detect, es, means);
+  if (means.empty()) return;
+  out.reserve(out.size() + means.size());
+  if (out_z != nullptr) out_z->reserve(out_z->size() + means.size());
+  for (float m : means) {
+    const float z = (m - sc.shift) / sc.scale;
+    if (out_z != nullptr) out_z->push_back(z);
+    out.push_back(quantise_z(z, cfg));
+  }
+}
+
 inline void quantise_signal(std::span<const std::int16_t> raw, const SignalScaling& sc,
                             const QuantConfig& cfg, std::vector<QEvent>& out,
                             std::vector<float>* out_z = nullptr) {

@@ -295,6 +295,11 @@ struct ProbeScratch {
   std::vector<SeedHash> probes;  // minimizers expanded by multi-probe
   std::vector<SeedMatches> matches;
 
+  // Event-detection working set. Untouched when cfg.event_detection is false, and
+  // reserved only then, so the fixed-width path pays nothing for it.
+  EventScratch escratch;
+  std::vector<float> event_means;
+
   void clear() noexcept {
     events.clear();
     event_z.clear();
@@ -307,7 +312,17 @@ struct ProbeScratch {
   // Preallocate for the largest chunk expected, so steady state does no malloc.
   void reserve_for(std::size_t max_samples, const QuantConfig& cfg,
                    int budget = kDefaultProbeBudget) {
-    const std::size_t max_events = max_samples / std::max(1u, cfg.samples_per_event) + 1;
+    // Event detection can emit more events than fixed-width slicing for the same
+    // samples, because a short dwell still yields one event. Reserve against the
+    // detector's floor (min_len samples per event) so the detected path cannot allocate
+    // on the decision path either.
+    const std::size_t fixed_events =
+        max_samples / std::max(1u, cfg.samples_per_event) + 1;
+    const std::size_t detected_events =
+        cfg.event_detection ? max_samples / std::max(1u, cfg.detect.min_len) + 1 : 0;
+    const std::size_t max_events = std::max(fixed_events, detected_events);
+    escratch.reserve(max_samples);
+    event_means.reserve(max_events);
     events.reserve(max_events);
     event_z.reserve(max_events);
     all_seeds.reserve(max_events);
@@ -332,7 +347,12 @@ inline std::size_t match_signal(const MinimizerIndex& index,
                                 int budget = kDefaultProbeBudget,
                                 IndexStats* stats = nullptr) {
   scratch.clear();
-  quantise_signal(raw, scaling, cfg, scratch.events, &scratch.event_z);
+  if (cfg.event_detection) {
+    quantise_signal_detected(raw, scaling, cfg, scratch.escratch, scratch.event_means,
+                             scratch.events, &scratch.event_z);
+  } else {
+    quantise_signal(raw, scaling, cfg, scratch.events, &scratch.event_z);
+  }
   if (scratch.events.size() < cfg.events_per_key) return 0;
 
   hash_all_keys(scratch.events, cfg, scratch.all_seeds);
