@@ -119,38 +119,84 @@ histogram merely initialises. See below for why that test exists.
 ### Decision-path latency
 
 Policy only — signal-space matching for one chunk, diagonal voting, and the
-accept/unblock/defer rule. Four runs against Icarust, 512 channels, ~10k
-decisions each, microseconds, HdrHistogram with 3 significant figures:
+accept/unblock/defer rule. Four repetitions per cell, 20 s each, ~17k decisions
+per run, microseconds, HdrHistogram at 3 significant figures. Median across the
+four reps, with the observed range in brackets.
 
-| mode | n | p50 | p90 | p99 | p99.9 | p99.99 | max | mean |
-|---|---|---|---|---|---|---|---|---|
-| pinned | 10107 | 27.48 | 52.25 | 318.81 | 1194.54 | 4671.66 | 9192.18 | 41.97 |
-| pinned | 10115 | 26.41 | 45.34 | 108.19 | 440.30 | 3070.78 | 4121.14 | 31.01 |
-| unpinned | 10241 | 27.27 | 51.19 | 170.18 | 826.88 | 2830.78 | 5240.52 | 34.98 |
-| unpinned | 10709 | 27.03 | 49.51 | 220.49 | 966.60 | 6994.75 | 8626.64 | 36.87 |
+The matrix crosses shard count against pinning, because those two were previously
+confounded. 2 shards means 4 data-plane threads (reader, writer, 2 workers) and
+fits this host's 4 physical cores exactly; 4 shards means 6 threads and does not.
 
-**Quote p50 and p90. Do not quote p99 or beyond from this platform.** p50 holds
-at 26.41-27.48 us and p90 at 45.34-52.25 us across all four runs. p99 ranges
-108.19-318.81 us pinned and 170.18-220.49 us unpinned: the spread *within* a mode
-is larger than the difference *between* modes, so thread pinning and no pinning
-are **not separable** here, and no claim about placement should rest on these
-tails. WSL2 virtualises the clock and the scheduler, so the tail measures the
-hypervisor as much as the daemon.
+| config | p50 | p90 | p99 | p99.9 | max |
+|---|---|---|---|---|---|
+| **pinned-2** | **16.3** [15.2–16.5] | **24.7** [23.1–25.7] | **49.2** [47.0–50.9] | **158** [139–246] | 719 [387–1238] |
+| unpinned-2 | 15.8 [15.6–16.6] | 25.1 [24.2–26.4] | 50.5 [44.9–104.5] | 166 [117–240] | 736 [294–844] |
+| pinned-4 | 18.7 [18.0–19.7] | 31.1 [27.9–35.4] | 70.4 [65.7–142.7] | 313 [234–614] | 1376 [1248–4933] |
+| unpinned-4 | 18.4 [17.9–18.8] | 31.6 [31.3–33.4] | 83.9 [72.1–350.5] | 387 [352–2519] | 3440 [1458–12484] |
 
-An earlier commit (`ec1208b`) reported "p99 falls from 224-448 us to a steady
-112 us, a 2-4x improvement". **That is withdrawn.** It was an artefact of the
-instrument: `tsc.hpp`'s power-of-two buckets meant that at this host's 2418.7 MHz
-the only p99 it could ever print was 54.19, 108.38, 216.76 or 433.53 us, and the
-four values reported were 111.93, 112.12, 223.66 and 447.59 — every one a bucket
-edge. Two runs both reading "112" did not agree to 0.2%; they agreed on an octave,
-somewhere in [54, 108] us. The underlying *bug* that commit fixed was real (six
-threads were being crowded onto core 0); only the measured gain is retracted.
+Three things fall out, and only the third is the one that was expected.
 
-`test/hdr_latency_test.cpp` now holds that lesson in place. Built against the
-fallback it demonstrates the coarse histogram reporting **32767 cycles for the
-p50, the p90 and the p99 of one distribution** — three different values collapsed
-onto one, with errors of 20% to 60% — and reporting both 1100 and 1900 as 2047.
-Against HdrHistogram the same input returns within 0.072% at every percentile.
+**Thread count dominates, not pinning.** Both 2-shard cells beat both 4-shard
+cells at every percentile. Six data-plane threads on four physical cores is
+oversubscription, and no placement policy fixes that — unpinned-4 produced a
+12.5 ms maximum and a 2.5 ms p99.9 in one run. On this host the daemon should run
+2 shards; throughput is not the constraint, since Icarust saturates first.
+
+**Pinning does not make the median faster. It makes the tail reproducible.** At a
+fixed 2 shards, pinned and unpinned p50 and p90 overlap and are not separable.
+What separates them is the *spread* of p99 across repetitions:
+
+| | p99 across 4 reps | spread |
+|---|---|---|
+| pinned-2 | 46.99, 48.32, 49.97, 50.88 | **3.9 us (8%)** |
+| unpinned-2 | 44.86, 45.52, 55.45, 104.45 | 59.6 us (133%) |
+
+That is the honest claim for pinning: not a faster number, a *repeatable* one.
+Unpinned runs are sometimes just as quick and sometimes 2.3x worse, because the
+scheduler is free to migrate a worker mid-run.
+
+**SMT siblings were being treated as separate cores, and that was a real bug.**
+`CorePlan` assigned roles to consecutive CPU ids. On this machine siblings are
+adjacent (`0-1, 2-3, 4-5, 6-7`), so reader→cpu0 and writer→cpu1 put the two
+hottest threads on one physical core's execution units while a fourth core sat
+idle. The fix reads `thread_siblings_list` rather than assuming a stride, because
+the enumeration is not portable: VMs commonly pair siblings adjacently while
+bare-metal Intel boxes often list all physical cores first, so `cpu0`/`cpu4` are
+siblings there. No fixed stride is correct on both. The daemon now prints its
+layout and warns when roles have to share a core.
+
+#### The previous table in this README was measured on a broken machine
+
+An earlier revision reported p50 ≈ 27 us, p99 108–319 us and maxima of 4–9 ms.
+**Those numbers are withdrawn, not merely superseded.** They were taken while the
+host's system drive had *zero* bytes free, which is a pathological state for a VM
+whose disk is a dynamically-growing file. The evidence is the unpinned-4 cell,
+which is the same configuration measured both times and changed only because the
+machine did: p50 went from 27.0–27.3 us to 17.9–18.8 us, and the maximum from
+9.2 ms to 1.5 ms, with no code change affecting that path (the SMT fix touches
+`--pin` only). Roughly a third of the previously reported median was the
+environment.
+
+The lesson is the same one the HdrHistogram change taught, one level further out:
+before trusting a latency number, check the instrument *and* the machine. The
+provenance block in `matrix.sh` now records disk headroom, hypervisor, governor,
+SMT state and kernel command line beside every run for exactly this reason.
+
+#### These are still not bare-metal numbers
+
+`systemd-detect-virt` reports `wsl`, so `matrix.sh` stamps every run
+**DEVELOPMENT ONLY** and will only print `PUBLISHABLE` on a host that is not
+virtualised, has `isolcpus` on the kernel command line, and is running the
+performance governor. None of those hold here, and this is additionally a 4-core
+laptop whose thermal management is outside our control. p50, p90 and the
+pinned-2 p99 are reproducible enough to develop against; nothing here should go
+in a paper as a tail measurement.
+
+Reproduce with:
+
+```bash
+REPS=4 SECS=20 bash matrix.sh > results.csv
+```
 
 ### Selectivity
 
@@ -223,18 +269,31 @@ the measured cores, IRQ affinity moved off them, and turbo either pinned or
 disabled. Record every one of these settings in the methods section; "we pinned
 threads" without the kernel configuration is not reproducible.
 
-The instrument is no longer the limiting factor — HdrHistogram gives 0.1%
+Two of the three things that were wrong with the earlier measurements are now
+fixed. The **instrument** is no longer the limit: HdrHistogram holds 0.1%
 relative error across the range, and `LatencyRecorder::backend()` is printed
-beside every figure so a fallback bound can never be mistaken for a measurement.
-The platform still is. p50 and p90 are reproducible on WSL2; p99 and beyond need
-bare metal.
+beside every figure so a fallback bound can never pass as a measurement. The
+**machine state** is no longer silently wrong either: `matrix.sh` records disk
+headroom, hypervisor, SMT layout, governor and kernel command line next to every
+run, because a full disk once cost a third of the reported median without
+announcing itself.
+
+The **platform** is still the limit, and no amount of care inside the VM removes
+it. `matrix.sh` will not stamp a run `PUBLISHABLE` until
+`systemd-detect-virt` reports `none`, `isolcpus` is on the kernel command line
+and the governor is `performance`. Run it unchanged on such a host and the
+numbers are quotable; run it here and they are not.
 
 ## Next steps
 
 - **Real hardware.** Nothing here has touched a sequencer. Icarust is a faithful
   enough API peer to verify protocol and logic, not timing under real load.
-- **Bare-metal tail measurement** with the kernel configuration above, which is
-  the only way the p99 claim becomes quotable.
+- **Bare-metal tail measurement.** This is the one remaining blocker on a
+  quotable p99, and it needs hardware rather than code: `matrix.sh` already runs
+  unchanged and will stamp its own output `PUBLISHABLE` once the host qualifies.
+  A 4-core laptop is a poor choice even bare metal — thermal throttling lands in
+  the tail — so prefer a machine with enough cores to leave `isolcpus` a couple
+  to spare.
 - **Use MinKNOW's `median` and `median_before`** from `ReadData` instead of
   computing a median per read. It removes a sort from the hot path and costs 8
   bytes in `ChunkRef`, which has exactly that much room before it outgrows a

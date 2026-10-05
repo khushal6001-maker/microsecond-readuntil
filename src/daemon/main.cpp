@@ -276,15 +276,16 @@ int main(int argc, char** argv) {
   // p99 to sixteen times the median.
   cfg.pin_threads = args.pin;
   if (args.pin) {
-    const unsigned cores = mru::hardware_cores();
-    cfg.cores.reader_core = 0;
-    cfg.cores.writer_core = cores > 1 ? 1u : 0u;
-    cfg.cores.first_worker_core = cores > 2 ? 2u : 0u;
-    if (!cfg.cores.fits_on_host()) {
-      std::printf("WARNING: --pin needs %u cores for %s but the host has %u; "
-                  "pinning anyway, expect contention\n",
-                  cfg.cores.first_worker_core + cfg.cores.worker_count,
-                  cfg.cores.describe().c_str(), cores);
+    // Distinct PHYSICAL cores, not consecutive CPU numbers. On this machine's SMT
+    // layout cpu0 and cpu1 are one core, so the previous contiguous plan put the
+    // reader and writer on shared execution units and left a core entirely idle.
+    const mru::CoreAssignment a = mru::assign_distinct_cores(cfg.shard_count);
+    cfg.cores = a.plan;
+    std::printf("pinning:   %s\n", a.plan.describe().c_str());
+    std::printf("  layout:  %s\n", a.note.c_str());
+    if (a.shared_siblings) {
+      std::printf("  WARNING: threads share physical cores, so this run's tail cannot be\n"
+                  "  attributed to the daemon rather than to SMT contention.\n");
     }
   }
   if (!cfg.valid()) {
