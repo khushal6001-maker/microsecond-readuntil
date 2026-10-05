@@ -80,16 +80,27 @@ bool load_fasta_acgt(const std::string& path, std::string& out) {
   return !out.empty();
 }
 
-// Synthetic squiggle for a stretch of reference, at a given noise level.
+// Synthetic squiggle, with variable dwell.
+//
+// dwell_cv is the coefficient of variation of a lognormal dwell about spe. 0 reproduces
+// the fixed-count generator that every earlier geometry decision in this project was made
+// against -- which is the constant-rate condition no pore satisfies, and under which
+// fixed-width segmentation is exactly correct by construction. Any geometry frozen at
+// cv=0 was frozen on the wrong rig.
 std::vector<std::int16_t> signal_from_dna(const std::vector<float>& levels,
                                          std::uint32_t k, const char* dna,
                                          std::size_t len, std::uint32_t spe,
-                                         float noise_pa, std::uint64_t seed) {
+                                         float noise_pa, std::uint64_t seed,
+                                         float dwell_cv = 0.0f) {
   std::vector<std::int16_t> raw;
   if (len < k) return raw;
-  raw.reserve((len - k + 1) * spe);
+  raw.reserve((len - k + 1) * spe * 2);
   std::mt19937_64 rng(seed);
   std::normal_distribution<float> noise(0.0f, noise_pa * kPaToAdc);
+  const double cv = static_cast<double>(dwell_cv);
+  const double s2 = std::log(1.0 + cv * cv);
+  std::lognormal_distribution<double> dwell(std::log(static_cast<double>(spe)) - 0.5 * s2,
+                                            std::sqrt(s2));
   const std::uint64_t mask = (k >= 32) ? ~0ULL : ((1ULL << (2 * k)) - 1);
   std::uint64_t kmer = 0;
   std::uint32_t have = 0;
@@ -98,8 +109,13 @@ std::vector<std::int16_t> signal_from_dna(const std::vector<float>& levels,
     if (c < 0) { have = 0; continue; }
     kmer = ((kmer << 2) | static_cast<std::uint64_t>(c)) & mask;
     if (++have < k) continue;
+    std::uint32_t hold = spe;
+    if (dwell_cv > 0.0f) {
+      hold = static_cast<std::uint32_t>(std::lround(std::max(1.0, dwell(rng))));
+      if (hold > 8 * spe) hold = 8 * spe;
+    }
     const float level = levels[kmer] * kPaToAdc;
-    for (std::uint32_t t = 0; t < spe; ++t) {
+    for (std::uint32_t t = 0; t < hold; ++t) {
       raw.push_back(
           static_cast<std::int16_t>(std::clamp(level + noise(rng), -32000.0f, 32000.0f)));
     }
@@ -168,12 +184,26 @@ struct Cell {
 
 int main(int argc, char** argv) {
   if (argc < 3) {
-    std::printf("usage: %s <model.tsv> <reference.fa> [reads_per_cell] [noise_pA]\n",
+    std::printf("usage: %s <model.tsv> <reference.fa> [reads] [noise_pA] [dwell_cv] "
+                "[detect 0|1] [det_thr] [det_min_len] [det_window]\n",
                 argv[0]);
     return 2;
   }
   const std::size_t n_reads = argc > 3 ? std::strtoul(argv[3], nullptr, 10) : 400;
   const float noise_pa = argc > 4 ? std::strtof(argv[4], nullptr) : 1.5f;
+  const float dwell_cv = argc > 5 ? std::strtof(argv[5], nullptr) : 0.0f;
+  const bool detect = argc > 6 ? (std::atoi(argv[6]) != 0) : false;
+  const float det_thr = argc > 7 ? std::strtof(argv[7], nullptr) : 2.0f;
+  const std::uint32_t det_min =
+      argc > 8 ? static_cast<std::uint32_t>(std::strtoul(argv[8], nullptr, 10)) : 7;
+  const std::uint32_t det_win =
+      argc > 9 ? static_cast<std::uint32_t>(std::strtoul(argv[9], nullptr, 10)) : 4;
+  // Minimizer window. 1 means every key is a seed. Worth sweeping because minimizer
+  // selection picks a key by rank within a window, so a shifted event boundary can make
+  // the reference and the query select DIFFERENT keys even where both keys are correct --
+  // a failure mode that does not exist when dwell is constant.
+  const std::uint32_t min_win =
+      argc > 10 ? static_cast<std::uint32_t>(std::strtoul(argv[10], nullptr, 10)) : 10;
 
   std::vector<float> levels;
   if (!load_model_tsv(argv[1], levels)) {
@@ -201,19 +231,35 @@ int main(int argc, char** argv) {
     std::shuffle(shuffled.begin(), shuffled.end(), rng);
   }
 
-  const Cell cells[] = {{3, 13}, {3, 14}, {4, 12}, {4, 13}};
+  // Shorter keys are now in the grid, which they were not before. Under detection every
+  // event boundary is an estimate, and a key is only correct if ALL of its events are, so
+  // key length trades specificity against the probability that one boundary inside it is
+  // wrong. At cv=0 that probability is zero and longer is strictly better, which is
+  // exactly why the previous sweep chose 14 and why it cannot be trusted here.
+  const Cell cells[] = {{3, 8}, {3, 10}, {3, 12}, {3, 14}, {4, 8}, {4, 10}, {4, 12}};
   const std::size_t lengths[] = {2, 5, 10, 20};  // chunks; 2 stands in for "2.5"
   const int probes = mru::kDefaultProbeBudget;
 
   std::printf("reference %zu bases, %u-mer model, %zu reads per cell, noise %.1f pA, "
-              "%d probes/seed, %zu bases/chunk\n\n",
-              dna.size(), k, n_reads, static_cast<double>(noise_pa), probes,
-              kChunkBases);
+              "%d probes/seed, %zu bases/chunk\n",
+              dna.size(), k, n_reads, static_cast<double>(noise_pa), probes, kChunkBases);
+  std::printf("dwell CV %.2f, segmentation %s", static_cast<double>(dwell_cv),
+              detect ? "EVENT-DETECTED" : "fixed-width");
+  if (detect) {
+    std::printf(" (window %u, threshold %.2f, min_len %u)", det_win,
+                static_cast<double>(det_thr), det_min);
+  }
+  std::printf("\n\n");
 
   for (const Cell& cell : cells) {
     mru::QuantConfig cfg;
     cfg.bits_per_event = cell.bits;
     cfg.events_per_key = cell.events;
+    cfg.event_detection = detect;
+    cfg.detect.threshold = det_thr;
+    cfg.detect.min_len = det_min;
+    cfg.detect.window = det_win;
+    cfg.minimizer_window = min_win;
     if (!cfg.valid() || cfg.key_bits() > 64) {
       std::printf("=== %u x %u : REJECTED, %u-bit key does not fit a packed 64-bit "
                   "key ===\n\n",
@@ -256,8 +302,8 @@ int main(int argc, char** argv) {
 
     mru::ProbeScratch scratch;
     mru::ScalingScratch scaling_scratch;
-    const std::size_t biggest = lengths[std::size(lengths) - 1] * kChunkBases *
-                                cfg.samples_per_event;
+    const std::size_t biggest =
+        lengths[std::size(lengths) - 1] * kChunkBases * cfg.samples_per_event * 3;
     scratch.reserve_for(biggest, cfg, probes);
     scaling_scratch.reserve(biggest);
     std::vector<std::int64_t> diags;
@@ -275,7 +321,8 @@ int main(int argc, char** argv) {
       for (std::size_t r = 0; r < n_reads; ++r) {
         const std::size_t d = k + span * (r + 1) / (n_reads + 1);
         const auto raw = signal_from_dna(levels, k, dna.data() + d, read_bases,
-                                         cfg.samples_per_event, noise_pa, 5000 + r);
+                                         cfg.samples_per_event, noise_pa, 5000 + r,
+                                         dwell_cv);
         if (raw.empty()) continue;
         const ReadResult v = vote_like_the_daemon(idx, raw, cfg, probes, scratch,
                                                   scaling_scratch, diags, max_chunks);
@@ -289,7 +336,8 @@ int main(int argc, char** argv) {
       for (std::size_t r = 0; r < n_reads; ++r) {
         const std::size_t d = k + span * (r + 1) / (n_reads + 1);
         const auto raw = signal_from_dna(levels, k, shuffled.data() + d, read_bases,
-                                         cfg.samples_per_event, noise_pa, 90000 + r);
+                                         cfg.samples_per_event, noise_pa, 90000 + r,
+                                         dwell_cv);
         if (raw.empty()) continue;
         const ReadResult v = vote_like_the_daemon(idx, raw, cfg, probes, scratch,
                                                   scaling_scratch, diags, max_chunks);
