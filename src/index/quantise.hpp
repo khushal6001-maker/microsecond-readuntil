@@ -168,10 +168,39 @@ struct QuantConfig {
   std::uint32_t samples_per_event = 10;
 
   // Bits per quantised event. 3 bits = 8 levels. FROZEN.
+  //
+  // THE GEOMETRY WAS RE-FROZEN AT 3 x 14 on 2026-10-05, measured by
+  // bench/geometry_sweep.cpp on the full 64 Mb chr20 against a composition-matched
+  // shuffled control, with the SAME voting code the daemon runs, and confirmed live
+  // against Icarust. TPR at the lowest zero-false-positive threshold, 20 chunks:
+  //
+  //     3 x 13   65.7%        3 x 14   69.7%  <- frozen
+  //     4 x 12   49.7%        4 x 13   48.3%
+  //
+  // Live on a 64 Mb index, accept rate / p50 / p90:
+  //
+  //     3 x 13   27.7%  25.60  44.82 us
+  //     3 x 14   42.4%  25.41  43.65 us   <- frozen
+  //     4 x 13   36.5%  23.88  39.37 us
+  //
+  // Two earlier freezes of this parameter were void, and it is worth knowing why
+  // before touching it a fourth time. The 3 x 15 freeze rested on
+  // effective_key_space(), whose Poisson fit assumed uniform key probability and
+  // whose fitted K tracked n instead of converging. The "4 x 13 wins" reading came
+  // from live runs taken while the cross-chunk diagonal was computed chunk-relative,
+  // so votes for the correct location could not accumulate across chunks; with that
+  // fixed the 4-bit cells are the WORST of the four, because suppressing candidates
+  // matters less than retaining true seeds once accumulation actually works.
+  //
+  // 4 bits does buy specificity -- 12.2% cap saturation against 34.2%, and 22 median
+  // candidates per read against 463 -- but it discards too many true seeds to reach
+  // the threshold, and it costs p99. Do not re-freeze on candidate counts alone.
   std::uint32_t bits_per_event = 3;
 
-  // Events combined into one key. 13 at 3 bits = 39-bit keys. FROZEN.
-  std::uint32_t events_per_key = 13;
+  // Events combined into one key. 14 at 3 bits = 42-bit keys. FROZEN; see above.
+  // bits_per_event * events_per_key must stay <= 64 to pack into one key, which is
+  // why 5 x 13 = 65 bits is not a candidate.
+  std::uint32_t events_per_key = 14;
 
   // z-scores are clipped to +/- this before bucketing, so outliers cannot drag
   // the whole scale.

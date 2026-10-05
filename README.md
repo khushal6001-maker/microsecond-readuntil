@@ -5,11 +5,7 @@ directly to the MinKNOW gRPC API, ingests raw signal chunks into per-shard
 lock-free rings, performs cache-conscious signal-space matching, and dispatches
 unblock actions without a Python process or a basecaller in the critical path.
 
-**Status: end to end against a simulator, with a known scaling failure.** The
-accept path produces zero accepts against a 64 Mb reference — see Measured
-results. Treat the accuracy claims as unvalidated at realistic scale.
-
-**Previously:** Transport, index, policy and daemon
+**Status: end to end against a simulator.** Transport, index, policy and daemon
 all exist and have been run against [Icarust](https://github.com/LooseLab/Icarust)
 in both directions — accepting on-target reads and unblocking off-target ones.
 It has **never been run against a real sequencer**, and every latency figure below
@@ -32,6 +28,7 @@ comes from WSL2, which is a development platform and not a measurement one.
 | `src/index/quantise.hpp` | median/MAD normalisation, quantised events, packed keys, minimizers |
 | `src/index/minimizer_index.hpp` | open-addressed index, one entry per distinct key |
 | `src/index/batched_probe.hpp` | batched probing with multi-probe over bucket boundaries |
+| `src/daemon/diagonal_votes.hpp` | bounded diagonal voting, shared by the daemon and the benches |
 | `src/daemon/policy.hpp` | diagonal voting and the accept / unblock / defer rule |
 | `src/daemon/main.cpp` | the daemon |
 
@@ -227,55 +224,75 @@ therefore an operator's economic choice, not a constant.
 
 ### Frozen index geometry
 
-3 bits per event, 13 events per key, uniform quantisation, minimizer window 10,
-10 samples per event, z-clip 3.0. Multi-probe over the two nearest bucket
-boundaries is worth about +5 points of seed recall: +14% more seeds at w=10,
-against +74% at w=1 — the minimizer window already recovers most of what
-multi-probe would otherwise find.
+**3 bits per event x 14 events = 42-bit keys, minimizer window 10, 10 samples per
+event, z-clip 3.0, uniform quantisation, 4 probes per seed, accept at 5 votes.**
 
-### readfish baseline, same host and same simulator
+Re-frozen 2026-10-05 by `bench/geometry_sweep.cpp` on the full 64 Mb chr20 against a
+composition-matched (shuffled) control, using the daemon's own voting code, then
+confirmed live against Icarust. TPR at the lowest threshold with **zero** false
+positives:
 
-Full setup, TOML, launch commands and the four undocumented fixes needed to make
-readfish 2024.3.0 talk to Icarust are in [docs/readfish-baseline.md](docs/readfish-baseline.md).
-"per chunk" is the honest unit for both sides: readfish's batch line counts one
-entry per read *chunk*, so its `T/N` is per-chunk cost.
+| geometry | key bits | distinct keys | cap saturation | TPR @2 | @5 | @10 | @20 chunks |
+|---|---|---|---|---|---|---|---|
+| 3 x 13 | 39 | 1.96M (16.7%) | 51.1% | 26.3% | 51.3% | 53.7% | 65.7% |
+| **3 x 14** | **42** | **3.33M (28.5%)** | **34.2%** | **35.7%** | **57.3%** | **59.0%** | **69.7%** |
+| 4 x 12 | 48 | 6.78M (58.1%) | 14.6% | 31.7% | 39.3% | 42.7% | 49.7% |
+| 4 x 13 | 52 | 8.33M (71.5%) | 12.2% | 30.7% | 38.0% | 41.0% | 48.3% |
+| 5 x 13 | 65 | rejected: a key must pack into 64 bits | | | | | |
 
-| | ours, chr20 | ours, 37 kb toy | readfish unblock-all | readfish targets |
+Off-target votes never exceed 4 in any cell, which is what sets `accept_votes = 5`.
+
+Live on a 64 Mb index, 22 s, 2 shards, pinned:
+
+| geometry | accept rate | p50 | p90 | p99 |
 |---|---|---|---|---|
-| reference | 64.4 Mb | 37 kb | none | 64.4 Mb |
-| per chunk (p50) | 25.6 us | 16.7 us | 124 us | 66 us |
-| CPU | 182% | 202% | 15.6% | 25.3% |
-| peak RSS | 1.49 GB | 152 MB | 86 MB | 663 MB |
-| accepted | **0** | 854 / 1366 | n/a | n/a |
+| 3 x 13 | 27.7% | 25.60 | 44.82 | 143.40 |
+| **3 x 14 (frozen)** | **44.1%** | **23.89** | **41.06** | **119.69** |
+| 4 x 13 | 36.5% | 23.88 | 39.37 | 114.01 |
 
-We are **4.9x faster per chunk** at chr20 scale against readfish with no
-basecalling and no mapping, so the gap to a production readfish is larger. That is
-the one claim that survives this comparison.
+Offline predicts 59.0% at 10 chunks against 44.1% live, which is the agreement to
+expect once reads shorter than `max_chunks` and real simulator noise are in play.
+The same two numbers were 89.3% and 0% before the offline bench and the daemon were
+made to share one implementation.
 
-We are **8-12x worse on CPU** (182-202% against 15.6-25.3%) and **2.25x worse on
-memory** on the same reference. The CPU figure is the design, not a defect: our
-workers spin before yielding to keep wakeups off the critical path, while readfish
-polls every 400 ms and sleeps. We buy latency with CPU, which is the right trade on
-a dedicated host and should be reported as a trade. "Efficient" is the wrong word
-for what this daemon provides.
+**4 bits buys specificity and loses the argument.** It is far more selective -- 12.2%
+cap saturation against 34.2%, 22 median candidates per read against 463 -- but it
+discards too many true seeds to reach the threshold. Candidate counts are not the
+objective; TPR at zero FPR is.
 
-### The accept path does not survive a realistic reference
+#### This parameter has been frozen three times and the first two were wrong
 
-**0 accepts of 763 decisions against chr20**, where 13 of the 29 sequenced
-transcripts map to chr20 and several hundred were expected. The same build on the
-37 kb toy reference accepts 854 of 1366 (62.5%).
+Worth reading before touching it a fourth time.
 
-The mechanism is one number: **candidates per chunk rise from 0.99 to 95.1**, a 96x
-flood. `ChannelVotes` keeps 16 diagonal slots and evicts the weakest only when it
-holds a single vote, so at ninety-five candidates per chunk a true diagonal is
-evicted by noise before reaching `accept_votes = 5`. The slot count and the
-threshold were both tuned against a reference 1700x too small.
+1. **3 x 15, void.** Rested on `effective_key_space()`, whose Poisson fit assumed
+   uniform key probability; the fitted K tracked n instead of converging. Purged.
+2. **"4 x 13 wins", void.** Came from live runs taken while the cross-chunk diagonal
+   was computed chunk-relative (below), so votes could not accumulate across chunks.
+   Under that bug, suppressing candidates looked like the priority. With it fixed the
+   4-bit cells are the worst of the four.
+3. **3 x 14**, the above.
 
-Every live run before this one used that 37 kb reference, which also fits entirely
-in cache — so the cache-conscious lookup was never actually under cache pressure.
-The offline bench reports 89.3% TPR at 10 chunks *on chr20*, so offline and live
-disagree and at least one is not measuring what it claims. **Resolving that comes
-before any further writing.**
+The lesson that generalises: a 37 kb reference will cheerfully endorse the wrong
+geometry, and so will a bench that does not run the code the daemon runs.
+
+### The cross-chunk diagonal was chunk-relative
+
+`SeedMatches::seed_offset` is an offset into the query, and the query is one chunk,
+so offsets restart at zero every chunk. A read starting at reference position `d`
+therefore produced a true diagonal of `d` for its first chunk, `d + 180` for its
+second, `d + 360` for its third. Votes for the correct location could never add up
+across chunks; only within one chunk.
+
+The tell was not a low score but an inverted one. The fraction of reads whose best
+diagonal was actually *correct* **fell** as reads got longer -- 49/300 at 2 chunks
+down to 7/300 at 20 for 3 x 13 -- so more evidence produced a worse answer, which is
+the signature of accumulating the wrong quantity rather than of a weak signal.
+Accepts still happened, on whatever diagonal collected coincidences inside a single
+chunk, which is why this hid behind a plausible-looking TPR.
+
+`ChannelVotes::events_consumed` now carries the read's running event base, so every
+chunk of a read agrees on one diagonal. With that fixed, correct-diagonal counts
+rise with read length as they must: 118 -> 160 -> 170 -> 196 of 300.
 
 ### Negative results, recorded rather than buried
 

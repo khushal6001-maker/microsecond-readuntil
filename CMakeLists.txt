@@ -266,6 +266,12 @@ target_link_libraries(mru_brittleness PRIVATE mru_core mru_warnings mru_sanitize
 add_executable(mru_offtarget bench/offtarget.cpp)
 target_link_libraries(mru_offtarget PRIVATE mru_core mru_warnings mru_sanitizers)
 
+# The geometry decision. Supersedes mru_offtarget, which answered the same question
+# with its own private voting code -- the divergence that let an offline 89.3% TPR
+# coexist with a live accept rate of zero.
+add_executable(mru_geometry_sweep bench/geometry_sweep.cpp)
+target_link_libraries(mru_geometry_sweep PRIVATE mru_core mru_warnings mru_sanitizers)
+
 if(MRU_BUILD_TESTS)
   enable_testing()
 

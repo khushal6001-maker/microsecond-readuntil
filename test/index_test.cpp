@@ -84,7 +84,8 @@ void test_quantisation() {
   mru::QuantConfig cfg;
   CHECK(cfg.valid(), "default config is valid");
   CHECK_EQ(cfg.levels(), 8u, "3 bits == 8 levels");
-  CHECK_EQ(cfg.key_bits(), 39u, "13 events x 3 bits (frozen geometry)");
+
+  CHECK_EQ(cfg.key_bits(), 42u, "14 events x 3 bits (frozen geometry)");
 
   mru::QuantConfig bad = cfg;
   bad.bits_per_event = 9;
@@ -1690,10 +1691,22 @@ void test_frozen_geometry() {
   banner("frozen_geometry");
   const mru::QuantConfig cfg;  // defaults
 
+  // Re-frozen 2026-10-05 at 3 x 14, by bench/geometry_sweep.cpp on the full 64 Mb
+  // chr20 against a shuffled control, using the daemon's own voting code, and
+  // confirmed live. 69.7% TPR at zero false positives against 65.7% for 3 x 13 and
+  // 48.3% for 4 x 13; live accept rate 42.4% against 27.7% and 36.5%.
+  //
+  // This parameter has now been frozen three times and the first two were wrong --
+  // once on a Poisson key-space model that never converged, once on live runs whose
+  // cross-chunk diagonal was chunk-relative so votes could not accumulate. If this
+  // assertion fails, re-run the sweep on a FULL-SIZE reference before editing it;
+  // a 37 kb reference will happily endorse the wrong answer.
   CHECK_EQ(cfg.bits_per_event, 3u, "FROZEN bits_per_event");
-  CHECK_EQ(cfg.events_per_key, 13u, "FROZEN events_per_key");
+  CHECK_EQ(cfg.events_per_key, 14u, "FROZEN events_per_key");
   CHECK_EQ(cfg.minimizer_window, 10u, "FROZEN minimizer_window");
-  CHECK_EQ(cfg.key_bits(), 39u, "FROZEN 39-bit keys");
+  CHECK_EQ(cfg.key_bits(), 42u, "FROZEN 42-bit keys");
+  CHECK(cfg.bits_per_event * cfg.events_per_key <= 64,
+        "a key must pack into 64 bits, which is what rules out 5 x 13");
   CHECK(!cfg.adaptive(), "FROZEN uniform quantiser: adaptive costs more recall than "
                          "the key space it buys");
   CHECK_EQ(cfg.levels(), 8u, "8 quantisation levels");
