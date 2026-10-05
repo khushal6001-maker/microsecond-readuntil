@@ -333,6 +333,7 @@ int main(int argc, char** argv) {
   // as not segmenting at all, since the key packs a fixed number of consecutive events.
   if (argc > 6) ecfg.threshold = std::strtof(argv[6], nullptr);
   if (argc > 7) ecfg.min_len = static_cast<std::uint32_t>(std::strtoul(argv[7], nullptr, 10));
+  if (argc > 8) ecfg.window = static_cast<std::uint32_t>(std::strtoul(argv[8], nullptr, 10));
   mru::EventScratch es;
   std::vector<float> ev_means;
 
