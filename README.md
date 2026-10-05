@@ -5,7 +5,11 @@ directly to the MinKNOW gRPC API, ingests raw signal chunks into per-shard
 lock-free rings, performs cache-conscious signal-space matching, and dispatches
 unblock actions without a Python process or a basecaller in the critical path.
 
-**Status: end to end against a simulator.** Transport, index, policy and daemon
+**Status: end to end against a simulator, with a known scaling failure.** The
+accept path produces zero accepts against a 64 Mb reference — see Measured
+results. Treat the accuracy claims as unvalidated at realistic scale.
+
+**Previously:** Transport, index, policy and daemon
 all exist and have been run against [Icarust](https://github.com/LooseLab/Icarust)
 in both directions — accepting on-target reads and unblocking off-target ones.
 It has **never been run against a real sequencer**, and every latency figure below
@@ -228,6 +232,50 @@ therefore an operator's economic choice, not a constant.
 boundaries is worth about +5 points of seed recall: +14% more seeds at w=10,
 against +74% at w=1 — the minimizer window already recovers most of what
 multi-probe would otherwise find.
+
+### readfish baseline, same host and same simulator
+
+Full setup, TOML, launch commands and the four undocumented fixes needed to make
+readfish 2024.3.0 talk to Icarust are in [docs/readfish-baseline.md](docs/readfish-baseline.md).
+"per chunk" is the honest unit for both sides: readfish's batch line counts one
+entry per read *chunk*, so its `T/N` is per-chunk cost.
+
+| | ours, chr20 | ours, 37 kb toy | readfish unblock-all | readfish targets |
+|---|---|---|---|---|
+| reference | 64.4 Mb | 37 kb | none | 64.4 Mb |
+| per chunk (p50) | 25.6 us | 16.7 us | 124 us | 66 us |
+| CPU | 182% | 202% | 15.6% | 25.3% |
+| peak RSS | 1.49 GB | 152 MB | 86 MB | 663 MB |
+| accepted | **0** | 854 / 1366 | n/a | n/a |
+
+We are **4.9x faster per chunk** at chr20 scale against readfish with no
+basecalling and no mapping, so the gap to a production readfish is larger. That is
+the one claim that survives this comparison.
+
+We are **8-12x worse on CPU** (182-202% against 15.6-25.3%) and **2.25x worse on
+memory** on the same reference. The CPU figure is the design, not a defect: our
+workers spin before yielding to keep wakeups off the critical path, while readfish
+polls every 400 ms and sleeps. We buy latency with CPU, which is the right trade on
+a dedicated host and should be reported as a trade. "Efficient" is the wrong word
+for what this daemon provides.
+
+### The accept path does not survive a realistic reference
+
+**0 accepts of 763 decisions against chr20**, where 13 of the 29 sequenced
+transcripts map to chr20 and several hundred were expected. The same build on the
+37 kb toy reference accepts 854 of 1366 (62.5%).
+
+The mechanism is one number: **candidates per chunk rise from 0.99 to 95.1**, a 96x
+flood. `ChannelVotes` keeps 16 diagonal slots and evicts the weakest only when it
+holds a single vote, so at ninety-five candidates per chunk a true diagonal is
+evicted by noise before reaching `accept_votes = 5`. The slot count and the
+threshold were both tuned against a reference 1700x too small.
+
+Every live run before this one used that 37 kb reference, which also fits entirely
+in cache — so the cache-conscious lookup was never actually under cache pressure.
+The offline bench reports 89.3% TPR at 10 chunks *on chr20*, so offline and live
+disagree and at least one is not measuring what it claims. **Resolving that comes
+before any further writing.**
 
 ### Negative results, recorded rather than buried
 

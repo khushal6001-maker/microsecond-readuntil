@@ -1,0 +1,26 @@
+# readfish 2024.3.0 baseline against Icarust, targeting human chr20.
+#
+# Caller: no_op. Our daemon does no basecalling at all -- it decides in signal
+# space -- so a basecalling readfish is not the comparable configuration, and no
+# basecall server is available on this host anyway. no_op means readfish produces
+# no sequence, so the mapper below is configured but never gets a query: this
+# measures readfish ORCHESTRATION, which is a LOWER BOUND on its real per-read
+# latency, not the whole pipeline.
+[caller_settings.no_op]
+
+[mapper_settings.mappy_rs]
+fn_idx_in = "/root/icarust/docker/squiggle_arrs/hg38_chr20.fa"
+n_threads = 2
+
+[[regions]]
+name = "chr20_enrich"
+min_chunks = 1
+# Matches our daemon PolicyConfig::max_chunks = 10 so the give-up point is the same.
+max_chunks = 10
+targets = ["NC_000020.11"]
+single_off = "unblock"
+multi_off = "unblock"
+single_on = "stop_receiving"
+multi_on = "stop_receiving"
+no_seq = "proceed"
+no_map = "proceed"
