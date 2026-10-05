@@ -236,7 +236,15 @@ int main(int argc, char** argv) {
   // key length trades specificity against the probability that one boundary inside it is
   // wrong. At cv=0 that probability is zero and longer is strictly better, which is
   // exactly why the previous sweep chose 14 and why it cannot be trusted here.
-  const Cell cells[] = {{3, 8}, {3, 10}, {3, 12}, {3, 14}, {4, 8}, {4, 10}, {4, 12}};
+  Cell cells[] = {{3, 8}, {3, 10}, {3, 12}, {3, 14}, {4, 8}, {4, 10}, {4, 12}};
+  std::size_t n_cells = std::size(cells);
+  // Restrict to one cell, so a finalist can be re-run with enough reads to beat the
+  // variance in the zero-FP threshold without rebuilding six other indexes.
+  if (argc > 12) {
+    cells[0].bits = static_cast<std::uint32_t>(std::strtoul(argv[11], nullptr, 10));
+    cells[0].events = static_cast<std::uint32_t>(std::strtoul(argv[12], nullptr, 10));
+    n_cells = 1;
+  }
   const std::size_t lengths[] = {2, 5, 10, 20};  // chunks; 2 stands in for "2.5"
   const int probes = mru::kDefaultProbeBudget;
 
@@ -251,7 +259,8 @@ int main(int argc, char** argv) {
   }
   std::printf("\n\n");
 
-  for (const Cell& cell : cells) {
+  for (std::size_t ci = 0; ci < n_cells; ++ci) {
+    const Cell& cell = cells[ci];
     mru::QuantConfig cfg;
     cfg.bits_per_event = cell.bits;
     cfg.events_per_key = cell.events;

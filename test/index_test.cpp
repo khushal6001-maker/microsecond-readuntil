@@ -83,9 +83,9 @@ void test_quantisation() {
   banner("quantisation");
   mru::QuantConfig cfg;
   CHECK(cfg.valid(), "default config is valid");
-  CHECK_EQ(cfg.levels(), 8u, "3 bits == 8 levels");
+  CHECK_EQ(cfg.levels(), 16u, "4 bits == 16 levels");
 
-  CHECK_EQ(cfg.key_bits(), 42u, "14 events x 3 bits (frozen geometry)");
+  CHECK_EQ(cfg.key_bits(), 48u, "12 events x 4 bits (frozen geometry)");
 
   mru::QuantConfig bad = cfg;
   bad.bits_per_event = 9;
@@ -356,10 +356,24 @@ void test_batched_throughput() {
 // zero noise recall must be essentially perfect -- that is a real correctness
 // assertion. The noisy rows are reported, not asserted: improving them IS the
 // research, and a threshold invented today would be meaningless.
+// NOTE: this harness generates signal at a FIXED samples_per_event, so it exercises the
+// fixed-width quantiser and nothing else. It disables event detection explicitly rather
+// than inheriting the default, which is now detection: measuring the detector against
+// constant-dwell signal would only show detection losing, which bench/dwell_robustness.cpp
+// already reports and which says nothing about the fixed-width path this test guards.
+// Detection's recall is measured in bench/geometry_sweep.cpp against variable dwell.
 void test_recall_harness() {
   banner("recall_harness");
   mru::QuantConfig cfg;
   cfg.minimizer_window = 1;  // isolate quantisation robustness from minimizer agreement
+  // This harness builds its reference by calling quantise_signal directly, i.e. with
+  // fixed-width segmentation, so the query must be segmented the same way. Leaving the
+  // default (detection) on here does not measure the detector -- it measures a reference
+  // and a query that were segmented differently, and scores 0% at every noise level
+  // including zero. Detection is measured against variable dwell in
+  // bench/geometry_sweep.cpp and bench/dwell_robustness.cpp, which is the only rig where
+  // the question is meaningful.
+  cfg.event_detection = false;
 
   const auto reference = synth_signal(400'000, 99);
   const auto ref_scaling = mru::scaling_from_samples(reference);
@@ -1701,15 +1715,16 @@ void test_frozen_geometry() {
   // cross-chunk diagonal was chunk-relative so votes could not accumulate. If this
   // assertion fails, re-run the sweep on a FULL-SIZE reference before editing it;
   // a 37 kb reference will happily endorse the wrong answer.
-  CHECK_EQ(cfg.bits_per_event, 3u, "FROZEN bits_per_event");
-  CHECK_EQ(cfg.events_per_key, 14u, "FROZEN events_per_key");
-  CHECK_EQ(cfg.minimizer_window, 10u, "FROZEN minimizer_window");
-  CHECK_EQ(cfg.key_bits(), 42u, "FROZEN 42-bit keys");
+  CHECK_EQ(cfg.bits_per_event, 4u, "FROZEN bits_per_event");
+  CHECK_EQ(cfg.events_per_key, 12u, "FROZEN events_per_key");
+  CHECK_EQ(cfg.minimizer_window, 1u, "FROZEN minimizer_window (no sketching)");
+  CHECK_EQ(cfg.key_bits(), 48u, "FROZEN 48-bit keys");
+  CHECK(cfg.event_detection, "FROZEN: query segmented by detected events");
   CHECK(cfg.bits_per_event * cfg.events_per_key <= 64,
         "a key must pack into 64 bits, which is what rules out 5 x 13");
   CHECK(!cfg.adaptive(), "FROZEN uniform quantiser: adaptive costs more recall than "
                          "the key space it buys");
-  CHECK_EQ(cfg.levels(), 8u, "8 quantisation levels");
+  CHECK_EQ(cfg.levels(), 16u, "16 quantisation levels");
   CHECK_EQ(cfg.samples_per_event, 10u, "10 samples/event at 4 kHz and ~400 b/s");
   CHECK(cfg.valid(), "frozen config is valid");
 
@@ -1725,7 +1740,11 @@ void test_frozen_geometry() {
 
 void test_multiprobe_api() {
   banner("multiprobe_api");
-  const mru::QuantConfig cfg;  // frozen defaults, window 10
+  // Multi-probe key expansion is independent of how the query was segmented, so this
+  // tests it against the fixed-width path, where the query events are known exactly and
+  // an expansion bug cannot hide behind a boundary estimate.
+  mru::QuantConfig cfg;
+  cfg.event_detection = false;
 
   // Correlated reference, as the real thing will be.
   const KmerRef km = synth_signal_kmer(200000, 9, 11, cfg.samples_per_event);

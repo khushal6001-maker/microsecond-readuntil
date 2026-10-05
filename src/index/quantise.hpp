@@ -171,38 +171,40 @@ struct QuantConfig {
 
   // Bits per quantised event. 3 bits = 8 levels. FROZEN.
   //
-  // THE GEOMETRY WAS RE-FROZEN AT 3 x 14 on 2026-10-05, measured by
-  // bench/geometry_sweep.cpp on the full 64 Mb chr20 against a composition-matched
-  // shuffled control, with the SAME voting code the daemon runs, and confirmed live
-  // against Icarust. TPR at the lowest zero-false-positive threshold, 20 chunks:
+  // RE-FROZEN AT 4 x 12 on 2026-10-05, against signal WITH DWELL VARIABILITY. Every
+  // earlier freeze of this parameter was fitted on constant-dwell data, under which
+  // fixed-width segmentation is exactly correct by construction and the answer is
+  // therefore wrong in a way the rig cannot show.
   //
-  //     3 x 13   65.7%        3 x 14   69.7%  <- frozen
-  //     4 x 12   49.7%        4 x 13   48.3%
+  // Measured by bench/geometry_sweep.cpp on the full 64 Mb chr20 at dwell CV 0.35, with
+  // event detection and no minimizer sketching, against a composition-matched shuffled
+  // control. TPR at the lowest zero-false-positive threshold, 400 reads:
   //
-  // Live on a 64 Mb index, accept rate / p50 / p90:
+  //     geometry   @5      @10     @20     candidates/read at 10 chunks
+  //     3 x 14    15.5%   18.2%   33.0%        7219
+  //     4 x 12    19.0%   22.2%   31.8%         661     <- frozen
   //
-  //     3 x 13   27.7%  25.60  44.82 us
-  //     3 x 14   42.4%  25.41  43.65 us   <- frozen
-  //     4 x 13   36.5%  23.88  39.37 us
+  // 4 x 12 wins at 5 and 10 chunks, ties at 20, and costs ELEVEN TIMES fewer candidates.
   //
-  // Two earlier freezes of this parameter were void, and it is worth knowing why
-  // before touching it a fourth time. The 3 x 15 freeze rested on
-  // effective_key_space(), whose Poisson fit assumed uniform key probability and
-  // whose fitted K tracked n instead of converging. The "4 x 13 wins" reading came
-  // from live runs taken while the cross-chunk diagonal was computed chunk-relative,
-  // so votes for the correct location could not accumulate across chunks; with that
-  // fixed the 4-bit cells are the WORST of the four, because suppressing candidates
-  // matters less than retaining true seeds once accumulation actually works.
+  // This reverses the previous freeze, which chose 3 x 14 over 4-bit cells on the
+  // grounds that 4 bits "discards too many true seeds". That was true WITH minimizers:
+  // the sketch already throws seeds away, so the denser 3-bit index was needed to
+  // compensate. Without sketching nothing is thrown away, so 4 bits' extra specificity
+  // is pure gain and its lower candidate count is pure saving. The two parameters are
+  // not separable and freezing them one at a time is what produced the wrong answer
+  // twice.
   //
-  // 4 bits does buy specificity -- 12.2% cap saturation against 34.2%, and 22 median
-  // candidates per read against 463 -- but it discards too many true seeds to reach
-  // the threshold, and it costs p99. Do not re-freeze on candidate counts alone.
-  std::uint32_t bits_per_event = 3;
+  // Shorter keys were tested and collapse: 3 x 8 caps 99.3% of its seeds into 65,760
+  // distinct keys and has no specificity left to set a threshold against. The
+  // hypothesis that shorter keys would be more robust to boundary error was wrong.
+  //
+  // bits_per_event * events_per_key must stay <= 64 to pack into one key.
+  std::uint32_t bits_per_event = 4;
 
   // Events combined into one key. 14 at 3 bits = 42-bit keys. FROZEN; see above.
   // bits_per_event * events_per_key must stay <= 64 to pack into one key, which is
   // why 5 x 13 = 65 bits is not a candidate.
-  std::uint32_t events_per_key = 14;
+  std::uint32_t events_per_key = 12;
 
   // z-scores are clipped to +/- this before bucketing, so outliers cannot drag
   // the whole scale.
@@ -220,7 +222,7 @@ struct QuantConfig {
   // Off by default so the frozen geometry's measurements remain reproducible; the daemon
   // turns it on with --detect. The REFERENCE side is unaffected either way, since
   // reference_to_events already emits one event per k-mer and a reference has no dwell.
-  bool event_detection = false;
+  bool event_detection = true;
   EventDetectConfig detect{};
 
   // ADAPTIVE (equal-occupancy) BUCKET BOUNDARIES.
@@ -251,8 +253,28 @@ struct QuantConfig {
   [[nodiscard]] bool adaptive() const noexcept { return n_boundaries != 0; }
 
   // Minimizer window, in keys. 1 disables subsampling and indexes every key.
-  // FROZEN at 10: this is what brings a mammalian index to ~9.0 GB.
-  std::uint32_t minimizer_window = 10;
+  //
+  // RE-FROZEN AT 1 on 2026-10-05, and this is the parameter that was most wrong.
+  //
+  // A minimizer is selected by RANK within a window. Under event detection every
+  // boundary is an estimate, so a shifted boundary makes the reference and the query
+  // select DIFFERENT keys as the window's minimum -- even where both keys are
+  // individually correct. The sketch therefore discards precisely the seeds detection
+  // was added to recover. This failure mode cannot occur when dwell is constant,
+  // because boundaries never move, which is why 10 looked free when it was frozen.
+  //
+  // Measured on 64 Mb chr20 at dwell CV 0.35 with detection, 400 reads, TPR at the
+  // lowest zero-false-positive threshold, 10-chunk reads:
+  //
+  //     window 10:   3.0%        window 1:  18.2%   (3 x 14)
+  //     window 10:   0.0%        window 1:  11.3%   (3 x 12)
+  //
+  // The cost is real and large: 63.9M minimizers instead of 11.7M for chr20, ~3.9 GB
+  // resident instead of 1.6 GB, and p50 decision latency of 174 us instead of 25 us.
+  // Window 2 and 3 were measured as intermediate points and lose most of the accuracy
+  // (14.3% and 1.5% live accept against 97.5% at window 1 before thresholding), so the
+  // trade is not smooth and there is no cheap middle.
+  std::uint32_t minimizer_window = 1;
 
   [[nodiscard]] bool valid() const noexcept {
     if (!(samples_per_event > 0 && bits_per_event > 0 && bits_per_event <= 8 &&

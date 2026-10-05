@@ -54,9 +54,27 @@ struct PolicyConfig {
   std::uint32_t first_channel = 1;
   std::uint32_t last_channel = 512;
 
-  // Measured: >=4 separates with zero false positives at 2.5 chunks, >=5 at every longer
-  // read length, against a shuffled (composition-matched) off-target control.
-  std::uint32_t accept_votes = 5;
+  // RE-FROZEN AT 8 on 2026-10-05, against signal WITH DWELL VARIABILITY.
+  //
+  // 5 was measured on constant-dwell signal with minimizers, where off-target votes
+  // never exceeded 4. Under event detection with no sketching the whole vote
+  // distribution shifts up -- there are ~10x more seeds -- so 5 no longer separates
+  // anything. Measured live at dwell CV 0.35 with the frozen 4 x 12 geometry, 60 s runs:
+  //
+  //     threshold   on-target accept   shuffled-control accept
+  //         5            97.5%                 72.9%     <- accepts almost everything
+  //         8             8.3%                  0.75%    <- frozen
+  //        10             0.0%                  0.1%     <- suppresses both
+  //
+  // 8 is the only operating point measured that separates at all: 11x enrichment. The
+  // yield is low and that is the honest state of the method on realistic signal, not a
+  // tuning artefact -- 10 kills the true accepts along with the false ones.
+  //
+  // The lesson worth keeping: this threshold is not independent of the geometry or the
+  // minimizer window. Changing either moves the vote distribution, so all three have to
+  // be re-frozen together or the result is a configuration that accepts everything while
+  // appearing to have excellent recall.
+  std::uint32_t accept_votes = 8;
 
   // How long to defer before giving up and unblocking. 10 chunks of 0.4 s is ~1800
   // bases, which measured 89.3% TPR at zero FPR.
