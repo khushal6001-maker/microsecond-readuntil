@@ -1,0 +1,82 @@
+--- src/simulation.rs.bak	2026-10-05 08:46:48.216177037 +0000
++++ src/simulation.rs	2026-10-05 08:48:42.420724295 +0000
+@@ -17,7 +17,7 @@
+ use probability::prelude::*;
+ use rand::prelude::*;
+ use rand::seq::SliceRandom;
+-use rand_distr::Normal;
++use rand_distr::{LogNormal, Normal};
+ use rayon::prelude::*;
+ use std::borrow::Cow;
+ use std::collections::HashMap;
+@@ -305,6 +305,50 @@
+     let mut sampler: Independent<&Laplace, &mut source::Default> =
+         Independent(&laplace, &mut source);
+     let mut rng = StdRng::seed_from_u64(123);
++
++    // DWELL-TIME VARIABILITY.
++    //
++    // Icarust emits exactly `samples_per_base` samples for every k-mer, so every
++    // simulated read translocates at a perfectly constant rate. Real pores do not: the
++    // dwell time per k-mer is variable and right-skewed. The constant-rate assumption is
++    // invisible to a basecaller-based client, but it is decisive for any tool that
++    // segments raw signal by time, because fixed-width segmentation is exactly correct
++    // under constant dwell and degrades as soon as dwell varies. A client can therefore
++    // look accurate against Icarust and fail on a sequencer.
++    //
++    // ICARUST_DWELL_CV sets the coefficient of variation of a lognormal dwell about
++    // `samples_per_base`. Lognormal because dwell is positive and right-skewed, and it is
++    // the long holds that do the damage. Published R10 variability is roughly 0.3-0.5.
++    //
++    // Unset or 0 reproduces the original fixed-count behaviour exactly, so existing
++    // results are unaffected. An environment variable rather than a config field keeps
++    // this a minimal, revertible change to a third-party simulator; a config option is
++    // what an upstream patch should use.
++    let dwell_cv: f64 = std::env::var("ICARUST_DWELL_CV")
++        .ok()
++        .and_then(|v| v.parse::<f64>().ok())
++        .filter(|v| v.is_finite() && *v > 0.0)
++        .unwrap_or(0.0);
++    let dwell_dist: Option<LogNormal<f64>> = if dwell_cv > 0.0 {
++        let sigma2 = (1.0 + dwell_cv * dwell_cv).ln();
++        let mu = (samples_per_base as f64).ln() - 0.5 * sigma2;
++        match LogNormal::new(mu, sigma2.sqrt()) {
++            Ok(d) => {
++                info!(
++                    "dwell variability ENABLED: lognormal CV {dwell_cv} about \
++                     {samples_per_base} samples/base"
++                );
++                Some(d)
++            }
++            Err(e) => {
++                info!("dwell variability requested but rejected ({e}); using fixed dwell");
++                None
++            }
++        }
++    } else {
++        None
++    };
++
+     info!("samples per base {samples_per_base} {}", signal_vec.len());
+ 
+     for kmer in r.kmers(kmer_len as u8) {
+@@ -320,7 +364,18 @@
+         // N sampling for each base (sample_rate / bases per second )
+         // This could also be worked out from profile.dwell_mean
+         // Iterate and push samples into the signal_vec
+-        for _ in 0..samples_per_base {
++        // Draw this k-mer's dwell. Clamped to at least one sample -- a k-mer that
++        // contributed nothing would be a skip, which is a different phenomenon -- and to
++        // eight times nominal, beyond which it is a pore block rather than a dwell.
++        let n_samples: usize = match dwell_dist {
++            Some(d) => {
++                let v = rand::Rng::sample(&mut rng, d).round();
++                let hi = (samples_per_base * 8) as f64;
++                v.clamp(1.0, hi) as usize
++            }
++            None => samples_per_base,
++        };
++        for _ in 0..n_samples {
+             let mut x = value.0;
+             if profile.noise & (profile.sim_type == SimType::RNAR9) {
+                 add_gaussian_noise(&mut x, value.1.unwrap(), &mut rng)
