@@ -73,7 +73,7 @@ struct Args {
   std::uint32_t max_chunks = 0;
   int probe_budget = 0;
   bool pin = false;  // off by default: pinning a dev box is rarely what you want
-  bool detect = false;       // segment the query by detected events
+  int detect = -1;           // -1 = keep the frozen default, 0 = off, 1 = on
   std::uint32_t min_window = 0;  // 0 = keep the frozen default
   std::uint32_t bits = 0;    // 0 = keep the frozen default
   std::uint32_t events = 0;  // 0 = keep the frozen default
@@ -189,7 +189,9 @@ void usage() {
       if (v == nullptr) return false;
       a.min_window = static_cast<std::uint32_t>(std::atoi(v));
     } else if (k == "--detect") {
-      a.detect = true;
+      a.detect = 1;
+    } else if (k == "--no-detect") {
+      a.detect = 0;
     } else if (k == "--probes") {
       const char* v = next("--probes");
       if (v == nullptr) return false;
@@ -331,7 +333,7 @@ int main(int argc, char** argv) {
   // instead of a rebuild. 0 keeps the frozen default.
   if (args.bits != 0) pcfg.quant.bits_per_event = args.bits;
   if (args.events != 0) pcfg.quant.events_per_key = args.events;
-  pcfg.quant.event_detection = args.detect;
+  if (args.detect >= 0) pcfg.quant.event_detection = (args.detect != 0);
   if (args.min_window != 0) pcfg.quant.minimizer_window = args.min_window;
   mru::PolicyStats pstats;
   std::unique_ptr<mru::SignalPolicy> signal_policy;
