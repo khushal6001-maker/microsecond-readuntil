@@ -137,7 +137,8 @@ std::uint32_t best_votes_for_read(const mru::MinimizerIndex& idx,
                                  mru::ProbeScratch& scratch,
                                  mru::ScalingScratch& sscratch,
                                  std::vector<std::int64_t>& diags,
-                                 std::size_t max_chunks, std::size_t& candidates) {
+                                 std::size_t max_chunks, std::size_t& candidates,
+                                 std::size_t& ev_total) {
   mru::ChannelVotes votes;
   votes.reset();
   const std::size_t need =
@@ -161,6 +162,7 @@ std::uint32_t best_votes_for_read(const mru::MinimizerIndex& idx,
     (void)mru::match_signal(idx, chunk, scaling, cfg, scratch, probes);
     candidates += mru::accumulate_chunk_votes(scratch, votes, diags, dropped,
                                              scratch.events.size());
+    ev_total += scratch.events.size();
   }
   std::int64_t d = 0;
   return votes.best(&d);
@@ -183,6 +185,11 @@ int main(int argc, char** argv) {
       argc > 8 ? static_cast<std::uint32_t>(std::strtoul(argv[8], nullptr, 10)) : 0;
   const std::uint32_t events =
       argc > 9 ? static_cast<std::uint32_t>(std::strtoul(argv[9], nullptr, 10)) : 0;
+  const float det_thr = argc > 10 ? std::strtof(argv[10], nullptr) : 0.0f;
+  const std::uint32_t det_min =
+      argc > 11 ? static_cast<std::uint32_t>(std::strtoul(argv[11], nullptr, 10)) : 0;
+  const std::uint32_t det_win =
+      argc > 12 ? static_cast<std::uint32_t>(std::strtoul(argv[12], nullptr, 10)) : 0;
 
   std::vector<float> levels;
   if (!load_model_tsv(argv[1], levels)) {
@@ -214,6 +221,9 @@ int main(int argc, char** argv) {
   cfg.minimizer_window = min_window;
   if (bits != 0) cfg.bits_per_event = bits;
   if (events != 0) cfg.events_per_key = events;
+  if (det_thr > 0.0f) cfg.detect.threshold = det_thr;
+  if (det_min != 0) cfg.detect.min_len = det_min;
+  if (det_win != 0) cfg.detect.window = det_win;
   if (!cfg.valid() || cfg.key_bits() > 64) {
     std::printf("invalid geometry %u x %u\n", cfg.bits_per_event, cfg.events_per_key);
     return 1;
@@ -261,16 +271,16 @@ int main(int argc, char** argv) {
   diags.reserve(mru::kDiagCapacity);
 
   std::vector<std::uint32_t> on_v, off_v;
-  std::size_t on_cand = 0, off_cand = 0;
+  std::size_t on_cand = 0, off_cand = 0, on_ev = 0, off_ev = 0;
   on_v.reserve(on.size());
   off_v.reserve(off.size());
   for (const auto& r : on) {
     on_v.push_back(best_votes_for_read(idx, r, cfg, probes, scratch, sscratch, diags,
-                                      max_chunks, on_cand));
+                                      max_chunks, on_cand, on_ev));
   }
   for (const auto& r : off) {
     off_v.push_back(best_votes_for_read(idx, r, cfg, probes, scratch, sscratch, diags,
-                                       max_chunks, off_cand));
+                                       max_chunks, off_cand, off_ev));
   }
 
   std::sort(on_v.begin(), on_v.end());
@@ -292,6 +302,14 @@ int main(int argc, char** argv) {
   const auto med = [](const std::vector<std::uint32_t>& v) {
     return v.empty() ? 0u : v[v.size() / 2];
   };
+  // One event per base is the target. Over-segmenting is as fatal as not segmenting,
+  // because a key counts a fixed number of CONSECUTIVE events, so one spurious event
+  // shifts every later key.
+  std::printf("events/read on %.0f off %.0f (ideal ~%zu at %u samples/base)\n",
+              static_cast<double>(on_ev) / static_cast<double>(on.size()),
+              static_cast<double>(off_ev) / static_cast<double>(off.size()),
+              max_chunks * kChunkSamples / cfg.samples_per_event,
+              cfg.samples_per_event);
   std::printf("on  votes: med %u p95 %u max %u | cand/read %.0f\n", med(on_v),
               on_v[static_cast<std::size_t>(0.95 * (on_v.size() - 1))], on_v.back(),
               static_cast<double>(on_cand) / static_cast<double>(on.size()));

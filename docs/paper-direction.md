@@ -72,6 +72,48 @@ the finding rather than winning the benchmark, PROVIDED the sweep is run on an e
 baseline too. A sensitivity curve for our engine alone shows only that our engine is
 fragile. The same curve for RawHash is the result.
 
+## The headline result, on squigulator
+
+Measured 2026-10-05 with `bench/squig_sweep.cpp`: 20 Mb of chr20 indexed on both strands,
+squigulator's own R10.4 9-mer model on both sides, 518 reads per cell, 10 chunks of 2000
+samples (0.4 s at 5 kHz), negative control = composition-matched shuffle of the same
+reference simulated at matching dwell. TPR at the lowest zero-false-positive threshold:
+
+| dwell CV | fixed-width (3x14, w=10) | event-detected (4x12, w=1) | ratio |
+|---|---|---|---|
+| 0.00 | **49.2%** | 18.4% | 0.37x |
+| 0.10 | 6.6% | **23.0%** | 3.5x |
+| 0.20 | 1.8% | **19.0%** | 10.6x |
+| 0.30 | 1.4% | **18.8%** | 13.4x |
+| 0.44 (squigulator default) | 1.4% | **14.2%** | 10.1x |
+| 0.60 | 1.2% | **8.0%** | 6.7x |
+
+Fixed-width falls 41x across the range. Detection is nearly flat, and its events-per-read
+stays at 1507-1625 regardless of CV, which is the segmentation doing its job.
+
+**The finding is the crossover, not either curve.** Fixed-width wins only at CV 0 -- the
+one condition no pore satisfies, and exactly the condition Icarust ships. Evaluating at
+CV 0 does not merely inflate a number, it INVERTS THE RANKING of two methods. A developer
+who tuned against stock Icarust would ship the configuration that is 10x worse at the
+accepted simulator's own default dwell, and every measurement they took would agree with
+them.
+
+That is the claim the paper can make, it is measured on a community-standard instrument
+rather than on our own generator, and it does not depend on our engine being good.
+
+## Second-order finding: calibration target
+
+Tuning the detector by matching events-per-read to the ideal of one per base is wrong. At
+CV 0.44: threshold 2.0 gives 2017 events/read (ideal 2000) and 2.0% TPR, while threshold
+3.0 gives 1562 and 14.2%. Deliberately under-segmenting by ~20% is seven times better.
+
+Mechanistic, not empirical luck: a key packs a fixed number of CONSECUTIVE events, so a
+spurious event shifts every later key in the read, whereas a missed boundary merges two
+events and leaves the rest of the frame intact. Missing boundaries is cheap, inventing
+them is not. Any paper reporting detection results needs to state how the detector was
+calibrated and on what data, because our generator-derived calibration scored 0.6% where
+the squigulator-derived one scores 18.4%.
+
 ## Required to make this publishable
 
 1. **Use Squigulator, not our synthetic generator.** `bench/` generates its own signal,

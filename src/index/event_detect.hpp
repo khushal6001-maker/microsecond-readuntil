@@ -51,13 +51,31 @@ struct EventDetectConfig {
   // At ~10 samples per k-mer, 4 resolves adjacent k-mers without splitting one.
   std::uint32_t window = 4;
 
-  // t-statistic a boundary must exceed. Lower finds more events, including spurious ones
-  // from noise; higher merges genuinely distinct k-mers.
-  float threshold = 1.4f;
+  // t-statistic a boundary must exceed.
+  //
+  // RE-CALIBRATED on squigulator signal, not on this project's own generator, because a
+  // calibration derived from our generator's noise model did not transfer: it scored 0.6%
+  // TPR at dwell CV 0 on squigulator data where fixed-width scored 49.2%.
+  //
+  // The calibration TARGET also had to change, and this is the non-obvious part. Tuning to
+  // match events-per-read against the ideal of one event per base is wrong. On squigulator
+  // at CV 0.44, 4x12, window 1:
+  //
+  //     threshold 2.0, min_len 4 -> 2017 events/read (ideal 2000),  2.0% TPR
+  //     threshold 3.0, min_len 4 -> 1562 events/read,              14.2% TPR
+  //
+  // Deliberately UNDER-segmenting by about 20% is seven times better than hitting the
+  // ideal count. The asymmetry is mechanistic: a key packs a fixed number of CONSECUTIVE
+  // events, so one spurious event shifts every later key in the read, while a missed
+  // boundary merely merges two events and leaves the rest of the frame intact. Missing
+  // boundaries is cheap; inventing them is not.
+  float threshold = 3.0f;
 
-  // A detected event shorter than this is merged into its neighbour. Guards against a
-  // noise spike being read as two boundaries one sample apart.
-  std::uint32_t min_len = 3;
+  // A detected event shorter than this is not started. Guards against a noise spike being
+  // read as two boundaries a sample apart. 4 measured best on squigulator signal; 7, which
+  // was calibrated against our own generator, costs more than half the TPR (5.8% against
+  // 14.2% at CV 0.44).
+  std::uint32_t min_len = 4;
 
   // Force a boundary after this many samples with no detected change. Without it a long
   // homopolymer becomes one enormous event and the read loses its place; with it the
