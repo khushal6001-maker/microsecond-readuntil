@@ -40,6 +40,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "index/event_detect.hpp"
+
 namespace {
 
 constexpr float kPaToAdc = 8.0f;
@@ -229,6 +231,22 @@ void query_buckets(const std::vector<std::int16_t>& raw, std::uint32_t width,
   for (float m : means) out.push_back(bucket_of(m, med, mad));
 }
 
+// Detected events -> buckets. The reference side is unchanged (one level per k-mer),
+// because the reference has no dwell; detection exists to make the QUERY produce one
+// event per k-mer however long the pore happened to hold it.
+void query_buckets_detected(const std::vector<std::int16_t>& raw,
+                            const mru::EventDetectConfig& ecfg, mru::EventScratch& es,
+                            std::vector<float>& means, std::vector<std::uint8_t>& out) {
+  out.clear();
+  (void)mru::detect_events(std::span<const std::int16_t>(raw.data(), raw.size()), ecfg,
+                           es, means);
+  if (means.empty()) return;
+  float med = 0, mad = 1;
+  median_mad(means, med, mad);
+  out.reserve(means.size());
+  for (float m : means) out.push_back(bucket_of(m, med, mad));
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -303,20 +321,36 @@ int main(int argc, char** argv) {
                   static_cast<double>(std::max<std::size_t>(1, ref_rlc.size())),
               idx_fixed.size(), idx_rlc.size());
 
-  std::printf("%8s | %-34s | %-34s\n", "dwellCV", "FIXED-WIDTH (current method)",
-              "RUN-LENGTH COMPRESSED");
-  std::printf("%8s | %-34s | %-34s\n", "", "med votes  >=5  diag ok",
-              "med votes  >=5  diag ok");
+  std::printf("%8s | %-21s | %-21s | %-21s\n", "dwellCV", "FIXED-WIDTH (current)",
+              "RUN-LENGTH COMPRESSED", "EVENT-DETECTED");
+  std::printf("%8s | %5s %4s %4s %4s | %5s %4s %4s %4s | %5s %4s %4s %4s\n", "",
+              "medV", "TPR", "FPR", "ok", "medV", "TPR", "FPR", "ok", "medV", "TPR",
+              "FPR", "ok");
+
+  mru::EventDetectConfig ecfg;
+  // Tunable from the command line because the detector has to be calibrated against a
+  // target: events per read should land near one per k-mer. Over-segmenting is as fatal
+  // as not segmenting at all, since the key packs a fixed number of consecutive events.
+  if (argc > 6) ecfg.threshold = std::strtof(argv[6], nullptr);
+  if (argc > 7) ecfg.min_len = static_cast<std::uint32_t>(std::strtoul(argv[7], nullptr, 10));
+  mru::EventScratch es;
+  std::vector<float> ev_means;
 
   const float cvs[] = {0.0f, 0.1f, 0.3f, 0.5f};
   const std::size_t read_bases = 2000;
   if (dna.size() < read_bases + 4 * k) { std::printf("reference too short\n"); return 1; }
   const std::size_t span = dna.size() - read_bases - 4 * k;
+  es.reserve(read_bases * kSpe * 8);
+  ev_means.reserve(read_bases * 4);
+  std::printf("event detection: window %u, threshold %.2f, min_len %u, max_len %u\n\n",
+              ecfg.window, static_cast<double>(ecfg.threshold), ecfg.min_len,
+              ecfg.max_len);
 
   for (float cv : cvs) {
-    std::size_t fx_hit = 0, fx_ok = 0, rl_hit = 0, rl_ok = 0;
-    std::size_t fx_fp = 0, rl_fp = 0;
-    std::vector<std::size_t> fx_votes, rl_votes, fx_off, rl_off;
+    std::size_t fx_hit = 0, fx_ok = 0, rl_hit = 0, rl_ok = 0, ed_hit = 0, ed_ok = 0;
+    std::size_t fx_fp = 0, rl_fp = 0, ed_fp = 0;
+    std::vector<std::size_t> fx_votes, rl_votes, fx_off, rl_off, ed_votes, ed_off;
+    std::size_t ev_total = 0, ev_reads = 0;
 
     // Off-target arm first, so the on-target numbers are read against it.
     for (std::size_t r = 0; r < n_reads; ++r) {
@@ -336,6 +370,11 @@ int main(int argc, char** argv) {
       const Outcome orl = vote(idx_rlc, qr, {});
       rl_off.push_back(orl.best_votes);
       if (orl.best_votes >= 5) ++rl_fp;
+      std::vector<std::uint8_t> qd;
+      query_buckets_detected(raw, ecfg, es, ev_means, qd);
+      const Outcome od = vote(idx_fixed, qd, {});
+      ed_off.push_back(od.best_votes);
+      if (od.best_votes >= 5) ++ed_fp;
     }
 
     for (std::size_t r = 0; r < n_reads; ++r) {
@@ -371,23 +410,47 @@ int main(int argc, char** argv) {
                                        static_cast<std::uint32_t>(d));
       const std::int64_t d_rlc = static_cast<std::int64_t>(it - ref_rlc_origin.begin());
       if (orl.best_votes >= 5 && std::llabs(orl.best_diag - d_rlc) <= 16) ++rl_ok;
+
+      // Detected events against the UNCOMPRESSED per-k-mer reference index. If detection
+      // recovers one event per k-mer then query and reference event sequences line up
+      // again, and the diagonal is in base coordinates directly comparable to d.
+      std::vector<std::uint8_t> qd;
+      query_buckets_detected(raw, ecfg, es, ev_means, qd);
+      ev_total += qd.size();
+      ++ev_reads;
+      const Outcome od = vote(idx_fixed, qd, {});
+      ed_votes.push_back(od.best_votes);
+      if (od.best_votes >= 5) ++ed_hit;
+      if (od.best_votes >= 5 &&
+          std::llabs(od.best_diag - static_cast<std::int64_t>(d)) <= 8) {
+        ++ed_ok;
+      }
     }
     std::sort(fx_votes.begin(), fx_votes.end());
     std::sort(rl_votes.begin(), rl_votes.end());
     std::sort(fx_off.begin(), fx_off.end());
     std::sort(rl_off.begin(), rl_off.end());
+    std::sort(ed_votes.begin(), ed_votes.end());
+    std::sort(ed_off.begin(), ed_off.end());
     const auto med = [](const std::vector<std::size_t>& v) {
       return v.empty() ? 0 : v[v.size() / 2];
     };
     const double N = static_cast<double>(n_reads);
-    std::printf("%8.2f | %6zu %5.1f%% %5.1f%% %4zu | %6zu %5.1f%% %5.1f%% %4zu\n",
+    std::printf("%8.2f | %5zu %3.0f%% %3.0f%% %4zu | %5zu %3.0f%% %3.0f%% %4zu | "
+                "%5zu %3.0f%% %3.0f%% %4zu\n",
                 static_cast<double>(cv), med(fx_votes),
                 100.0 * static_cast<double>(fx_hit) / N,
                 100.0 * static_cast<double>(fx_fp) / N, fx_ok, med(rl_votes),
                 100.0 * static_cast<double>(rl_hit) / N,
-                100.0 * static_cast<double>(rl_fp) / N, rl_ok);
-    std::printf("%8s | off-target median votes %-9zu | off-target median votes %zu\n", "",
-                med(fx_off), med(rl_off));
+                100.0 * static_cast<double>(rl_fp) / N, rl_ok, med(ed_votes),
+                100.0 * static_cast<double>(ed_hit) / N,
+                100.0 * static_cast<double>(ed_fp) / N, ed_ok);
+    std::printf("%8s | off medV %-11zu | off medV %-11zu | off medV %-5zu "
+                "events/read %.0f (ideal %zu)\n",
+                "", med(fx_off), med(rl_off), med(ed_off),
+                ev_reads ? static_cast<double>(ev_total) / static_cast<double>(ev_reads)
+                         : 0.0,
+                read_bases - k + 1);
   }
   std::printf("\n'diag ok' counts reads of %zu that reached 5 votes AND landed on the "
               "right diagonal.\nA high TPR with a low diag ok, or with a comparable FPR, "
