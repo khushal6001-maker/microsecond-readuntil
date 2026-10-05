@@ -284,6 +284,11 @@ target_link_libraries(mru_dwell_robustness PRIVATE mru_core mru_warnings mru_san
 add_executable(mru_rlc_feasibility bench/rlc_feasibility.cpp)
 target_link_libraries(mru_rlc_feasibility PRIVATE mru_core mru_warnings mru_sanitizers)
 
+# Dwell sensitivity on signal from squigulator rather than from our own generator, which is
+# what a claim about evaluation methodology has to rest on.
+add_executable(mru_squig_sweep bench/squig_sweep.cpp)
+target_link_libraries(mru_squig_sweep PRIVATE mru_core mru_warnings mru_sanitizers)
+
 if(MRU_BUILD_TESTS)
   enable_testing()
 
