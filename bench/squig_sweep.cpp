@@ -97,7 +97,8 @@ bool load_fasta_acgt(const std::string& path, std::string& out) {
 // Read ASCII SLOW5. Column 7 is len_raw_signal and column 8 is the comma-separated signal.
 // Only those two are needed; everything else is metadata.
 std::size_t load_slow5(const std::string& path,
-                       std::vector<std::vector<std::int16_t>>& reads, std::size_t limit) {
+                       std::vector<std::vector<std::int16_t>>& reads, std::size_t limit,
+                       std::vector<std::string>* ids = nullptr) {
   std::ifstream f(path);
   if (!f) return 0;
   std::string line;
@@ -126,7 +127,10 @@ std::size_t load_slow5(const std::string& path,
       while (*q != '\0' && *q != ',' && *q != '\t') ++q;
       if (*q == ',') ++q;
     }
-    if (!raw.empty()) reads.push_back(std::move(raw));
+    if (!raw.empty()) {
+      if (ids != nullptr) ids->push_back(line.substr(0, line.find('	')));
+      reads.push_back(std::move(raw));
+    }
     if (limit != 0 && reads.size() >= limit) break;
   }
   return reads.size();
@@ -139,12 +143,14 @@ std::uint32_t best_votes_for_read(const mru::MinimizerIndex& idx,
                                  mru::ScalingScratch& sscratch,
                                  std::vector<std::int64_t>& diags,
                                  std::size_t max_chunks, std::size_t& candidates,
-                                 std::size_t& ev_total, bool use_chains,
+                                 std::size_t& ev_total, int mode,
                                  const mru::ChainConfig& ccfg) {
   mru::ChannelVotes votes;
   mru::ChannelChains chains;
+  static thread_local mru::ChannelAnchorChain ach;  // 14 KB; not a stack object
   votes.reset();
   chains.reset();
+  ach.reset();
   const std::size_t need =
       static_cast<std::size_t>(cfg.samples_per_event) * cfg.events_per_key;
   mru::SignalScaling scaling{};
@@ -164,7 +170,10 @@ std::uint32_t best_votes_for_read(const mru::MinimizerIndex& idx,
       have_scaling = true;
     }
     (void)mru::match_signal(idx, chunk, scaling, cfg, scratch, probes);
-    if (use_chains) {
+    if (mode == 2) {
+      candidates += mru::accumulate_chunk_anchor_chain(scratch, ach, ccfg, dropped,
+                                                       scratch.events.size());
+    } else if (mode == 1) {
       candidates += mru::accumulate_chunk_chains(scratch, chains, ccfg, dropped,
                                                  scratch.events.size());
     } else {
@@ -174,7 +183,9 @@ std::uint32_t best_votes_for_read(const mru::MinimizerIndex& idx,
     ev_total += scratch.events.size();
   }
   std::int64_t d = 0;
-  return use_chains ? chains.best(&d) : votes.best(&d);
+  if (mode == 2) return ach.best(&d);
+  if (mode == 1) return chains.best(&d);
+  return votes.best(&d);
 }
 
 }  // namespace
@@ -202,12 +213,21 @@ int main(int argc, char** argv) {
   // 1 selects streaming gap-tolerant chaining instead of exact-diagonal voting. band 0
   // makes chaining behave like the vote table, which is the control that shows the band
   // is what matters rather than the restructuring.
-  const bool use_chains = argc > 13 ? (std::atoi(argv[13]) != 0) : false;
+  // 0 votes, 1 greedy chains, 2 anchor-history chains
+  const int mode = argc > 13 ? std::atoi(argv[13]) : 0;
   mru::ChainConfig ccfg;
   if (argc > 14) ccfg.band = static_cast<std::uint32_t>(std::strtoul(argv[14], nullptr, 10));
   if (argc > 15) {
     ccfg.max_gap = static_cast<std::uint32_t>(std::strtoul(argv[15], nullptr, 10));
   }
+  if (argc > 16) {
+    ccfg.lookback = static_cast<std::uint32_t>(std::strtoul(argv[16], nullptr, 10));
+  }
+  if (argc > 17) {
+    ccfg.max_occ = static_cast<std::uint32_t>(std::strtoul(argv[17], nullptr, 10));
+  }
+  const bool delta = argc > 18 ? (std::atoi(argv[18]) != 0) : false;
+  const float dclip = argc > 19 ? std::strtof(argv[19], nullptr) : 0.0f;
 
   std::vector<float> levels;
   if (!load_model_tsv(argv[1], levels)) {
@@ -242,6 +262,8 @@ int main(int argc, char** argv) {
   if (det_thr > 0.0f) cfg.detect.threshold = det_thr;
   if (det_min != 0) cfg.detect.min_len = det_min;
   if (det_win != 0) cfg.detect.window = det_win;
+  cfg.delta_keys = delta;
+  if (dclip > 0.0f) cfg.delta_clip = dclip;
   if (!cfg.valid() || cfg.key_bits() > 64) {
     std::printf("invalid geometry %u x %u\n", cfg.bits_per_event, cfg.events_per_key);
     return 1;
@@ -265,7 +287,8 @@ int main(int argc, char** argv) {
   idx.build(minimizers);
 
   std::vector<std::vector<std::int16_t>> on, off;
-  load_slow5(argv[3], on, 0);
+  std::vector<std::string> on_ids;
+  load_slow5(argv[3], on, 0, &on_ids);
   load_slow5(argv[4], off, 0);
   if (on.empty() || off.empty()) {
     std::printf("no reads loaded (on=%zu off=%zu)\n", on.size(), off.size());
@@ -277,7 +300,12 @@ int main(int argc, char** argv) {
               dna.size(), model.k(), cfg.bits_per_event, cfg.events_per_key,
               cfg.key_bits(), cfg.minimizer_window,
               detect ? "EVENT-DETECTED" : "fixed-width", max_chunks, kChunkSamples);
-  if (use_chains) {
+  if (mode == 2) {
+    std::printf("decision: ANCHOR-HISTORY CHAINS (band %u, max_gap %u, lookback %u, "
+                "max_occ %u, %zu anchors/channel)\n",
+                ccfg.band, ccfg.max_gap, ccfg.lookback, ccfg.max_occ,
+                mru::ChannelAnchorChain::kAnchors);
+  } else if (mode == 1) {
     std::printf("decision: STREAMING CHAINS (band %u, max_gap %u, %zu chains/channel)\n",
                 ccfg.band, ccfg.max_gap, mru::ChannelChains::kChains);
   } else {
@@ -295,18 +323,98 @@ int main(int argc, char** argv) {
   std::vector<std::int64_t> diags;
   diags.reserve(mru::kDiagCapacity);
 
+  // ---------------------------------------------------------------------------------
+  // PER-EVENT BUCKET AGREEMENT.
+  //
+  // Everything downstream -- key match rate, votes, chains -- is a power of this number. A
+  // key of E events matches only if all E of its buckets agree, so agreement a gives a key
+  // match rate of a^E. Measuring a directly says whether the pipeline's problem is the
+  // decision rule, the geometry, or the quantiser itself, and no amount of chaining can
+  // recover a key that never matched.
+  //
+  // Forward-strand reads only, since the reverse half of the index is a separate
+  // coordinate system. The read id carries the truth locus. The reference event index for a
+  // read starting at base d is d up to a k-mer-convention offset, so a small offset search
+  // is run and the best agreement reported -- that absorbs an off-by-k without hiding a
+  // real disagreement.
+  {
+    std::size_t reads_scored = 0, agree_sum = 0, compared_sum = 0;
+    std::vector<mru::QEvent> qev;
+    std::vector<float> qz;
+    mru::ScalingScratch diag_ss;
+    diag_ss.reserve(kChunkSamples * 2);
+    for (std::size_t i = 0; i < on.size() && reads_scored < 200; ++i) {
+      const std::string id = on_ids.size() > i ? on_ids[i] : std::string();
+      // name!contig!start!end!strand
+      std::size_t p1 = id.find('!');
+      if (p1 == std::string::npos) continue;
+      std::size_t p2 = id.find('!', p1 + 1);
+      std::size_t p3 = id.find('!', p2 + 1);
+      std::size_t p4 = id.find('!', p3 + 1);
+      if (p4 == std::string::npos) continue;
+      if (id.substr(p4 + 1, 1) != "+") continue;  // forward strand only
+      const long d = std::strtol(id.c_str() + p2 + 1, nullptr, 10);
+      if (d <= 0) continue;
+
+      const std::size_t len = std::min(kChunkSamples, on[i].size());
+      if (len < kChunkSamples) continue;
+      const std::span<const std::int16_t> chunk(on[i].data(), len);
+      const mru::SignalScaling sc = mru::scaling_from_samples(chunk, diag_ss);
+      if (!sc.valid()) continue;
+      qev.clear();
+      qz.clear();
+      if (cfg.event_detection) {
+        mru::EventScratch diag_es;
+        std::vector<float> diag_means;
+        mru::quantise_signal_detected(chunk, sc, cfg, diag_es, diag_means, qev, &qz);
+      } else {
+        mru::quantise_signal(chunk, sc, cfg, qev, &qz);
+      }
+      if (qev.size() < 32) continue;
+
+      std::size_t best_agree = 0, best_cmp = 0;
+      for (long shift = -12; shift <= 12; ++shift) {
+        const long ref_off = d + shift;
+        if (ref_off < 0) continue;
+        std::size_t agree = 0, cmp = 0;
+        for (std::size_t e = 0; e < qev.size(); ++e) {
+          const std::size_t ri = static_cast<std::size_t>(ref_off) + e;
+          if (ri >= ref_events.size()) break;
+          ++cmp;
+          if (ref_events[ri] == qev[e]) ++agree;
+        }
+        if (cmp > 0 && agree > best_agree) {
+          best_agree = agree;
+          best_cmp = cmp;
+        }
+      }
+      if (best_cmp == 0) continue;
+      agree_sum += best_agree;
+      compared_sum += best_cmp;
+      ++reads_scored;
+    }
+    if (compared_sum > 0) {
+      const double a = static_cast<double>(agree_sum) / static_cast<double>(compared_sum);
+      std::printf("per-event bucket agreement: %.1f%% over %zu reads (%zu events)\n",
+                  100.0 * a, reads_scored, compared_sum);
+      std::printf("  implied key match rate a^E for E=%u: %.3f%%   (E=8: %.3f%%)\n",
+                  cfg.events_per_key,
+                  100.0 * std::pow(a, static_cast<double>(cfg.events_per_key)),
+                  100.0 * std::pow(a, 8.0));
+    }
+  }
+
   std::vector<std::uint32_t> on_v, off_v;
   std::size_t on_cand = 0, off_cand = 0, on_ev = 0, off_ev = 0;
   on_v.reserve(on.size());
   off_v.reserve(off.size());
   for (const auto& r : on) {
     on_v.push_back(best_votes_for_read(idx, r, cfg, probes, scratch, sscratch, diags,
-                                      max_chunks, on_cand, on_ev, use_chains, ccfg));
+                                      max_chunks, on_cand, on_ev, mode, ccfg));
   }
   for (const auto& r : off) {
     off_v.push_back(best_votes_for_read(idx, r, cfg, probes, scratch, sscratch, diags,
-                                       max_chunks, off_cand, off_ev, use_chains,
-                                       ccfg));
+                                       max_chunks, off_cand, off_ev, mode, ccfg));
   }
 
   std::sort(on_v.begin(), on_v.end());

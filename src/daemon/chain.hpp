@@ -56,6 +56,15 @@ struct ChainConfig {
   // voting and its cliff.
   std::uint32_t band = 12;
 
+  // Predecessors examined per anchor by the anchor-history chainer below. Cost is
+  // O(lookback) per anchor, paid once and never re-paid on a later chunk.
+  std::uint32_t lookback = 48;
+
+  // Skip a seed whose match count has reached this value, as an occurrence filter. Our
+  // probe returns at most SeedMatches::kMaxPerSeed positions, so a saturated count means
+  // the key is ambiguous. 0 disables filtering.
+  std::uint32_t max_occ = 0;
+
   [[nodiscard]] bool valid() const noexcept { return max_gap > 0; }
 };
 
@@ -167,6 +176,122 @@ inline std::size_t accumulate_chunk_chains(const ProbeScratch& scratch,
     }
   }
   chains.events_consumed += chunk_events;
+  return seen;
+}
+
+// ---------------------------------------------------------------------------------------
+// Anchor-history chaining: minimap2-style best-predecessor scoring, restricted to what a
+// streaming decision can afford.
+//
+// The greedy chainer above keeps only each chain's LAST anchor, so it cannot reconsider:
+// once an anchor attaches to the wrong chain that is permanent, and with a saturated index
+// most anchors are noise, so 24 slots thrash. That is why it bought only 23% where RawHash
+// sits 5x higher. RawHash scores every anchor against every plausible predecessor and takes
+// the best, which is what actually tolerates noise.
+//
+// Doing that exactly needs the whole read. Doing it incrementally needs two bounds:
+//
+//   lookback   how many recent anchors are considered as predecessors. minimap2 uses 25-50
+//              with an early exit; RawHash's --max-iterations defaults to 200. Cost is
+//              O(lookback) per anchor, paid once and NEVER re-paid on a later chunk --
+//              which is the point, because a batch chainer re-chains every accumulated
+//              anchor on every chunk and so does quadratic work over a read.
+//   kAnchors   per-channel anchor history, a ring. Older anchors fall out, which bounds
+//              memory and is harmless: a predecessor further back than max_gap in query
+//              space could not have been chained to anyway.
+//
+// max_occ is the other half. Our probe returns at most SeedMatches::kMaxPerSeed positions,
+// so a seed that comes back saturated is by definition ambiguous. Dropping those is the
+// cheap form of RawHash's --q-mid-occ occurrence filter, and on a capped index it removes
+// most of the noise the chainer would otherwise have to out-vote.
+struct ChannelAnchorChain {
+  static constexpr std::size_t kAnchors = 1024;
+
+  std::int32_t q[kAnchors] = {};
+  std::int64_t r[kAnchors] = {};
+  std::uint16_t sc[kAnchors] = {};  // best chain score ENDING at this anchor
+  std::size_t head = 0;             // next write position in the ring
+  std::size_t stored = 0;           // anchors ever written, for ring arithmetic
+  std::uint32_t best_score = 0;
+  std::int64_t best_diag = 0;
+
+  std::uint64_t events_consumed = 0;
+  std::uint32_t chunks = 0;
+  SignalScaling scaling{};
+  bool have_scaling = false;
+
+  void reset() noexcept {
+    head = 0;
+    stored = 0;
+    best_score = 0;
+    best_diag = 0;
+    events_consumed = 0;
+    chunks = 0;
+    have_scaling = false;
+  }
+
+  [[nodiscard]] std::uint32_t best(std::int64_t* out_diag) const noexcept {
+    if (out_diag != nullptr) *out_diag = best_diag;
+    return best_score;
+  }
+
+  void add_anchor(std::int64_t qq, std::int64_t rr, const ChainConfig& cfg) noexcept {
+    const std::int64_t gap = static_cast<std::int64_t>(cfg.max_gap);
+    const std::int64_t band = static_cast<std::int64_t>(cfg.band);
+    std::uint16_t best_here = 1;  // an anchor is always a chain of one
+
+    const std::size_t look =
+        std::min<std::size_t>(cfg.lookback, std::min(stored, kAnchors));
+    for (std::size_t back = 1; back <= look; ++back) {
+      const std::size_t i = (head + kAnchors - back) % kAnchors;
+      const std::int64_t dq = qq - static_cast<std::int64_t>(q[i]);
+      if (dq < 0) continue;
+      // Anchors arrive in increasing query order, so once the look-back reaches further
+      // than max_gap in q, nothing older can qualify either.
+      if (dq > gap) break;
+      const std::int64_t dr = rr - r[i];
+      if (dr < 0 || dr > gap) continue;
+      const std::int64_t drift = dq > dr ? dq - dr : dr - dq;
+      if (drift > band) continue;
+      const std::uint16_t cand = static_cast<std::uint16_t>(sc[i] + 1);
+      if (cand > best_here) best_here = cand;
+    }
+
+    q[head] = static_cast<std::int32_t>(qq);
+    r[head] = rr;
+    sc[head] = best_here;
+    head = (head + 1) % kAnchors;
+    ++stored;
+
+    if (best_here > best_score) {
+      best_score = best_here;
+      best_diag = rr - qq;
+    }
+  }
+};
+
+// As accumulate_chunk_chains, for the anchor-history chainer. Seeds whose match count has
+// saturated the per-seed cap are skipped when cfg.max_occ is set.
+inline std::size_t accumulate_chunk_anchor_chain(const ProbeScratch& scratch,
+                                                 ChannelAnchorChain& ch,
+                                                 const ChainConfig& cfg,
+                                                 std::uint64_t& dropped,
+                                                 std::uint64_t chunk_events) {
+  const std::int64_t base = static_cast<std::int64_t>(ch.events_consumed);
+  std::size_t seen = 0;
+  for (const SeedMatches& m : scratch.matches) {
+    if (cfg.max_occ != 0 && m.count >= cfg.max_occ) {
+      seen += m.count;
+      dropped += m.count;
+      continue;
+    }
+    const std::int64_t qq = base + static_cast<std::int64_t>(m.seed_offset);
+    for (std::uint32_t j = 0; j < m.count; ++j) {
+      ++seen;
+      ch.add_anchor(qq, static_cast<std::int64_t>(m.positions[j]), cfg);
+    }
+  }
+  ch.events_consumed += chunk_events;
   return seen;
 }
 

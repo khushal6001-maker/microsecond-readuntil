@@ -222,6 +222,28 @@ struct QuantConfig {
   // Off by default so the frozen geometry's measurements remain reproducible; the daemon
   // turns it on with --detect. The REFERENCE side is unaffected either way, since
   // reference_to_events already emits one event per k-mer and a reference has no dwell.
+  // Quantise the DIFFERENCE between consecutive event levels instead of the absolute
+  // level.
+  //
+  // WHY. The reference is normalised by the level distribution of the whole reference; a
+  // query is normalised by median/MAD of one 2000-sample chunk. Those are different
+  // distributions, so a shift error between them moves every absolute z and the buckets on
+  // the two sides stop corresponding. bench/brittleness.cpp already measured the cost: at
+  // ZERO added noise, oracle normalisation recovers 100% of seeds while per-read
+  // normalisation recovers 50.5%. That is the dominant error in this pipeline and it sits
+  // upstream of segmentation, voting and chaining alike -- the measured on-target chain
+  // score is 4-9 matching seeds out of ~1600, a match rate under 1%, even at dwell CV 0
+  // where everything else is ideal.
+  //
+  // A difference cancels a constant shift exactly, and a scale error rescales all
+  // differences together rather than translating them across bucket boundaries. RawHash has
+  // an analogous mechanism in --sig-diff. The first event of a call has no predecessor and
+  // emits a zero difference, costing one event per chunk.
+  bool delta_keys = false;
+
+  // Differences are smaller than absolute z, so they get their own clip.
+  float delta_clip = 1.5f;
+
   bool event_detection = true;
   EventDetectConfig detect{};
 
@@ -302,6 +324,17 @@ using QEvent = std::uint8_t;
 // Adaptive path: a linear scan of at most levels()-1 ascending boundaries. For 8
 // levels that is 7 float compares, which is a few cycles against a per-chunk budget
 // of hundreds of microseconds, and it buys back 0.7 bits per event.
+// Bucket a difference between consecutive z values, clipped to +/- cfg.delta_clip.
+[[nodiscard]] inline QEvent quantise_delta(float dz, const QuantConfig& cfg) noexcept {
+  const float c = cfg.delta_clip > 0.0f ? cfg.delta_clip : 1.0f;
+  const float t = std::clamp(dz, -c, c) / c;  // -1 .. 1
+  const std::uint32_t levels = cfg.levels();
+  auto b = static_cast<std::int32_t>((t + 1.0f) * 0.5f * static_cast<float>(levels));
+  if (b < 0) b = 0;
+  if (b >= static_cast<std::int32_t>(levels)) b = static_cast<std::int32_t>(levels) - 1;
+  return static_cast<QEvent>(b);
+}
+
 [[nodiscard]] inline QEvent quantise_z(float z, const QuantConfig& cfg) noexcept {
   if (cfg.n_boundaries != 0) {
     std::uint32_t b = 0;
@@ -413,10 +446,18 @@ inline void quantise_signal_detected(std::span<const std::int16_t> raw,
   if (means.empty()) return;
   out.reserve(out.size() + means.size());
   if (out_z != nullptr) out_z->reserve(out_z->size() + means.size());
+  float prev_z = 0.0f;
+  bool first = true;
   for (float m : means) {
     const float z = (m - sc.shift) / sc.scale;
     if (out_z != nullptr) out_z->push_back(z);
-    out.push_back(quantise_z(z, cfg));
+    if (cfg.delta_keys) {
+      out.push_back(quantise_delta(first ? 0.0f : z - prev_z, cfg));
+      prev_z = z;
+      first = false;
+    } else {
+      out.push_back(quantise_z(z, cfg));
+    }
   }
 }
 
@@ -428,6 +469,7 @@ inline void quantise_signal(std::span<const std::int16_t> raw, const SignalScali
   if (raw.size() < w) return;
 
   const std::size_t n_events = raw.size() / w;
+  float prev_z = 0.0f;
   out.reserve(out.size() + n_events);
   if (out_z != nullptr) out_z->reserve(out_z->size() + n_events);
   for (std::size_t e = 0; e < n_events; ++e) {
@@ -438,7 +480,12 @@ inline void quantise_signal(std::span<const std::int16_t> raw, const SignalScali
     for (std::size_t i = 0; i < w; ++i) sum += sc.apply(raw[base + i]);
     const float z = sum / static_cast<float>(w);
     if (out_z != nullptr) out_z->push_back(z);
-    out.push_back(quantise_z(z, cfg));
+    if (cfg.delta_keys) {
+      out.push_back(quantise_delta(e == 0 ? 0.0f : z - prev_z, cfg));
+      prev_z = z;
+    } else {
+      out.push_back(quantise_z(z, cfg));
+    }
   }
 }
 
@@ -664,6 +711,8 @@ inline bool PoreModel::reference_to_events(std::span<const char> dna,
   };
 
   out.reserve(out.size() + dna.size());
+  float prev_z = 0.0f;
+  bool have_prev = false;
   std::uint64_t kmer = 0;
   std::uint32_t have = 0;
   const std::uint64_t mask = (k_ >= 32) ? ~std::uint64_t{0} : ((std::uint64_t{1} << (2 * k_)) - 1);
@@ -676,7 +725,14 @@ inline bool PoreModel::reference_to_events(std::span<const char> dna,
     }
     kmer = ((kmer << 2) | static_cast<std::uint64_t>(code)) & mask;
     if (++have < k_) continue;
-    out.push_back(quantise_z((level(kmer) - mean) / sd, cfg));
+    const float zref = (level(kmer) - mean) / sd;
+    if (cfg.delta_keys) {
+      out.push_back(quantise_delta(have_prev ? zref - prev_z : 0.0f, cfg));
+      prev_z = zref;
+      have_prev = true;
+    } else {
+      out.push_back(quantise_z(zref, cfg));
+    }
   }
   return true;
 }
