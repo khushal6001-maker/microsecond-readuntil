@@ -133,3 +133,22 @@ the squigulator-derived one scores 18.4%.
 - "Existing simulators omit dwell variability." False; Squigulator models it.
 - "No benchmarking framework exists for raw signal analysis." False; RawBench.
 - "Our engine is more accurate than existing tools." It is not.
+
+## Replicated, three independent squigulator seeds
+
+Seeds 42/43/44, 500 reads per cell, otherwise identical to the table above. TPR at the
+lowest zero-false-positive threshold, mean [range]:
+
+| dwell CV | fixed-width | event-detected |
+|---|---|---|
+| 0.00 | **49.7** [49.2-50.2] | 18.4 [17.0-19.8] |
+| 0.10 | 5.9 [5.4-6.6] | **19.3** [15.2-23.0] |
+| 0.20 | 1.7 [1.2-2.0] | **17.9** [17.2-19.0] |
+| 0.30 | 2.3 [1.4-4.2] | **15.5** [12.6-18.8] |
+| 0.44 | 1.3 [1.0-1.6] | **14.1** [13.0-15.0] |
+| 0.60 | 1.7 [0.4-3.4] | **7.5** [7.2-8.0] |
+
+The crossover between CV 0 and 0.10 reproduces in every seed, and the fixed-width arm's
+collapse is tight at CV 0 (49.2-50.2) where it matters for the comparison. Spread is
+widest in the fixed-width tail cells, which is expected: once TPR is near 1% the zero-FP
+threshold is being set by one or two outlier off-target reads.
