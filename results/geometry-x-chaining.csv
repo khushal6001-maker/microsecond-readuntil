@@ -1,0 +1,13 @@
+geometry,decision,zeroFP_TPR,onePctFP_TPR
+4x8,votes,4.0,8.0
+4x8,chain,3.2,9.8
+4x10,votes,13.0,16.0
+4x10,chain,15.8,18.8
+4x12,votes,14.2,16.8
+4x12,chain,17.4,21.0
+3x8,votes,0.0,1.2
+3x8,chain,1.4,3.6
+3x10,votes,0.8,1.2
+3x10,chain,3.2,7.4
+
+[exited with code 0]
