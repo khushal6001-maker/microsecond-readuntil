@@ -46,6 +46,7 @@
 #include <string>
 #include <vector>
 
+#include "daemon/chain.hpp"
 #include "daemon/diagonal_votes.hpp"
 #include "index/batched_probe.hpp"
 #include "index/minimizer_index.hpp"
@@ -138,9 +139,12 @@ std::uint32_t best_votes_for_read(const mru::MinimizerIndex& idx,
                                  mru::ScalingScratch& sscratch,
                                  std::vector<std::int64_t>& diags,
                                  std::size_t max_chunks, std::size_t& candidates,
-                                 std::size_t& ev_total) {
+                                 std::size_t& ev_total, bool use_chains,
+                                 const mru::ChainConfig& ccfg) {
   mru::ChannelVotes votes;
+  mru::ChannelChains chains;
   votes.reset();
+  chains.reset();
   const std::size_t need =
       static_cast<std::size_t>(cfg.samples_per_event) * cfg.events_per_key;
   mru::SignalScaling scaling{};
@@ -160,12 +164,17 @@ std::uint32_t best_votes_for_read(const mru::MinimizerIndex& idx,
       have_scaling = true;
     }
     (void)mru::match_signal(idx, chunk, scaling, cfg, scratch, probes);
-    candidates += mru::accumulate_chunk_votes(scratch, votes, diags, dropped,
-                                             scratch.events.size());
+    if (use_chains) {
+      candidates += mru::accumulate_chunk_chains(scratch, chains, ccfg, dropped,
+                                                 scratch.events.size());
+    } else {
+      candidates += mru::accumulate_chunk_votes(scratch, votes, diags, dropped,
+                                               scratch.events.size());
+    }
     ev_total += scratch.events.size();
   }
   std::int64_t d = 0;
-  return votes.best(&d);
+  return use_chains ? chains.best(&d) : votes.best(&d);
 }
 
 }  // namespace
@@ -190,6 +199,15 @@ int main(int argc, char** argv) {
       argc > 11 ? static_cast<std::uint32_t>(std::strtoul(argv[11], nullptr, 10)) : 0;
   const std::uint32_t det_win =
       argc > 12 ? static_cast<std::uint32_t>(std::strtoul(argv[12], nullptr, 10)) : 0;
+  // 1 selects streaming gap-tolerant chaining instead of exact-diagonal voting. band 0
+  // makes chaining behave like the vote table, which is the control that shows the band
+  // is what matters rather than the restructuring.
+  const bool use_chains = argc > 13 ? (std::atoi(argv[13]) != 0) : false;
+  mru::ChainConfig ccfg;
+  if (argc > 14) ccfg.band = static_cast<std::uint32_t>(std::strtoul(argv[14], nullptr, 10));
+  if (argc > 15) {
+    ccfg.max_gap = static_cast<std::uint32_t>(std::strtoul(argv[15], nullptr, 10));
+  }
 
   std::vector<float> levels;
   if (!load_model_tsv(argv[1], levels)) {
@@ -259,6 +277,13 @@ int main(int argc, char** argv) {
               dna.size(), model.k(), cfg.bits_per_event, cfg.events_per_key,
               cfg.key_bits(), cfg.minimizer_window,
               detect ? "EVENT-DETECTED" : "fixed-width", max_chunks, kChunkSamples);
+  if (use_chains) {
+    std::printf("decision: STREAMING CHAINS (band %u, max_gap %u, %zu chains/channel)\n",
+                ccfg.band, ccfg.max_gap, mru::ChannelChains::kChains);
+  } else {
+    std::printf("decision: exact-diagonal votes (%zu slots/channel)\n",
+                mru::ChannelVotes::kEntries);
+  }
   std::printf("index %zu minimizers, %llu distinct, %llu capped | reads on=%zu off=%zu\n",
               minimizers.size(), static_cast<unsigned long long>(idx.distinct_keys()),
               static_cast<unsigned long long>(idx.capped_seeds()), on.size(), off.size());
@@ -276,11 +301,12 @@ int main(int argc, char** argv) {
   off_v.reserve(off.size());
   for (const auto& r : on) {
     on_v.push_back(best_votes_for_read(idx, r, cfg, probes, scratch, sscratch, diags,
-                                      max_chunks, on_cand, on_ev));
+                                      max_chunks, on_cand, on_ev, use_chains, ccfg));
   }
   for (const auto& r : off) {
     off_v.push_back(best_votes_for_read(idx, r, cfg, probes, scratch, sscratch, diags,
-                                       max_chunks, off_cand, off_ev));
+                                       max_chunks, off_cand, off_ev, use_chains,
+                                       ccfg));
   }
 
   std::sort(on_v.begin(), on_v.end());
