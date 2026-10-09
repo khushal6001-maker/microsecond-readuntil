@@ -152,3 +152,62 @@ The crossover between CV 0 and 0.10 reproduces in every seed, and the fixed-widt
 collapse is tight at CV 0 (49.2-50.2) where it matters for the comparison. Spread is
 widest in the fixed-width tail cells, which is expected: once TPR is near 1% the zero-FP
 threshold is being set by one or two outlier off-target reads.
+
+## RAWHASH BASELINE: the main hypothesis is REFUTED
+
+Run 2026-10-09. RawHash2 v2.1 built with `NOHDF5=1 NOPOD5=1` against slow5lib compiled
+`slow5_mt=1`, given THE SAME squigulator-derived pore model as the signal generator and our
+engine (`-p squig_r10_9mer.tsv -k 9 --level_column 1`), on the same 20 Mb chr20 reference
+and the same SLOW5 files. Correctly-mapped % (mapped within 500 bases of the locus
+squigulator records in the read id, matching strand):
+
+| minimizer w | CV 0.00 | 0.10 | 0.20 | 0.30 | 0.44 | 0.60 | drop |
+|---|---|---|---|---|---|---|---|
+| 0 (RawHash default) | 95.0 | 95.2 | 94.6 | 94.2 | 92.4 | 92.0 | 3.0 pts |
+| 5 | 90.0 | 88.8 | 89.4 | 88.0 | 85.2 | 81.6 | 8.4 pts |
+| 10 | 82.2 | 82.2 | 82.2 | 79.2 | 77.2 | 71.0 | 11.2 pts |
+
+False-mapped on the shuffled control: ~8-10% at w=0 and w=5, 11-15% at w=10. RawHash's
+default operating point is therefore NOT zero-FP, so its 95% is not directly comparable
+with our zero-FP TPR; the comparison below is about SHAPE, not level.
+
+**RawHash does not collapse under dwell variation.** 95.0% to 92.0% across the full range.
+There is no crossover and no cliff. The claim that "evaluating at CV 0 inverts the ranking"
+is therefore a statement about OUR TWO CONFIGURATIONS and not about the method class: a
+developer evaluating RawHash on stock Icarust would reach the same conclusion they would
+reach on realistic signal.
+
+**So the cliff is a defect in our engine, not a property of raw-signal mapping.** The
+mechanism is almost certainly what RawHash has and we do not: CHAINING. RawHash chains
+anchors with gap tolerance (`--bw 500`, `--max-target-gap 2500`, DP or RMQ), so a slipped
+event boundary costs one anchor. Our Misra-Gries vote demands EXACT diagonal equality, so
+the same slip moves every later seed onto a different diagonal and the read is lost. Exact
+diagonal voting is the fragility.
+
+### What survives, and it is much smaller than hoped
+
+The minimizer penalty IS dwell-dependent, and that is new. w=0 minus w=10, in points of
+correct mapping: 12.8, 13.0, 12.4, 15.0, 15.2, 21.0 as CV goes 0 to 0.60 -- a 64% increase
+in the penalty. At w=10 and CV 0.60 minimizers cost 21 points of sensitivity AND nearly
+double the false-mapping rate (15.2% against 8.4%).
+
+RawHash2's own help says `-w` "may reduce accuracy but improves the performance and memory
+space efficiency". That is true and documented; what is not documented or measured anywhere
+is that the cost grows with time-domain noise, so the trade-off is worse on real signal than
+on any constant-dwell evaluation would suggest. That is a real, quantified, modest finding
+that is directly actionable for anyone choosing `-w`.
+
+It is a short paper, not the paper described above.
+
+### Two honest options
+
+1. **Publish the small finding.** The dwell-dependence of the `-w` trade-off, with the
+   sweep harness and the Icarust patch as artifacts. Defensible, modest, and already
+   essentially measured.
+
+2. **Fix the engine with chaining and change the contribution to systems.** Replace exact
+   diagonal voting with gap-tolerant chaining, which is what makes RawHash robust. If that
+   brings our accuracy near RawHash's, the microsecond-latency and bounded-per-channel-state
+   work becomes a credible real-time engineering contribution with trustworthy accuracy
+   behind it. This is re-implementing known technique, so the novelty is the engine and its
+   latency characterisation, not the method.
