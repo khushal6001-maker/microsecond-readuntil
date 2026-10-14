@@ -30,11 +30,13 @@ that has already translocated, and the service bound derived in §1.1 and §3.1 
 1.56 ms per decision `[VERIFY]`. Measured per-chunk decision latency against a 64 Mb reference
 in the frozen configuration is a median of 134–174 µs with a 99th percentile of 630–705 µs at
 a resident set of 3.9–4.4 GB, sustaining 975 chunk/s with no drops `[VERIFY]`. The median
-therefore sits roughly an order of magnitude inside the budget and the contaminated tail sits
-inside it by a factor of two. Against a 37 kb reference the median is 16.3 µs with a 90th
-percentile of 24.7 µs `[VERIFY]`, which bounds the fixed cost of the data plane itself at
-roughly a tenth of a microsecond per channel-decision and locates the remainder in index
-probing.
+therefore sits roughly an order of magnitude inside the budget — a utilisation of 0.09–0.11 at
+two workers and 512 channels `[VERIFY]` — and the contaminated tail sits inside it by a factor
+of two. Against a 37 kb reference the median is 16.3 µs with a 90th percentile of 24.7 µs
+`[VERIFY]`; §5.6 attributes the order-of-magnitude difference between the two regimes to index
+scale and to the segmentation and seeding configuration frozen in Chapter 6 rather than to the
+data plane, so the smaller figure is the better bound on what the transport, sharding, handoff
+and dispatch machinery itself costs.
 
 The honest reading of these figures is narrow, and Chapter 5 §5.9 states it: the median and
 the 90th percentile are properties of the implementation, reproducible across runs and seeds;
