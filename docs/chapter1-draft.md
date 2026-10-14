@@ -208,13 +208,14 @@ measure.
 Three practices are applied throughout and are stated here because they affect how the results
 should be read.
 
-**Results that did not survive scrutiny are retained in the text.** Six findings in this work
-were withdrawn after further measurement, including two headline framings. Appendix D is a
-retraction log. The practice is adopted because the mechanism by which each result failed is
-transferable — a coarse instrument manufacturing reproducibility, an uncontrolled host variable,
-a bounded structure degrading into an arrival-order cache, a coordinate system that renamed the
-item being counted — and because a thesis that reports only surviving results provides no
-evidence about the reliability of its own method.
+**Results that did not survive scrutiny are retained in the text.** Twelve results or positions
+taken in this work were withdrawn after further measurement, including the thesis's original
+framing. Chapter 8 §8.2 tabulates them and Appendix D is the retraction log. The practice is
+adopted because the mechanism by which each failed is transferable — a coarse instrument
+manufacturing reproducibility, an uncontrolled host variable, a bounded structure degrading
+into an arrival-order cache, a coordinate system that renamed the item being counted — and
+because a thesis that reports only surviving results provides no evidence about the reliability
+of its own method.
 
 **Claims are scoped to the evidence available.** Literature claims are scoped to the systems
 surveyed in Chapter 2 rather than asserted universally, for the reason given in §1.7. Claims
@@ -275,7 +276,10 @@ documents the read-until simulator's inability to exercise the axis.
 **Chapter 7** develops the `a^E` model, measures per-event agreement, verifies the model against
 observed anchor yield, and shows that it accounts for the six failed interventions.
 
-**Chapter 8** concludes, and Appendix D records the retractions.
+**Chapter 8** states what was built and what it costs against the budget, tabulates the twelve
+withdrawn results with the mechanism of each, separates the solved data plane from the
+unsolved matching stage, and orders the further work by expected information per unit effort.
+Appendix D expands the retraction log.
 
 ---
 
