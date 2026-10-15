@@ -155,15 +155,29 @@ as the nearest prior art than RawHash2.
 **2.4.6 The common pipeline shape.** All of the above instantiate the same five stages:
 reference encoding into signal space under a pore model; segmentation of the query into events;
 quantisation or discretisation of event levels; seeding by exact or approximate match; and
-chaining or candidate tracking to accumulate evidence. Two observations about this shape
-matter for the present work.
+chaining or candidate tracking to accumulate evidence.
 
-First, **every published system segments by detected level change rather than by fixed time
-windows** `[2° for UNCALLED, Sigmap; CHECK for the remainder]`. If correct, this establishes
-event detection as settled practice and means Chapter 6's dwell-sensitivity result concerns a
-configuration choice the literature has already made correctly — which is precisely the
-scoping §6.5 applies. **If this claim is wrong for any system, Chapter 6's framing must change,
-so it is the single most important `[2°]` claim in this chapter to verify.**
+This decomposition is not original to this thesis and should not be presented as though it
+were. RawBench organises raw signal analysis into three modular stages — reference encoding,
+segmentation, and matching — and the five stages here are that decomposition with matching
+split into quantisation, seeding and chaining, which is the granularity Chapter 7's argument
+requires `[1°, from the paper's full text]`. Two observations about the shape matter for the
+present work.
+
+First, **every published system segments data-dependently rather than by fixed time windows**
+`[1° for the enumeration; 2° for individual systems]`. This is now verified at the level that
+matters: RawBench evaluates exactly three segmentation methods — t-test changepoint detection,
+basecaller move tables, and a learned CNN segmenter — and all three are data-dependent; none
+is fixed-width. UNCALLED's documentation describes segmenting current into events before k-mer
+conversion, and Sigmoni segments before quantising into its alphabet.
+
+The consequence for Chapter 6 is favourable and should be stated there rather than left
+implicit. Its fixed-width arm is not a straw man of any published system: no surveyed system
+uses fixed-width segmentation, so the dwell-sensitivity result concerns a configuration choice
+the literature has already made correctly, which is exactly the scoping §6.5 applies. The
+original form of this claim — that every system uses *detected events* specifically — was too
+narrow, since move tables and learned segmenters are neither fixed-width nor t-test event
+detection; the claim that carries the argument is the broader one about data dependence.
 
 Second, the stages are ordered, and the earlier stages bound the later ones. Chapter 7
 formalises this: quantisation fidelity caps seeding yield exponentially in the number of events
@@ -270,10 +284,30 @@ argument is the standard one: where utility decays with latency, admitting work 
 delay reduces aggregate utility.
 
 **Deadline-miss rate** as a reported metric, in place of throughput, is conventional in
-real-time systems and unconventional in this application domain. `[CHECK]` whether any
-read-until or raw-signal mapping paper reports a deadline-related metric; the claim in Chapter 1
-that none does is currently an assertion from absence and should either be verified by a
-systematic look or weakened to a statement about the papers surveyed here.
+real-time systems and unconventional in this application domain.
+
+An earlier draft claimed that no read-until or raw-signal paper reports a deadline-related
+metric. That was an argument from absence and **it is wrong**; it is corrected here rather
+than quietly dropped, and the corrected form is what the rest of the thesis uses `[1°]`.
+
+The surveyed systems do report latency, in two forms. The first is **signal consumed before a
+decision**: RawAlign reports mean sequencing latency as the number of bases a read requires to
+reach a mapping decision, and a 2025 adaptive-sampling benchmark reports UNCALLED requiring a
+3 s chunk, roughly 1.3 kb, where other tools classify from 1 s. The second is **mean
+processing time per read**: RawHash times each tool's per-read mapping specifically to
+estimate how quickly a Read Until decision can be activated.
+
+What is absent is narrower. All of these are measures of central tendency — how much signal,
+or how much time, a decision consumes on average. None of the surveyed work reports a
+deadline-miss rate against a stated service bound, a latency distribution with tail
+percentiles, or the fraction of decisions that arrive too late to act on. The distinction
+matters because the two are not interchangeable under a deadline: a mean comfortably inside
+the budget is consistent with any miss rate whatever, and the loss-system framing of §3.5
+makes the miss rate, not the mean, the quantity that determines whether the system works.
+
+The gap this thesis addresses is therefore the reporting of a *distribution* against a
+*derived budget*, with the instrument and the environment characterised well enough for the
+tail to carry meaning — not the reporting of latency as such.
 
 ---
 
@@ -281,16 +315,22 @@ systematic look or weakened to a statement about the papers surveyed here.
 
 Stated as narrowly as the evidence supports.
 
-**Not a gap:** quantised-event hashing as a matching method (RawHash); event detection as a
-segmentation strategy (all published systems); modular benchmarking of raw-signal pipelines
-(RawBench); simulation of time-domain noise (Squigulator).
+**Not a gap:** quantised-event hashing as a matching method (RawHash); data-dependent
+segmentation as a strategy (all published systems, §2.10); modular benchmarking of raw-signal
+pipelines (RawBench); simulation of time-domain noise (Squigulator); the decomposition of a
+raw-signal pipeline into reference encoding, segmentation and matching (RawBench uses the same
+three stages, so §2.4.6 extends a published decomposition rather than proposing one); reporting
+latency for a read-until client (RawAlign, RawHash and the 2025 adaptive-sampling benchmark all
+do, §2.8).
 
 **The gaps:**
 
 1. **No published evaluation sweeps time-domain noise.** Existing evaluations, including the
    dedicated benchmarking framework, report accuracy and throughput at one fixed and unmeasured
    level of dwell variability, for the signal property that determines whether
-   segmentation-based matching functions at all (Chapter 6).
+   segmentation-based matching functions at all (Chapter 6). Verified against RawBench's full
+   text: its metrics are precision, recall, F1, wall-clock time, CPU time and peak memory, and
+   dwell appears only as a dataset selection criterion `[1°]`.
 
 2. **The accuracy cost of minimizer sketching is undocumented as a function of that noise.**
    Its existence is declared in a current tool's documentation; its dependence on dwell
@@ -304,12 +344,20 @@ segmentation strategy (all published systems); modular benchmarking of raw-signa
    model**, so end-to-end client evaluation is conducted in the single regime where the above
    failure mode cannot appear (Chapter 6 §6.8).
 
-5. **Decision latency against a deadline is not characterised** for read-until clients, nor are
-   the per-channel state bounds that a client must satisfy to scale to a full flow cell
-   (Chapters 3 and 5).
+5. **Decision latency is reported as a central tendency, not as a distribution against a
+   deadline.** The surveyed systems report mean bases to decision or mean processing time per
+   read (§2.8). None reports a deadline-miss rate against a stated service bound, a tail
+   percentile, or the fraction of decisions arriving too late to act on — which is the quantity
+   the loss-system framing makes decisive, since a mean inside the budget is consistent with
+   any miss rate. Nor are the per-channel state bounds a client must satisfy to scale to a full
+   flow cell characterised anywhere surveyed (Chapters 3 and 5).
 
-Gaps 1, 2 and 4 are claims about the literature and depend on the `[2°]` verifications above.
-Gaps 3 and 5 are supported by measurements in this work and stand independently.
+Gaps 1, 2 and 4 are claims about the literature. Gaps 1 and 2 were verified against RawBench's
+full text and Gap 4 against the simulator's own source, so all three now rest on primary
+reading `[1°]`. Gap 3 is supported by measurements in this work and stands independently.
+Gap 5 is partly a claim about the literature and was **narrowed** after checking: its original
+form, that no read-until paper reports a deadline-related metric, was false, and §2.8 records
+the correction.
 
 ---
 
@@ -322,20 +370,56 @@ Gaps 3 and 5 are supported by measurements in this work and stand independently.
 | Icarust | built, patched, run | source read directly | low; check for a newer version with dwell |
 | Squigulator | built, run extensively | CLI and model table read | low; venue/year unverified |
 | readfish 2024.3.0 | built, run | CLI, config schema, behaviour | medium; published figures uncited |
-| RawHash2 | built, run, benchmarked | CLI defaults and help text read; mechanism from secondary | medium; paper unread |
+| RawHash2 | built, run, benchmarked, **source read** | CLI defaults, help text, and `rsketch.c`/`rindex.c` read firsthand; patched (Appendix B) | low; paper still unread, mechanism now verified in source |
 | RawHash | not run | secondary only | **high** |
-| UNCALLED | not run | secondary only | **high** |
-| Sigmap | not run | secondary only | **high** |
-| RawAlign, Sigmoni | not run | mentioned in search results only | **high** |
-| RawBench | not run | paper description and repository, two sources | medium; experimental section unread |
+| UNCALLED | not run | secondary; event segmentation corroborated from its own documentation | medium |
+| Sigmap | not run | secondary only; reported as not integrable for real-time classification | **high** |
+| RawAlign | not run | secondary only | **high** |
+| Sigmoni | not run | secondary; alphabet size and reference-encoding step corroborated from two sources | medium |
+| RawBench | not run | **full text read** (§2.6); evaluation section checked directly | low |
 | Misra–Gries, Space-Saving | implemented variant | classical results, paraphrased | medium; quote guarantees from primary |
 
-The three `[2°]` claims whose failure would require changing a thesis claim rather than a
-sentence are, in order:
+### Status of the three claims that could change a thesis claim
 
-1. **That all published signal-space mappers segment by detected events** (§2.4.6). If any
-   uses fixed-width segmentation and performs well, Chapter 6's scoping changes.
-2. **That RawBench does not sweep time-domain noise and does not evaluate sketching** (§2.6).
-   Gaps 1 and 2 depend on it.
-3. **That no read-until or raw-signal paper reports a deadline-related metric** (§2.8). Gap 5's
-   novelty depends on it, and it is currently an argument from absence.
+**1. That all published signal-space mappers segment by detected events (§2.4.6) — upheld,
+and restated more precisely.** No surveyed system uses fixed-width segmentation. RawBench
+evaluates exactly three segmentation methods — t-test changepoint detection, basecaller move
+tables, and a learned CNN segmenter — and all three are data-dependent. UNCALLED's own
+documentation describes segmenting current into events, one per k-mer, before k-mer
+conversion; Sigmoni segments before quantising into its alphabet. The claim is therefore
+rewritten as the stronger and more checkable one that **published systems segment
+data-dependently and none uses fixed-width windows**, which is what Chapter 6's scoping
+actually needs. The consequence for Chapter 6 is favourable: its fixed-width arm is not a
+straw man of any published system, and §6.4 should say so explicitly rather than leaving the
+reader to wonder.
+
+**2. That RawBench neither sweeps time-domain noise nor evaluates sketching (§2.6) — upheld,
+verified against the full text.** Its reported metrics are true and false positives, negatives,
+not-aligned, precision, recall and F1 computed with UNCALLED's `pafstats`, plus elapsed
+wall-clock time, CPU time and peak memory, with coverage depth and breadth for the
+basecalling study. Dwell time and translocation speed appear only as a dataset selection
+criterion — preferring 400 bps over the deprecated 260 bps mode — and not as an experimental
+variable; the sole swept axis of that kind is basecaller context length, at 1, 2, 5 and 10
+chunks. No window or seed-subsampling parameter is swept in the body text. Gaps 1 and 2 stand.
+
+A second finding from the same reading **supports** the thesis rather than threatening it:
+RawBench decomposes raw signal analysis into reference encoding, segmentation, and matching.
+That is an independently published decomposition matching the one §2.4.6 proposes, so the
+pipeline framing should be cited to it rather than asserted.
+
+**3. That no read-until paper reports a deadline-related metric (§2.8) — NOT upheld as
+originally stated; weakened and sharpened.** Published work does report latency, in two
+forms: *bases or chunks to decision* (RawAlign reports mean sequencing latency as bases per
+read, and a 2025 adaptive-sampling benchmark reports UNCALLED needing a 3 s chunk against 1 s
+for other tools), and *mean processing time per read* (RawHash times each tool's per-read
+mapping to estimate how quickly a Read Until decision can be activated). The original claim
+was an argument from absence and it is wrong.
+
+What is absent is narrower and is what Gap 5 should now claim: these are **central-tendency**
+measures of how much signal or time a decision consumes, not measures of whether decisions
+meet a deadline. No surveyed work reports a deadline-miss rate against a stated service bound,
+a latency distribution with tail percentiles, or the fraction of decisions arriving too late
+to act on. Chapter 5's contribution is therefore not that latency is reported here and nowhere
+else; it is the reporting of a *distribution* against a *derived budget*, with the instrument
+and the environment characterised well enough for the tail to mean anything. That is a
+defensible claim and §2.8, §2.9 and §1.5 (C3) are to be reworded to it.

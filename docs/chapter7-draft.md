@@ -358,6 +358,16 @@ central band and coarse resolution outside it — so events near the distributio
 resolved and tails are collapsed. This pipeline's uniform quantiser over a clipped z-range
 spends its alphabet evenly and realises more of it, and achieves lower agreement.
 
+A third system points the same way, which matters because two points could be coincidence.
+Sigmoni, which classifies rather than maps and therefore shares none of this pipeline's
+decision machinery, quantises signal into an alphabet of **six** symbols by default, chosen on
+the stated grounds that it balances robustness to noise against specificity in exact matching
+`[2°]` `[CHECK against the paper's methods]`. Six symbols is 2.58 bits, within a tenth of a bit
+of the 2.46 measured here for the comparison mapper's realised alphabet, and both are far below
+this pipeline's four. Two independent systems arriving at an effective alphabet near 2.5 bits,
+one of them stating noise robustness as the reason, is evidence that the operating point is not
+accidental.
+
 The design axis this exposes is **per-event entropy against per-event agreement**, and the
 two systems sit at opposite ends of it. A key of 8 events at 2.46 bits carries about 19.7 bits
 of nominal specificity; one of 12 events at close to 4 realised bits carries about 48, of which

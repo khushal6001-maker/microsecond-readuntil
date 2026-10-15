@@ -117,6 +117,15 @@ are the ones no error message reports.
 
 ## 6.4 Result: this system's fixed-width configuration collapses
 
+**What the fixed-width arm represents.** It is a configuration of *this* pipeline, and it is
+not a reconstruction of any published system. §2.4.6 records that no surveyed system segments
+by fixed time windows: the three methods a published benchmark evaluates are t-test changepoint
+detection, basecaller move tables, and a learned segmenter, all data-dependent. The comparison
+drawn here is therefore between two configurations available to a developer of this pipeline,
+one of which the literature has already rejected, and the finding is about what an evaluation
+conducted at zero dispersion would lead that developer to choose. It is not a finding that
+published systems are mis-designed, and §6.5 bounds it further.
+
 True positive rate at the lowest zero-false-positive threshold, three seeds, mean with observed
 range `[TABLE 6.1]` `[VERIFY]`:
 

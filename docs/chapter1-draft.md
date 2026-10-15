@@ -161,8 +161,12 @@ the literature on hash-partitioned frequent-items sketches has not been surveyed
 analysis covers this structure, the contribution reduces to its application here.
 
 **C3 — Latency characterisation and a measurement methodology (Chapter 5).** Per-chunk decision
-latency is reported with percentiles from a bounded-error instrument, with environment
-provenance captured per run. Three measurement errors are documented, each of which had already
+latency is reported as a *distribution* against a *derived service bound*, with percentiles
+from a bounded-error instrument and environment provenance captured per run. The systems
+surveyed in Chapter 2 do report latency, as mean bases to decision or mean processing time per
+read; what they do not report is a tail, a deadline-miss rate, or the fraction of decisions
+arriving too late to act on, and under a deadline a mean inside the budget is consistent with
+any miss rate (§2.8). Three measurement errors are documented, each of which had already
 produced a result that was subsequently withdrawn: a histogram whose power-of-two resolution
 manufactured apparent reproducibility, an exhausted host filesystem that displaced the measured
 median by approximately one third, and a thread-placement rule assuming a portable relationship

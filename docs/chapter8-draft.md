@@ -266,9 +266,12 @@ required is specified rather than approximated: isolated cores, full tickless op
 interrupt affinity moved off the measured cores, a fixed performance governor, and the
 harness's existing publishability gate left enabled so that the resulting figures carry their
 own provenance. The quantity to report is not a percentile but the deadline-miss rate against
-the 1.56 ms service bound, which is the metric the loss-system framing of §1.1 actually
-implies and which Chapter 2 §2.8 records as absent from the read-until papers surveyed. This
-is the experiment that would make Gap 5 a demonstrated contribution rather than a stated one.
+the 1.56 ms service bound, which is the metric the loss-system framing of §1.1 implies: a mean
+comfortably inside the budget is consistent with any miss rate, so the mean is not the
+quantity that decides whether the system works. §2.8 records that the surveyed read-until
+papers do report latency, as mean bases to decision or mean time per read, and that none
+reports a miss rate or a tail. This is the experiment that would make Gap 5 a demonstrated
+contribution rather than a stated one.
 
 **Scale the index to a mammalian reference.** The in-memory index consumes most of a 4 GB
 resident set at 64 Mb, so a 3.1 Gb reference is roughly fifty times out of reach in the
