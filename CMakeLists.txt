@@ -289,6 +289,18 @@ target_link_libraries(mru_rlc_feasibility PRIVATE mru_core mru_warnings mru_sani
 add_executable(mru_squig_sweep bench/squig_sweep.cpp)
 target_link_libraries(mru_squig_sweep PRIVATE mru_core mru_warnings mru_sanitizers)
 
+# Per-event bucket agreement, measured by one estimator applied to both this pipeline and an
+# external mapper. symbol_dump emits this pipeline's reference and query symbol streams;
+# symbol_agreement scores any pair of streams in that format and does not know which system
+# produced them, which is what makes the two agreement figures comparable.
+add_executable(mru_symbol_dump bench/symbol_dump.cpp)
+target_link_libraries(mru_symbol_dump PRIVATE mru_core mru_warnings mru_sanitizers)
+
+# No mru_core dependency: this one is pure parsing and dynamic programming, so it builds
+# standalone and can be run against dumps from a machine that cannot build the project.
+add_executable(mru_symbol_agreement bench/symbol_agreement.cpp)
+target_link_libraries(mru_symbol_agreement PRIVATE mru_warnings mru_sanitizers)
+
 if(MRU_BUILD_TESTS)
   enable_testing()
 

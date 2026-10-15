@@ -133,35 +133,64 @@ in this system. The budget is not the obstacle to signal-space adaptive sampling
 result in its own right and it does not depend on the accuracy figures.
 
 **The matching stage.** This system resolves 18.8% of reads where a published mapper resolves
-92.4% on the same input `[VERIFY]`. Chapter 7 does not excuse this; it accounts for it. Let
-`a` be the probability that reference and query assign the same bucket to corresponding
-events. A key of `E` consecutive events matches only if all `E` agree, so expected anchor
-yield falls as `a^E`, and this is a lower bound rather than an estimate, because overlapping
-k-mers and a shared per-read normalisation estimate make the per-event agreements positively
-correlated. Measured on this pipeline, `a` reaches 55.9% in its most favourable
-configuration, giving a predicted 1.85 true anchors per read against an observed median
-best-chain score of 4 `[VERIFY]` — agreement in order of magnitude and in the direction the
-correlation argument requires.
+92.4% on the same input `[VERIFY]`. Chapter 7 does not excuse this; it accounts for it, and
+the account is now closed on both sides of the comparison rather than fitted to this pipeline
+alone.
+
+Two quantities govern anchor supply. Let `a` be the probability that reference and query assign
+the same bucket to corresponding events, and `g` the rate at which the two event sequences fail
+to correspond at all. A key of `E` consecutive events requires `E` events that both agree and
+correspond, so key match probability goes as `(1 − g)^E · a^E`. Measured under a
+correspondence-aware instrument on identical input `[VERIFY]`:
+
+| | `a` | `g` | `E` | P(key match) | anchors/read |
+|---|---|---|---|---|---|
+| this system, frozen configuration | 0.783 | 0.196 | 12 | 0.0055 | 14.9 |
+| the comparison mapper, its defaults | 0.911 | 0.092 | 8 | 0.254 | 467 |
+
+A supply difference of 31× accounts for 18.8% against 92.4% without appeal to the decision
+rule, and it decomposes into a factor of 4.9 from key length and 9.3 from the encoding itself.
+The larger part is the encoding, and it is specific: the comparison system applies one
+event-merging rule to reference and query alike so that both sides agree on event counts by
+construction, and its quantiser spends alphabet — about 2.46 realised bits of a nominal 4 — to
+buy agreement that this pipeline's uniform quantiser does not have.
+
+Two corrections to the earlier version of this argument belong here rather than in a footnote.
+The `a^E` form was presented as a lower bound on the strength of a positive-correlation
+argument; it is a lower bound only where correspondence is exact, and an over-estimate by up to
+14× where it is not, which covers every configuration this pipeline ships (§7.2.3). And the
+figure of 1.85 anchors per read described a fixed-width configuration that was not the one
+frozen; the shipped configuration supplies a measured 14.9. Since the observed median
+best-chain score is 4, the decision stage is losing roughly 11 of 15 anchor-eligible positions
+— loss that the earlier estimate, sitting below the observation, could not have revealed.
 
 Three consequences follow, and together they are the thesis's principal intellectual claim.
 
-The first is that the deficiency is located in stages 2 and 3 of the five-stage pipeline —
-segmentation and quantisation — and not in stages 4 and 5, where most of the engineering
-effort went. Six independent interventions on the decision stage, spanning chaining,
-occurrence filtering, key geometry and key encoding, are accounted for by the model: those
-that reorganise a fixed anchor supply yield tens of percent relative and no more, and the one
-that multiplied anchor yield lost more to specificity than it gained. None exceeded a 32%
-relative improvement `[VERIFY]`. Because the stages are ordered and earlier stages bound later
-ones, this is a statement about the method class at this agreement level, not about this
-implementation's decision code.
+The first is that the deficiency is located principally in stages 2 and 3 of the five-stage
+pipeline — segmentation and quantisation — and not in stages 4 and 5, where most of the
+engineering effort went. Six independent interventions on the decision stage, spanning
+chaining, occurrence filtering, key geometry and key encoding, are accounted for: those that
+reorganise a fixed anchor supply yield tens of percent relative and no more, and the one that
+multiplied anchor yield lost more to specificity than it gained. None exceeded a 32% relative
+improvement `[VERIFY]`. A supply of 14.9 anchor-eligible positions per read against the
+comparison system's 467 is a gap no decision rule closes, and because the stages are ordered
+and earlier stages bound later ones, this is a statement about what the method class can
+achieve at this encoding quality rather than about this implementation's decision code.
+
+"Principally" is doing work in that sentence and did not need to in the earlier draft. The
+revised supply figure leaves 11 of 15 anchors unaccounted for between seeding and the best
+chain, so stages 4 and 5 are carrying some of the loss after all. That does not move the
+diagnosis — closing the 31× supply gap dominates recovering a factor of under four — but it
+withdraws the claim that the decision stage is blameless, which the earlier figure of 1.85
+anchors had made unfalsifiable by sitting below the observation.
 
 The second is that the apparent inconsistency in Chapter 6 — a key geometry frozen three
 times, with adjacent geometries reordering under changes elsewhere in the pipeline — is a
 symptom rather than a measurement defect. Sensitivity requires short keys and specificity
 requires long ones; §7.3.3 shows the width of the feasible region between them is set by `a`,
-and at `a` = 0.56 it is narrow enough that the ordering of adjacent geometries is governed by
-second-order effects. The instability was predicted by the model after the fact, which is the
-weaker form of confirmation, and is recorded as such.
+and at the agreement this pipeline achieves it is narrow enough that the ordering of adjacent
+geometries is governed by second-order effects. The instability was predicted by the model
+after the fact, which is the weaker form of confirmation, and is recorded as such.
 
 The third is a design prescription that costs almost nothing to adopt: measure and report `a`
 before proposing a decision rule. It is a single pass over paired reference and query events
@@ -186,28 +215,50 @@ therefore the first experiment and not the last.
 The items below are ordered by the ratio of expected information to effort, which is the
 ordering this work's own history argues for.
 
-**Raise `a`, and measure it as the dependent variable (Chapter 7 §7.8).** Three mechanisms are
-identified. *Merging* consecutive events whose signal difference falls below a threshold into
-one hashed symbol raises agreement by construction — two events straddling a bucket boundary,
-each disagreeing with probability near one half, become one symbol determined by their
-aggregate — and it reduces `E` for the same span, which the `a^E` form rewards twice. It is
-distinct from the differencing rejected in row 10 of Table 8.1, and it is the single most
-promising untested change. *Normalisation* is the second: at zero added noise,
-reference-derived normalisation recovers 100% of seeds where per-read normalisation recovers
-50.5% `[VERIFY]`, and while per-read estimation is unavoidable in principle, the estimator
-need not be the median and MAD of one 2000-sample chunk. *Non-uniform bucket boundaries*
-placed at quantiles of the realised level distribution would equalise occupancy; an adaptive
-quantiser was implemented and rejected earlier in this work on recall grounds, but that
-evaluation predates the model and did not measure `a`, and should be repeated with `a` as the
-dependent variable.
+**Merge on both sides with one rule (Chapter 7 §7.8).** This is first because §7.4.5 measured
+it working. The comparison system applies one event-merging rule — events whose level differs
+from the last retained event by less than a threshold are dropped — to its reference encoding
+and to its query alike, retaining 73.4% of each, and its event-correspondence failure rate is
+consequently half this pipeline's at the same dispersion, 0.092 against 0.196 `[VERIFY]`. This
+pipeline's reference encoder emits one event per k-mer unconditionally while its detector emits
+roughly 0.78, and §7.4.4 measures the resulting indel rate at 0.170 *at zero dwell dispersion*,
+where there is no timing noise to account for it. An indel rate that high with no noise present
+is a structural mismatch between the two encoders, and because correspondence failure enters
+key match probability with the same exponent as disagreement, it costs as much. Fixing it is a
+change to the indexing path, not a research question.
 
-**Measure `a` for the comparison mapper on the same input.** This is named as an outstanding
-item in both Chapter 6 §6.10 and Chapter 7 §7.9 and is repeated here because it is the single
-most valuable undone experiment in the thesis. It converts §6.5 from an observation that a
-published mapper is robust into an explanation of why, and it tests the model's generality
-beyond the one pipeline on which it was fitted. If that system's agreement is substantially
-higher, the model explains the gap; if it is comparable, the model is incomplete and the
-explanation lies further down the pipeline, which would be the more interesting outcome.
+**Spend alphabet to buy agreement.** Also measured rather than proposed: the comparison
+system's quantiser is non-uniform, allocating fine resolution to a central band and collapsing
+the tails, and realises about 2.46 bits per event of a nominal 4 `[VERIFY]`. This pipeline's
+uniform quantiser over a clipped z-range realises more of its alphabet and agrees less — 0.783
+against 0.911. An equal-occupancy quantiser was implemented and rejected earlier in this work
+on recall grounds, but equal-occupancy maximises entropy, which is the wrong objective; the
+objective the measurements support is minimising boundary crossings where the level
+distribution is dense, which is a different quantiser.
+
+**Refine normalisation as chunks arrive.** §7.4.4 quantifies this: estimating the shift and
+scale from the whole read rather than the first 2000-sample chunk raises agreement from 0.556
+to 0.726 and measured key match probability from 0.0549 to 0.1113 — a factor of two in anchor
+supply for no change to the index, the geometry or the decision rule `[VERIFY]`. The whole read
+is not available at the first chunk, so the deployable form is an estimate refined as chunks
+arrive. The earlier oracle-normalisation figure — 100% of seeds recovered against 50.5% for
+per-read normalisation at zero added noise `[VERIFY]` — bounds what is available.
+
+**Locate the loss inside the decision stage.** The correspondence-aware measurement of
+Chapter 7 §7.4.4 revises the frozen configuration's anchor supply from a modelled 1.85 per
+read to a measured 14.9, against an observed median best-chain score of 4. That is the one
+place in this pipeline where the measurements now show recoverable loss — roughly 11 of 15
+anchor-eligible positions are not reaching the best chain — and it was invisible while the
+estimate sat below the observation. The candidates are the occurrence cap, the 24-slot greedy
+chainer of §4.7.3, and a chaining band of 12 against a measured indel rate of 0.196. The
+anchors are known to exist, so this is a diagnostic rather than a search, and it is the
+cheapest experiment remaining.
+
+**Extend the agreement measurement across the dwell sweep and across seeds.** Chapter 7
+§7.4.4 and §7.4.5 measure agreement at two dwell levels with 200 reads and one seed, where
+Chapter 6 sweeps six levels in triplicate. The tooling exists — symbol dumps from both systems
+and one scorer — so this is a matter of running it. The replication matters particularly here
+because row 11 of Table 8.1 is a single-run figure that triplicates withdrew.
 
 **Deadline-miss rate on bare metal.** Every latency figure in this thesis was taken under a
 hypervisor, and Chapters 3 §3.8 and 5 §5.9 scope the tail accordingly. The configuration

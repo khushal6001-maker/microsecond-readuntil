@@ -1,0 +1,88 @@
+--- roptions.h	2026-10-09 16:09:45.412505368 +0000
++++ roptions.h	2026-10-15 16:51:45.401936008 +0000
+@@ -14,6 +14,7 @@
+ #define RI_I_REV_QUERY	0x40
+ #define RI_I_OUT_QUANTIZE 0x80
+ #define RI_I_NO_EVENT_DETECTION 0x100
++#define RI_I_OUT_QUANTIZE_REF 0x200
+ 
+ #define RI_M_SEQUENCEUNTIL	0x1
+ #define RI_M_RMQ			0x2
+--- rsketch.c	2026-10-09 16:09:45.412505368 +0000
++++ rsketch.c	2026-10-15 16:51:45.403569536 +0000
+@@ -176,7 +176,8 @@
+ 	//First quantization is done here
+ 	l_sigpos = f_pos;
+ 	f_tmpQuantSignal = dynamic_quantize(s_values[f_pos], fine_min, fine_max, fine_range, n_buckets)&mask_quant_bit;
+-	if(out) fprintf(stdout, "%u", f_tmpQuantSignal);
++	if(out==2) fprintf(stdout, "%u:%u", f_pos, f_tmpQuantSignal);
++	else if(out) fprintf(stdout, "%u", f_tmpQuantSignal);
+ 	sigBuf[sigBufPos].y = id_shift | (uint32_t)f_pos<<RI_POS_SHIFT | strand;
+ 	if(++sigBufPos == e) {sigBufFull = 1; sigBufPos = 0;}
+ 	quantVal = f_tmpQuantSignal&mask_events;
+@@ -189,7 +190,8 @@
+ 		l_sigpos = f_pos;
+ 
+ 		f_tmpQuantSignal = dynamic_quantize(s_values[f_pos], fine_min, fine_max, fine_range, n_buckets)&mask_quant_bit;
+-		if(out) fprintf(stdout, ",%u", f_tmpQuantSignal);
++		if(out==2) fprintf(stdout, ",%u:%u", f_pos, f_tmpQuantSignal);
++		else if(out) fprintf(stdout, ",%u", f_tmpQuantSignal);
+ 
+ 		sigBuf[sigBufPos].y = id_shift | (uint32_t)f_pos<<RI_POS_SHIFT | strand;
+ 		if(++sigBufPos == e) {sigBufFull = 1; sigBufPos = 0;}
+--- rindex.c	2026-10-09 16:09:45.412505368 +0000
++++ rindex.c	2026-10-15 16:52:50.974647378 +0000
+@@ -167,13 +167,16 @@
+ 				if (t->l_seq > 0){
+ 					uint32_t s_len;
+ 					float* s_values = (float*)calloc(t->l_seq, sizeof(float));
++					short outref = (p->ri->flag&RI_I_OUT_QUANTIZE_REF)?2:0;
+ 
+ 					ri_seq_to_sig(t->seq, t->l_seq, p->ri->pore, p->ri->k, 0, &s_len, s_values);
+-					ri_sketch(0, s_values, t->rid, 0, s_len, p->ri->diff, p->ri->w, p->ri->e, p->ri->n, p->ri->q, p->ri->k, p->ri->fine_min, p->ri->fine_max, p->ri->fine_range, &s->a, 0);
++					if(outref) fprintf(stdout, "\n>%s\t+\n", t->name);
++					ri_sketch(0, s_values, t->rid, 0, s_len, p->ri->diff, p->ri->w, p->ri->e, p->ri->n, p->ri->q, p->ri->k, p->ri->fine_min, p->ri->fine_max, p->ri->fine_range, &s->a, outref);
+ 
+ 					// if(!(p->ri->flag&RI_I_REV_QUERY)){
+ 						ri_seq_to_sig(t->seq, t->l_seq, p->ri->pore, p->ri->k, 1, &s_len, s_values);
+-						ri_sketch(0, s_values, t->rid, 1, s_len, p->ri->diff, p->ri->w, p->ri->e, p->ri->n, p->ri->q, p->ri->k, p->ri->fine_min, p->ri->fine_max, p->ri->fine_range, &s->a, 0);
++						if(outref) fprintf(stdout, "\n>%s\t-\n", t->name);
++						ri_sketch(0, s_values, t->rid, 1, s_len, p->ri->diff, p->ri->w, p->ri->e, p->ri->n, p->ri->q, p->ri->k, p->ri->fine_min, p->ri->fine_max, p->ri->fine_range, &s->a, outref);
+ 					// }
+ 
+ 					free(s_values);
+@@ -286,7 +289,7 @@
+ 				else s_values = normalize_signal(0, t->sig, t->l_sig, &s_sum, &s_std, &n_events_sum, &s_len);
+ 				
+ 				short out = (p->ri->flag&RI_I_OUT_QUANTIZE)?1:0;
+-				if(out) fprintf(stdout, "%s\n", t->name);
++				if(out) fprintf(stdout, "\n%s\n", t->name);
+ 				ri_sketch(0, s_values, t->rid, 0, s_len, p->ri->diff, p->ri->w, p->ri->e, p->ri->n, p->ri->q, p->ri->k, p->ri->fine_min, p->ri->fine_max, p->ri->fine_range, &s->a, out);
+ 
+ 				if(s_values)free(s_values);
+--- main.cpp	2026-10-09 16:09:45.412505368 +0000
++++ main.cpp	2026-10-15 16:51:45.406551589 +0000
+@@ -77,6 +77,7 @@
+ 	{ (char*)"fine-max",			ko_required_argument, 	365 },
+ 	{ (char*)"fine-range",			ko_required_argument, 	366 },
+ 	{ (char*)"out-quantize",		ko_no_argument,  		367 },
++	{ (char*)"out-quantize-ref",	ko_no_argument,  		468 },
+ 	{ (char*)"no-event-detection",	ko_no_argument,  		368 },
+ 	{ (char*)"io-thread",			ko_required_argument, 	369 },
+ 	{ (char*)"min-score2",			ko_required_argument, 	370 },
+@@ -419,6 +420,7 @@
+ 		else if (c == 365) {ipt.fine_max = atof(o.arg);}// --fine-max
+ 		else if (c == 366) {ipt.fine_range = atof(o.arg);}// --fine-range
+ 		else if (c == 367) {ipt.flag |= RI_I_OUT_QUANTIZE; ipt.flag |= RI_I_SIG_TARGET;}// --out-quantize
++		else if (c == 468) {ipt.flag |= RI_I_OUT_QUANTIZE_REF;}// --out-quantize-ref
+ 		else if (c == 368) {ipt.flag |= RI_I_NO_EVENT_DETECTION;}// --no-event-detection
+ 		else if (c == 369) {io_n_threads = atoi(o.arg);}// --io-thread
+ 		else if (c == 370) opt.min_chaining_score2 = atoi(o.arg);// --min-score2
+@@ -510,6 +512,7 @@
+ 
+ 		fprintf(fp_help, "\n  Experimental/Debugging Parameters:\n");
+ 		fprintf(fp_help, "    --out-quantize     	Output the quantized values from raw signals provided as input. Mapping is not performed and the index file is not needed.\n");
++		fprintf(fp_help, "    --out-quantize-ref     	Output the quantized values the REFERENCE side produces, as pos:value pairs, during index construction.\n");
+ 		fprintf(fp_help, "    --no-event-detection  Do not perform event detection. This can be set if your raw signal is already segmented.\n");
+ 		
+ 		fprintf(fp_help, "\n  Presets:\n");

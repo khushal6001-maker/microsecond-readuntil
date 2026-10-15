@@ -1,0 +1,26 @@
+# Per-event bucket agreement and measured key-match probability, one estimator applied to
+# both systems. Produced 2026-10-15 by bench/symbol_dump.cpp (this pipeline),
+# RawHash2 --out-quantize / --out-quantize-ref (external), and scored by
+# bench/symbol_agreement.cpp. 200 reads per cell, 20 Mb chr20, squigulator-derived R10.4
+# 9-mer model on both sides, both strands indexed.
+#
+# system        this pipeline, or rawhash2 v2.1 at its own defaults (-q 4 -e 8 -w 0 --sig-diff 0.35)
+# segmentation  detected = two-window t-test; fixed = samples_per_event windows;
+#               own = RawHash's detect_events plus --sig-diff merging
+# norm          read = scaling from all samples of the read; chunk = from the first
+#               2000-sample chunk only, which is what the production path does
+# a_dp          matches / aligned pairs under the maximising alignment (upper bound)
+# a_affine      matches / length under the single best constant offset (the Chapter 7
+#               section 7.4 estimator; a lower bound once correspondence drifts)
+# indel_frac    gap columns as a fraction of alignment columns
+# p_key8        measured fraction of positions beginning a gap-free, all-matching run of 8
+# p_key12       the same for 12
+# anchors_read  p_key at that system's own key length, times event positions per read
+system,segmentation,bits,events_per_key,norm,dwell_cv,reads,a_dp,a_affine,indel_frac,p_key8,p_key12,anchors_read
+ours,detected,4,12,read,0.00,200,0.7971,0.1818,0.1697,0.04576,0.01242,33.8
+ours,detected,4,12,read,0.44,200,0.7826,0.1877,0.1963,0.02736,0.00554,14.9
+ours,fixed,4,12,read,0.00,200,0.7931,0.7255,0.0734,0.18913,0.11130,284.6
+ours,fixed,4,12,read,0.44,200,0.6479,0.1867,0.2084,0.00235,0.00038,1.1
+ours,fixed,4,12,chunk,0.00,200,0.6858,0.5563,0.1289,0.09909,0.05492,142.8
+rawhash2,own,4,8,own,0.00,200,0.9134,0.2963,0.0551,0.34981,0.21881,650.9
+rawhash2,own,4,8,own,0.44,200,0.9109,0.2489,0.0915,0.25370,0.13449,466.5

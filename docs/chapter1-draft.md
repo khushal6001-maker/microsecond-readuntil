@@ -188,18 +188,26 @@ read-until clients over the instrument's own API emits a fixed sample count per 
 therefore cannot exercise the axis: against it, the configuration that is worse on realistic
 signal measures 4.5 times better `[VERIFY]`.
 
-**C5 — An information-loss bound on stages 2 and 3 (Chapter 7).** Let `a` be the probability
-that reference and query assign the same bucket to corresponding events. A key of `E`
-consecutive events matches only if all `E` agree, so expected anchor yield falls as `a^E`, and
-this is a lower bound rather than an estimate, because overlapping k-mers and a shared per-read
-normalisation estimate make the per-event agreements positively correlated. Measured on this
-pipeline, `a` reaches 55.9% in its most favourable configuration, predicting 1.85 true anchors
-per read against an observed median best-chain score of 4 `[VERIFY]` — agreement in order of
-magnitude and in the direction the correlation argument requires. The model accounts for six
-independent interventions on stages 4 and 5, none of which exceeded a 32% relative improvement.
-The design implication is that `a` should be measured and reported before a decision rule is
-proposed, since below a threshold agreement no decision rule can succeed, and `a` is cheap to
-measure.
+**C5 — An information-loss account of stages 2 and 3, and a comparative measurement
+(Chapter 7).** Two quantities govern how many true anchors a read can supply: `a`, the
+probability that reference and query assign the same bucket to corresponding events, and `g`,
+the rate at which the two event sequences fail to correspond at all. A key of `E` consecutive
+events requires `E` events that both agree and correspond, so key match probability goes as
+`(1 − g)^E · a^E` and anchor yield falls geometrically in `E`. The contribution is in three
+parts. First, an instrument that measures both quantities from paired reference and query
+symbol streams, applied identically to this pipeline and to a published mapper, because an
+agreement figure computed two different ways for two systems is not a comparison. Second, the
+resulting measurement: this pipeline's frozen configuration achieves `a` = 0.783 at `g` = 0.196
+and `E` = 12, giving 14.9 anchor-eligible positions per read, against the published mapper's
+`a` = 0.911 at `g` = 0.092 and `E` = 8, giving 467 `[VERIFY]`. A 31-fold supply difference
+accounts for 18.8% accuracy against 92.4% on the same input without appeal to the decision
+rule, and decomposes into a factor of 4.9 from key length and 9.3 from the encoding. Third,
+the design axis this exposes: the published mapper realises about 2.46 bits per event of a
+nominal 4 and applies one event-merging rule to both reference and query, trading alphabet and
+resolution for agreement and correspondence, where this pipeline maximises alphabet and
+achieves neither. The prescription is that `a` and `g` should be measured and reported before
+a decision rule is proposed, since below a threshold no decision rule can succeed, and both
+are cheap to measure.
 
 ---
 
@@ -296,7 +304,11 @@ Appendix D expands the retraction log.
 | Published mapper under dwell | 95.0% → 92.0% correctly mapped | 6 |
 | Sketching cost, dwell-dependent | 12.8 → 21.0 percentage points | 6 |
 | Read-until simulator at constant dwell | reports the worse configuration as 4.5× better | 6 |
-| Per-event bucket agreement | 55.9% best case, predicting 1.85 anchors/read | 7 |
+| Per-event agreement, this pipeline frozen | `a` = 0.783, `g` = 0.196, 14.9 anchors/read | 7 |
+| Per-event agreement, published mapper | `a` = 0.911, `g` = 0.092, 467 anchors/read | 7 |
+| Anchor-supply gap accounting for 18.8% vs 92.4% | 31×, as 4.9× key length and 9.3× encoding | 7 |
+| Realised quantiser entropy, published mapper | ≈2.46 bits of a nominal 4 | 7 |
+| Normalisation from whole read vs first chunk | agreement 0.556 → 0.726, yield 2.0× | 7 |
 | Interventions on stages 4–5 | six, none exceeding +32% relative | 4, 7 |
 
 All figures `[VERIFY]`.

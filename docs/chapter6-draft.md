@@ -178,6 +178,23 @@ Chapter 7 identifies the quantity — per-event bucket agreement — through whi
 propagates, and shows that it also accounts for this system's absolute accuracy deficit
 independently of dwell.
 
+**Why its curve is flat, measured rather than inferred.** Chapter 7 §7.4.5 measures per-event
+agreement for this comparison system on the same input under the same instrument used for this
+pipeline. Its agreement is 0.913 at CV 0 and 0.911 at CV 0.44 — invariant to within two parts
+in a thousand across the range this chapter sweeps — where this pipeline's fixed-width
+configuration falls from 0.793 to 0.648 and, more consequentially, its event-correspondence
+failure rate trebles from 0.073 to 0.208. The flatness in the accuracy curve is therefore the
+flatness of an underlying encoding property and not a compensating effect downstream.
+
+The mechanism, visible in that system's source and consistent with every measurement taken
+here, is that its event-retention rule is applied **symmetrically to the reference encoding and
+to the query**: events whose level differs from the last retained event by less than a
+threshold are merged on both sides alike, retaining 73.4% of each `[VERIFY]`. Both sides
+therefore agree on how many events a given span contains, which is the property fixed-width
+segmentation loses as soon as dwell varies. This pipeline's reference encoder, by contrast,
+emits one event per k-mer unconditionally while its detector emits roughly 0.78. The mechanism
+has not been isolated by ablation and is stated as the explanation the evidence supports.
+
 A fairness note belongs with the numbers. The comparison system's default operating point is
 not zero-false-positive: 8–10% of control reads are mapped at window 0 and 11–15% at window 10
 `[VERIFY]`. Its 95% is therefore not level-comparable with the zero-false-positive rates of
@@ -340,10 +357,17 @@ the axis would materially strengthen the chapter and is not done.
 observed monotone penalty but does not demonstrate it; that requires instrumenting seed
 selection on both sides.
 
-**Agreement was not measured for the comparison system.** As Chapter 7 §7.9 states, the single
-most valuable experiment left undone is measuring per-event agreement for the published mapper
-on this same input, which would convert the account of §6.5 from an observation that it is
-robust into an explanation of why.
+**The agreement measurement that explains §6.5 is at two dwell levels, not six.** Chapter 7
+§7.4.5 measures per-event agreement for the comparison system at CV 0 and CV 0.44 only, while
+this chapter sweeps six levels for accuracy. The claim that its agreement is dwell-invariant
+therefore rests on two points, and the shape between them is assumed rather than measured.
+Extending the agreement measurement across the full sweep is cheap — the symbol dumps and the
+scorer already exist — and is the obvious next step.
+
+**The symmetric-retention explanation is not isolated.** §6.5 attributes the comparison
+system's flat curve to applying one merging rule to both reference and query. The decisive test
+is to apply this pipeline's own detector to its own reference encoding and re-measure
+agreement; that is a change to the indexing path rather than a measurement, and was not made.
 
 ---
 
