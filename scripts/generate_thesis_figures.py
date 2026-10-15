@@ -69,7 +69,12 @@ def record(name: str, sources: str, caption: str) -> None:
 
 def save(fig, name: str, outdir: Path, formats: list[str]) -> None:
     for ext in formats:
-        fig.savefig(outdir / f"{name}.{ext}")
+        # PDF carries a creation timestamp by default, so regenerating unchanged figures
+        # dirties the working tree and every commit touching a figure looks like a content
+        # change. Suppressing it makes regeneration byte-stable, which is what lets
+        # audit_manuscript.py compare figure and data timestamps meaningfully.
+        kw = {"metadata": {"CreationDate": None}} if ext == "pdf" else {}
+        fig.savefig(outdir / f"{name}.{ext}", **kw)
     plt.close(fig)
     print(f"  wrote {name} ({', '.join(formats)})")
 
