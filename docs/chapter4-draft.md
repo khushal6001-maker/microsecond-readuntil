@@ -293,14 +293,24 @@ paid once and never re-paid when later chunks arrive.
 
 Measured at the operating point of Chapter 6 `[TABLE 4.2]` `[VERIFY]`:
 
-| decision rule | TPR at zero false positives |
-|---|---|
-| exact-diagonal votes, 256 counters | 14.2% |
-| chains, β = 0, 24 chains *(control)* | 9.6% |
-| chains, β = 12, 24 chains | 17.4% |
-| anchor-history chains, β = 12, L = 48 | 18.8% |
-| anchor-history chains, L = 128 | 18.0% |
-| anchor-history chains, with occurrence filtering | 17.8% |
+| decision rule | TPR at zero false positives | corroborated |
+|---|---|---|
+| exact-diagonal votes, 256 counters | 14.2% | yes |
+| chains, β = 0, 24 chains *(control)* | 9.6% | no |
+| chains, β = 12, 24 chains | 17.4% | yes |
+| anchor-history chains, β = 12, L = 48 | 18.8% | **no** |
+| anchor-history chains, L = 128 | 18.0% | no |
+| anchor-history chains, with occurrence filtering | 17.8% | no |
+
+**A provenance note on this table, because one of its rows is the thesis's headline accuracy.**
+The rows marked corroborated appear independently in `results/geometry-x-chaining.csv`, which is
+a captured tool output. The remainder, including the 18.8% that §7.1 and Chapter 8 quote
+against the comparison mapper's 92.4%, exist only as a transcription from a session log
+(`results/decision-rules.csv`, whose header says so). The two figures are consistent — 17.4%
+for the greedy chainer is corroborated and 18.8% for the anchor-history chainer is the same
+measurement with a better chainer — but a headline number resting on a transcription is a
+weaker thing than one resting on a captured run, and a reader is entitled to know which this
+is. Re-running the four uncorroborated rows is listed in Chapter 8 §8.4 and is cheap.
 
 The `β = 0` control is the informative row. It isolates the tolerance from the restructuring:
 with tolerance removed, chaining is *worse* than the vote table (9.6% against 14.2%), which is

@@ -1,0 +1,20 @@
+# Decision-rule comparison at the operating point of Chapter 6 (4 x 12, window 1, detected
+# events, squigulator signal at the default dwell dispersion). TPR at the lowest threshold
+# giving zero false positives on a composition-matched shuffled control.
+#
+# PROVENANCE WARNING. These rows are transcribed from the Chapter 4 draft, which took them
+# from a session log. Unlike geometry-x-chaining.csv they are not a captured tool output, and
+# only the first and third rows are independently corroborated there (14.2 and 17.4). The
+# 18.8% figure is this thesis's headline accuracy and it rests on this transcription alone.
+# Re-run bench/squig_sweep.cpp in each mode and replace this file before submission; until
+# then every number here is [VERIFY] and the two corroborated rows are the safe ones to quote.
+#
+# beta is the chaining band in events; 0 reproduces exact diagonal equality.
+# lookback applies to the anchor-history chainer only.
+rule,beta,chains,lookback,occ_filter,zeroFP_TPR,corroborated_in_geometry_x_chaining
+exact-diagonal votes (256 counters),,,,,14.2,yes
+greedy chains (control),0,24,,,9.6,no
+greedy chains,12,24,,,17.4,yes
+anchor-history chains,12,,48,no,18.8,no
+anchor-history chains,12,,128,no,18.0,no
+anchor-history chains,12,,48,yes,17.8,no

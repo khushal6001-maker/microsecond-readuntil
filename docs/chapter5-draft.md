@@ -246,7 +246,8 @@ withdrawn data of §5.2.2, and unlike that claim it is supported by replication.
 
 **Regime R3** — 64 Mb reference, variable-dwell simulation, frozen configuration. Per-chunk
 decision latency has a median of 134–174 µs and a 99th percentile of 630–705 µs, with
-3.9–4.4 GB resident and no chunks dropped at a sustained 975 chunk/s `[VERIFY]`
+3.9–4.4 GB resident and no chunks dropped at a sustained 975 chunk/s `[VERIFY — no recorded
+histogram; see below]`
 `[TABLE 5.2]`.
 
 **Table 5.2** The two measurement regimes side by side, and both against the budget. The
@@ -266,6 +267,18 @@ difference between their medians is not attributable to the data plane; §5.7 se
 | utilisation against S < 1.56 ms | ~0.010 | 0.09–0.11 |
 
 `[VERIFY]`
+
+**Provenance of the R3 column, stated because it is weaker than that of R1.** Every R1 figure
+is re-derivable from a committed histogram: `results/hgrm/` holds all sixteen runs of the
+matrix and `scripts/verify_thesis_numbers.py` recomputes Table 5.1 from them. The R3 figures
+are not. The genome-scale histograms that survive in `results/hgrm/` — `chr20_ours`,
+`chr20plus`, `fix_hg38_chr20`, `cmp_hg38_chr20` — report medians of 21.9 to 25.6 µs, which are
+minimizer-window-10 runs and therefore do **not** back the frozen configuration's figure. The
+source comment in `src/index/quantise.hpp` independently records "p50 decision latency of
+174 µs instead of 25 µs" for window 1 against window 10, which is consistent with the quoted
+range and with the surviving histograms being the other configuration, but consistency is not
+the same as a recorded measurement. The R3 column therefore requires a re-run with
+`--latency-out` at the frozen geometry before submission, and §8.4 lists it.
 
 The order-of-magnitude increase over R1 is accounted for by index scale and by
 the segmentation and seeding configuration frozen in Chapter 6, not by the data plane; the

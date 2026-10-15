@@ -702,3 +702,93 @@ cannot expand the matrix, so `name: ${{ matrix.name }}` renders as the literal s
 which would produce `...=1: strict_string_checks=1`, and the AddressSanitizer flag parser
 rejects a flag name beginning with a space. The failure appears as a sanitiser configuration
 error rather than as a YAML error, which is what makes it expensive to diagnose.
+
+---
+
+# Appendix F — Verification register
+
+Every number in Chapters 1 to 8 was marked `[VERIFY]` on first drafting, on the principle that
+a figure lifted from a session log is not a measurement until something re-derives it. This
+appendix records the result of doing that.
+
+`scripts/verify_thesis_numbers.py` transcribes each checkable claim by hand and recomputes it
+from the files in `results/`. It deliberately does not parse the chapters: a disagreement
+therefore means the prose and the data disagree, not that a parser failed. Running it prints
+the status of every claim and exits non-zero if any disagree.
+
+```bash
+python scripts/verify_thesis_numbers.py
+```
+
+## F.1 Outcome
+
+**83 claims agree, none disagree.** The audit found two errors in the prose, both now
+corrected, and one provenance weakness that could not be corrected without a re-run.
+
+**Error 1 — a monotonicity claim the data do not support (§6.6).** The sketching penalty was
+described as growing monotonically with dwell dispersion. The measured series is 12.8, 13.0,
+12.4, 15.0, 15.2, 21.0 points, which dips at CV 0.20. With one seed per cell a 0.6-point step
+is within what the measurement resolves, so the dip is not evidence of structure; but the
+claim of monotonicity was not supportable and has been withdrawn. The finding that survives —
+a 64% increase across the range — is unaffected.
+
+**Error 2 — a mis-attributed improvement figure (§7.6).** The statement that no intervention
+exceeded a 32% relative improvement is correct, but the 32% is 14.2% to 18.8%, which is the
+*anchor-history* chainer. Checked against `results/geometry-x-chaining.csv`, which contains the
+greedy chainer, the figure is 23%. The two refer to different decision rules and the chapters
+now say which.
+
+**Provenance weakness — the headline accuracy figure.** 18.8% appears in §1.4, §5.8.2, §7.1,
+§7.4.5 and §8.3, always against the comparison mapper's 92.4%. It exists only as a
+transcription in `results/decision-rules.csv`, whose header says so; the captured output in
+`results/geometry-x-chaining.csv` corroborates 14.2% and 17.4% but not 18.8%. The figures are
+mutually consistent and nothing suggests the transcription is wrong, but a headline resting on
+a transcription is weaker than one resting on a captured run, and §4.7.3 now says which rows
+are which.
+
+## F.2 What is backed, and by what
+
+| claim group | source file | status |
+|---|---|---|
+| Regime R1 latency, all four cells, all percentiles | `results/hgrm/*.hgrm`, `results/latency-matrix-wsl2.csv` | recomputed |
+| p99 run-to-run spread, 133% against 8% | `results/latency-matrix-wsl2.csv` | recomputed |
+| Dwell sweep, both arms, six levels | `results/dwell-sweep-ours.csv` | recomputed |
+| Comparison mapper dwell sweep, three windows | `results/rawhash-dwell-sweep.csv` | recomputed |
+| Sketching penalty series and its 64% growth | `results/rawhash-dwell-sweep.csv` | recomputed |
+| Agreement, indel rate, key match probability, both systems | `results/agreement-summary.csv` | recomputed |
+| The 31× supply gap and its 4.9 × 9.3 decomposition | `results/agreement-summary.csv` | recomputed |
+| Reproduction of the 55.9% figure as 0.556 | `results/agreement-summary.csv` | recomputed |
+| Icarust stock against patched, and the 4.5× inversion | `results/icarust-stock-vs-patched.csv` | recomputed |
+| Decision-rule comparison, six rules | `results/decision-rules.csv` | recomputed, file is transcribed |
+| Per-channel and per-ring footprints | arithmetic from source constants | recomputed |
+| Service bound of 1.56 ms | arithmetic | recomputed |
+| The four power-of-two bucket edges of §5.2.2 | arithmetic from the TSC frequency | recomputed |
+
+## F.3 Outstanding: claims no committed file can settle
+
+Fourteen, listed in full by the script. In descending order of how much they matter:
+
+1. **Regime R3 latency** — p50 134–174 µs, p99 630–705 µs, 3.9–4.4 GB, 975 chunk/s (§5.6,
+   §8.1, §1.9). The surviving genome-scale histograms are window-10 runs reporting 22–26 µs
+   and do not back the frozen configuration. Needs a re-run with `--latency-out`.
+2. **The 18.8% headline** — see F.1.
+3. **Median best-chain score of 4** (§7.5, §8.3). The whole of §7.5 compares the measured
+   anchor supply against this one observation.
+4. **readfish orchestration cost** — 124 µs per chunk, 15.6–25.3% of a core, 86–663 MB
+   (§5.8.1), and this system's 182–202% beside it.
+5. **RawHash2 9.66 ms per read against ~1.34 ms** (§5.8.2).
+6. **Realised key entropy, ~18 bits below nominal, and the 99.3% truncation at 3 × 8**
+   (§7.3.1, §7.10).
+7. **Oracle normalisation, 100% of seeds against 50.5%** (§7.8). Partly superseded by §7.4.4's
+   whole-read result, which is backed.
+8. **Index footprint, 63.9 M against 11.7 M minimizers and 3.9 against 1.6 GB** (Appendix C.1).
+9. **Vote-table lockout, 0 accepts of 763 and 854 of 1366** (§4.4) and the **chunk-relative
+   diagonal series, 49/300 to 7/300 and the corrected 118 → 196** (§4.5). Both describe code
+   that no longer exists; cite the commits that fixed them rather than re-running.
+10. **Withdrawn figures in Table 8.1 rows 1 to 3.** These are quoted *as* withdrawn results and
+    their original runs are gone by construction. They should be cited to the session record,
+    or restated with "approximately".
+
+The distinction that matters for a viva is between 1 to 8, which are live claims that a
+reader may check, and 9 to 10, which describe history. The first group should be re-run; the
+second should be cited.

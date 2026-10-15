@@ -230,6 +230,14 @@ The penalty grows by approximately 64% across the range. At window 10 and CV 0.6
 costs 21 points of sensitivity and also raises the false-mapping rate from 8.4% to 15.2%
 `[VERIFY]`, so both error types worsen together.
 
+**The growth is not monotone, and the claim is made accordingly.** The series dips at
+CV 0.20, from 13.0 to 12.4 points, before rising. With one seed per cell and 500 reads, a
+0.6-point step is within the variation these measurements can resolve, so the dip is not
+evidence of structure; but neither is it evidence against it, and the claim made here is
+therefore only that the penalty is substantially larger at the top of the range than at the
+bottom. An earlier draft of this section described the growth as monotone, which the data do
+not support.
+
 **Why this is the chapter's novel finding, and how modest it is.** The tool's own documentation
 states that enabling minimizers "may reduce accuracy but improves the performance and memory
 space efficiency", and it ships with sketching disabled. That a trade-off exists is therefore
@@ -244,7 +252,7 @@ changes the buckets of the keys overlapping it, and therefore can change which k
 minimum rank within its window, so reference and query may select *different* seeds even where
 both individual keys would have matched. The failure mode requires boundaries to move and so
 cannot occur under constant dwell, which is why a constant-dwell evaluation cannot reveal it.
-This mechanism is consistent with the observed monotone growth of the penalty but was not
+This mechanism is consistent with the observed growth of the penalty but was not
 isolated experimentally — doing so would require instrumenting which seeds each side selects,
 and that is not done here.
 
@@ -363,7 +371,7 @@ established here. Measuring the empirical dwell dispersion of a public dataset a
 the axis would materially strengthen the chapter and is not done.
 
 **The minimizer mechanism is not isolated.** §6.6 gives a mechanism consistent with the
-observed monotone penalty but does not demonstrate it; that requires instrumenting seed
+observed growth in the penalty but does not demonstrate it; that requires instrumenting seed
 selection on both sides.
 
 **The agreement measurement that explains §6.5 is at two dwell levels, not six.** Chapter 7
