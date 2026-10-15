@@ -96,8 +96,32 @@ at the transport boundary rather than at the start of the decision function mean
 reported latency includes queueing delay inside the system and excludes only the network
 and server, which is the division that corresponds to what the implementation controls.
 
-`[TABLE 3.1]` ChunkRef field layout, widths and offsets, with the 72-byte and 56-byte
-orderings side by side.
+**Table 3.1** `ChunkRef` field layout. Field order is chosen for size rather than for reading
+order: the eight-byte members are declared first and the narrow ones packed into the tail.
+Declared in reading order the structure is 72 bytes; packed it is 56, and the compile-time
+assertion that it does not exceed 64 is what caught the difference `[VERIFY]`.
+
+| field | type | bytes | purpose |
+|---|---|---|---|
+| `chunk_start_sample` | `uint64` | 8 | absolute sample index, across the experiment |
+| `read_id` | `const char*` | 8 | borrowed pointer into arena-owned protobuf string storage |
+| `raw_data` | `const std::byte*` | 8 | borrowed pointer into arena-owned signal payload |
+| `owner` | `ArenaSlot*` | 8 | the slot whose reference this descriptor holds |
+| `t_recv_tsc` | `uint64` | 8 | stamped immediately after `stream->Read()` returned |
+| `channel` | `uint32` | 4 | selects the shard, as `channel & mask` |
+| `chunk_length` | `uint32` | 4 | samples, as reported by the instrument |
+| `raw_data_len` | `uint32` | 4 | bytes, not samples |
+| `read_id_len` | `uint16` | 2 | ≤ 40 by construction; `ReadId::assign` rejects longer |
+| `raw_data_type` | `enum : uint8` | 1 | sample width selector |
+| padding | | 1 | |
+| **total** | | **56** | `static_assert(sizeof(ChunkRef) <= 64)` |
+
+Two narrowings are deliberate and both are guarded at ingest. `chunk_length` is narrowed from
+the wire's 64 bits because a chunk is sub-second and 2³² samples is about twelve days at 4 kHz.
+`read_id_len` is narrowed to 16 bits because read identifiers are 36-character UUIDs.
+`chunk_start_sample` is *not* narrowed: it is absolute across the run, and a 72-hour PromethION
+run at 4 kHz already reaches about 1.0 × 10⁹, uncomfortably close to 2³².
+
 
 **3.2.4 Disagreement between reported and actual payload length is a first-class signal.**
 MinKNOW reports a chunk length in samples independently of the payload it transmits. The
@@ -215,6 +239,23 @@ no order is defined. This is the correct guarantee rather than a weakening of a 
 because the decision for a channel depends only on that channel's chunks in arrival order,
 and no cross-channel ordering has semantic content.
 
+**Table 3.2** Ring geometry. Capacity is a power of two so that the index is a mask rather
+than a modulus, and the full `Capacity` is usable rather than `Capacity - 1`, because the
+free-running 64-bit counters distinguish an empty ring from a full one without sacrificing a
+slot `[VERIFY]`.
+
+| ring | element | capacity | element bytes | slots bytes | per shard |
+|---|---|---|---|---|---|
+| shard ring | `ChunkRef` | 2048 | 56 | 114,688 | one per shard |
+| action ring | `Decision` | 1024 | 72 | 73,728 | one per shard |
+
+At two shards the rings total approximately 0.38 MB and at four approximately 0.75 MB, which
+is negligible beside the index. The capacities are not tuned for throughput: they are sized so
+that a transient scheduling delay on a worker does not immediately force a drop, while
+remaining small enough that a persistently slow worker is reported as backpressure rather than
+absorbed silently. `head_`, `tail_` and the cached copies of each are separately
+`alignas(kCacheline)`, so the producer and consumer do not contend on a shared line.
+
 `[TABLE 3.2]` Ring geometry: capacity, element size, per-ring footprint, aggregate at 512
 and 2675 channels for the configured shard counts.
 
@@ -263,6 +304,22 @@ across 512 channels `[VERIFY]`; the anchor-history chainer occupies approximatel
 channel. Thread-local scratch for quantisation and probing is sized per worker rather than
 per channel and is therefore O(W).
 
+**Table 3.3** Per-channel byte budget. The decision structure dominates by two orders of
+magnitude; everything else is a handful of words `[VERIFY]`.
+
+| structure | bytes/channel | C = 512 | C = 2675 |
+|---|---|---|---|
+| scaling estimate, validity flag, chunk counter, consumed-event base | ~32 | 16 KB | 84 KB |
+| vote table, 64 sets × 4 ways × 12 B | 3,072 | 1.57 MB | 8.22 MB |
+| greedy chainer, 24 chains × 20 B | 480 | 0.25 MB | 1.28 MB |
+| anchor-history chainer, 1024 anchors × 14 B | 14,336 | 7.34 MB | 38.3 MB |
+| **total, voting configuration** | **~3.1 KB** | **1.59 MB** | **8.30 MB** |
+| **total, anchor-history configuration** | **~14.4 KB** | **7.36 MB** | **38.4 MB** |
+
+Every figure is a compile-time constant times the channel count. Nothing in this table depends
+on read length, on how many reads are in flight, or on how long the run has been going, which
+is the property §3.6.2 argues for.
+
 `[TABLE 3.3]` Per-channel byte budget by structure, with totals at C = 512 and C = 2675 for
 both decision structures.
 
@@ -310,7 +367,7 @@ software under test.
 
 **3.7.3 Thread count dominates placement.** A four-cell experiment crossing shard count
 against pinning establishes that the dominant effect is whether the data-plane thread count
-fits the physical core count, not how threads are placed within it `[TABLE 3.4]`. Pinning's
+fits the physical core count, not how threads are placed within it. Pinning's
 measurable benefit is not a lower median but a reproducible tail: at a fixed thread count the
 pinned and unpinned medians are not separable, while the run-to-run spread of the 99th
 percentile differs by an order of magnitude `[VERIFY: 8% against 133%]`. The practical
@@ -326,6 +383,18 @@ is a deliberate trade and is reported as one. On a dedicated sequencing host the
 favourable, since the alternative use of those cycles is nil; on a shared host it is not, and
 the configuration should be revisited. The word "efficient" is not applicable to this design
 and is not used of it.
+
+
+**Table 3.4** Thread inventory by shard count, against four physical cores. A shard contributes
+one worker; the reader and writer are one each regardless.
+
+| shards | reader | writer | workers | data-plane threads | fits 4 cores |
+|---|---|---|---|---|---|
+| 2 | 1 | 1 | 2 | 4 | yes |
+| 4 | 1 | 1 | 4 | 6 | no, oversubscribed |
+
+`[TABLE 3.4]` `[VERIFY]`
+
 
 ---
 

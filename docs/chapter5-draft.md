@@ -247,7 +247,27 @@ withdrawn data of §5.2.2, and unlike that claim it is supported by replication.
 **Regime R3** — 64 Mb reference, variable-dwell simulation, frozen configuration. Per-chunk
 decision latency has a median of 134–174 µs and a 99th percentile of 630–705 µs, with
 3.9–4.4 GB resident and no chunks dropped at a sustained 975 chunk/s `[VERIFY]`
-`[TABLE 5.2]`. The order-of-magnitude increase over R1 is accounted for by index scale and by
+`[TABLE 5.2]`.
+
+**Table 5.2** The two measurement regimes side by side, and both against the budget. The
+regimes differ in reference scale and in the segmentation and seeding configuration, so the
+difference between their medians is not attributable to the data plane; §5.7 separates what is.
+
+| | R1 | R3 |
+|---|---|---|
+| reference | 37 kb | 64 Mb (human chr20) |
+| segmentation | fixed-width, constant dwell | detected events, variable dwell |
+| geometry | 3 × 14, w = 10 | 4 × 12, w = 1 (frozen) |
+| p50 | 16.3 µs | 134–174 µs |
+| p90 | 24.7 µs | — |
+| p99 | 49.2 µs | 630–705 µs |
+| resident set | ~0.1 GB | 3.9–4.4 GB |
+| sustained rate | — | 975 chunk/s, 0 drops |
+| utilisation against S < 1.56 ms | ~0.010 | 0.09–0.11 |
+
+`[VERIFY]`
+
+The order-of-magnitude increase over R1 is accounted for by index scale and by
 the segmentation and seeding configuration frozen in Chapter 6, not by the data plane; the
 decomposition belongs with that material. Relating this figure to the budget derived in
 Chapter 3, §3.1.3 — an admissible mean service time of 1.56 ms at two workers and 512

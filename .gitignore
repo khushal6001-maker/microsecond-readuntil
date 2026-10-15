@@ -15,3 +15,7 @@ vcpkg_installed/
 perf.data
 perf.data.old
 *.hgrm
+
+# Scratch scripts dropped into build/ while driving WSL from the Windows side.
+build/_*.sh
+build/_*.py

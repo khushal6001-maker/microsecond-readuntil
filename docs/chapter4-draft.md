@@ -80,7 +80,21 @@ C3, and the cost of that choice is a weaker worst-case bound, stated quantitativ
 
 The table comprises `S` = 64 sets of `K` = 4 ways, giving 256 counters. Each entry holds a
 64-bit diagonal and a 32-bit count, so an entry is 12 bytes and the table is 3.0 KB per
-channel — 1.57 MB across 512 channels and 8.22 MB across 2675 `[VERIFY]` `[TABLE 4.1]`.
+channel — 1.57 MB across 512 channels and 8.22 MB across 2675 `[VERIFY]`.
+
+**Table 4.1** The two decision structures, against the classical alternative at the same
+counter count. Update cost is what rules classical Misra–Gries out here: decrementing every
+counter on a miss is O(n) on the decision path, and at 256 counters that is 256 writes per
+observation against four `[VERIFY]`.
+
+| structure | counters | bytes/channel | update cost | retention threshold |
+|---|---|---|---|---|
+| Misra–Gries, 256 counters | 256 | 3,072 | O(n) = 256 | m/257 |
+| set-associative, 64 × 4 | 256 | 3,072 | O(K) = 4 | m/320, expected |
+| greedy chainer, 24 chains | — | 480 | O(24) | not a frequent-items structure |
+| anchor-history chainer | — | 14,336 | O(L) = 48 | not a frequent-items structure |
+
+`[TABLE 4.1]`
 
 A diagonal is assigned to a set by a multiplicative hash followed by a shift, rather than by
 its low bits. This matters: adjacent diagonals are the common case, because signal jitter

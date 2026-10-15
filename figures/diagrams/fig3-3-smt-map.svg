@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Figure 3.3  SMT sibling map of the measurement host, with the defective and corrected
+  thread placements.
+
+  Host: 11th Gen Intel Core i5-1135G7, 4 physical cores, 8 logical processors, sibling sets
+  read from /sys/devices/system/cpu/cpu*/topology/thread_siblings_list as 0-1 2-3 4-5 6-7.
+
+  The point the figure has to make is that the sibling relationship is not derivable from the
+  logical processor number. On this host siblings are adjacent; on many bare-metal Intel parts
+  the same machine would enumerate them as n and n + cores. Any placement rule that reads a
+  CPU index and infers a core is therefore not portable, which is how the defect arose.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 950 500" width="950" height="500"
+     font-family="Helvetica, Arial, sans-serif">
+  <style>
+    .core { fill:#f7f7f7; stroke:#555; stroke-width:1.4; }
+    .cpu  { fill:#ffffff; stroke:#999; stroke-width:1.1; }
+    .used { fill:#eef2f9; stroke:#1f3b73; stroke-width:1.8; }
+    .clash{ fill:#fdecec; stroke:#a6360a; stroke-width:1.8; }
+    .tb { font-size:13px; fill:#111; font-weight:bold; }
+    .t  { font-size:11.5px; fill:#111; }
+    .s  { font-size:10px;  fill:#444; }
+    .sr { font-size:10.5px; fill:#a6360a; }
+    .sg { font-size:10.5px; fill:#1f3b73; }
+    .mono { font-family:"Courier New", monospace; font-size:10.5px; fill:#333; }
+  </style>
+
+  <text x="12" y="22" class="tb" font-size="14">Figure 3.3  SMT sibling map, and the placement defect of &#167;5.4</text>
+  <text x="12" y="42" class="s">11th Gen Intel Core i5-1135G7: 4 physical cores, 8 logical processors. Sibling sets as reported by the kernel:</text>
+  <text x="12" y="58" class="mono">/sys/devices/system/cpu/cpu*/topology/thread_siblings_list &#8594; 0-1  2-3  4-5  6-7</text>
+
+  <!-- BEFORE -->
+  <text x="12" y="92" class="tb">Before: placement inferred from logical processor index</text>
+  <g transform="translate(12,104)">
+    <rect x="0"   y="0" width="200" height="86" rx="6" class="core"/>
+    <rect x="212" y="0" width="200" height="86" rx="6" class="core"/>
+    <rect x="424" y="0" width="200" height="86" rx="6" class="core"/>
+    <rect x="636" y="0" width="200" height="86" rx="6" class="core"/>
+    <text x="100" y="18" class="s" text-anchor="middle">physical core 0</text>
+    <text x="312" y="18" class="s" text-anchor="middle">physical core 1</text>
+    <text x="524" y="18" class="s" text-anchor="middle">physical core 2</text>
+    <text x="736" y="18" class="s" text-anchor="middle">physical core 3</text>
+
+    <rect x="10"  y="28" width="88" height="46" rx="4" class="clash"/>
+    <text x="54"  y="46" class="t" text-anchor="middle">cpu 0</text>
+    <text x="54"  y="64" class="t" text-anchor="middle" fill="#a6360a">reader</text>
+
+    <rect x="102" y="28" width="88" height="46" rx="4" class="clash"/>
+    <text x="146" y="46" class="t" text-anchor="middle">cpu 1</text>
+    <text x="146" y="64" class="t" text-anchor="middle" fill="#a6360a">writer</text>
+
+    <rect x="222" y="28" width="88" height="46" rx="4" class="used"/>
+    <text x="266" y="46" class="t" text-anchor="middle">cpu 2</text>
+    <text x="266" y="64" class="t" text-anchor="middle">worker 0</text>
+    <rect x="314" y="28" width="88" height="46" rx="4" class="used"/>
+    <text x="358" y="46" class="t" text-anchor="middle">cpu 3</text>
+    <text x="358" y="64" class="t" text-anchor="middle">worker 1</text>
+
+    <rect x="434" y="28" width="88" height="46" rx="4" class="cpu"/>
+    <text x="478" y="46" class="t" text-anchor="middle">cpu 4</text>
+    <text x="478" y="64" class="s" text-anchor="middle">idle</text>
+    <rect x="526" y="28" width="88" height="46" rx="4" class="cpu"/>
+    <text x="570" y="46" class="t" text-anchor="middle">cpu 5</text>
+    <text x="570" y="64" class="s" text-anchor="middle">idle</text>
+
+    <rect x="646" y="28" width="88" height="46" rx="4" class="cpu"/>
+    <text x="690" y="46" class="t" text-anchor="middle">cpu 6</text>
+    <text x="690" y="64" class="s" text-anchor="middle">idle</text>
+    <rect x="738" y="28" width="88" height="46" rx="4" class="cpu"/>
+    <text x="782" y="46" class="t" text-anchor="middle">cpu 7</text>
+    <text x="782" y="64" class="s" text-anchor="middle">idle</text>
+  </g>
+  <text x="12" y="212" class="sr">Reader and writer are SMT siblings: they share one core's execution resources while two whole cores sit idle. The rule</text>
+  <text x="12" y="228" class="sr">"give each role the next logical processor" assumed adjacency implies distinct cores, which is true on some machines and</text>
+  <text x="12" y="244" class="sr">false on this one. Nothing in the measurement distinguishes this from a slow decision.</text>
+
+  <!-- AFTER -->
+  <text x="12" y="286" class="tb">After: placement derived from the kernel's sibling sets</text>
+  <g transform="translate(12,298)">
+    <rect x="0"   y="0" width="200" height="86" rx="6" class="core"/>
+    <rect x="212" y="0" width="200" height="86" rx="6" class="core"/>
+    <rect x="424" y="0" width="200" height="86" rx="6" class="core"/>
+    <rect x="636" y="0" width="200" height="86" rx="6" class="core"/>
+    <text x="100" y="18" class="s" text-anchor="middle">physical core 0</text>
+    <text x="312" y="18" class="s" text-anchor="middle">physical core 1</text>
+    <text x="524" y="18" class="s" text-anchor="middle">physical core 2</text>
+    <text x="736" y="18" class="s" text-anchor="middle">physical core 3</text>
+
+    <rect x="10"  y="28" width="88" height="46" rx="4" class="used"/>
+    <text x="54"  y="46" class="t" text-anchor="middle">cpu 0</text>
+    <text x="54"  y="64" class="t" text-anchor="middle">reader</text>
+    <rect x="102" y="28" width="88" height="46" rx="4" class="cpu"/>
+    <text x="146" y="46" class="t" text-anchor="middle">cpu 1</text>
+    <text x="146" y="64" class="s" text-anchor="middle">sibling, left free</text>
+
+    <rect x="222" y="28" width="88" height="46" rx="4" class="used"/>
+    <text x="266" y="46" class="t" text-anchor="middle">cpu 2</text>
+    <text x="266" y="64" class="t" text-anchor="middle">writer</text>
+    <rect x="314" y="28" width="88" height="46" rx="4" class="cpu"/>
+    <text x="358" y="46" class="t" text-anchor="middle">cpu 3</text>
+    <text x="358" y="64" class="s" text-anchor="middle">sibling, left free</text>
+
+    <rect x="434" y="28" width="88" height="46" rx="4" class="used"/>
+    <text x="478" y="46" class="t" text-anchor="middle">cpu 4</text>
+    <text x="478" y="64" class="t" text-anchor="middle">worker 0</text>
+    <rect x="526" y="28" width="88" height="46" rx="4" class="cpu"/>
+    <text x="570" y="46" class="t" text-anchor="middle">cpu 5</text>
+    <text x="570" y="64" class="s" text-anchor="middle">sibling, left free</text>
+
+    <rect x="646" y="28" width="88" height="46" rx="4" class="used"/>
+    <text x="690" y="46" class="t" text-anchor="middle">cpu 6</text>
+    <text x="690" y="64" class="t" text-anchor="middle">worker 1</text>
+    <rect x="738" y="28" width="88" height="46" rx="4" class="cpu"/>
+    <text x="782" y="46" class="t" text-anchor="middle">cpu 7</text>
+    <text x="782" y="64" class="s" text-anchor="middle">sibling, left free</text>
+  </g>
+  <text x="12" y="406" class="sg">cpu_sibling_groups() reads the sibling list; assign_distinct_cores() takes one logical processor from each group before</text>
+  <text x="12" y="422" class="sg">reusing any. At four roles on four cores no two roles share a core, and the placement is correct on any enumeration order.</text>
+  <text x="12" y="444" class="s">&#167;5.6 reports what this is and is not worth: the median does not move, and the run-to-run spread of the 99th percentile</text>
+  <text x="12" y="460" class="s">falls from 133% to 8%. Placement does not make the system faster; it makes the measurement repeatable.</text>
+  <text x="12" y="482" class="s">At four shards the six data-plane threads no longer fit four cores, and both four-shard cells oversubscribe regardless of</text>
+  <text x="12" y="498" class="s">placement &#8212; which is why &#167;5.5 crosses shard count with pinning rather than varying either alone.</text>
+</svg>

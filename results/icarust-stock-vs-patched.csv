@@ -1,0 +1,15 @@
+# Live read-until accept rates against Icarust, stock and with the dwell-variability patch
+# (third_party_patches/icarust-dwell-variability.patch). Same daemon, same reference, same
+# 22 s run per cell. Recorded 2026-10-05.
+#
+# These are ACCEPT RATES on a live loop over the instrument's own gRPC API. They are not the
+# zero-false-positive true-positive rates of dwell-sweep-ours.csv, which come from
+# squigulator signal scored offline, and the two sets of numbers must not be cross-compared.
+#
+# The point of the table: stock Icarust emits a fixed sample count per k-mer, so fixed-width
+# segmentation is exactly correct there. It therefore reports the configuration that is worse
+# on realistic signal as 4.5x better (43.5 against 9.6), and the ranking inverts once dwell
+# varies at all.
+icarust,dwell_cv,fixed_accept_pct,detected_accept_pct
+stock,0.00,43.5,9.6
+patched,0.35,0.5,9.6

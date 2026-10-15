@@ -1,0 +1,22 @@
+# Dwell sensitivity of this pipeline, on squigulator signal. Three independent seeds
+# (42/43/44), 500 reads per cell, 10 chunks of 2000 samples (0.4 s at the dna-r10-prom
+# profile's 5 kHz), 20 Mb chr20 indexed on both strands, squigulator's own R10.4 9-mer model
+# as both the signal generator and the reference encoder. Negative control is a
+# composition-matched shuffle of the same reference simulated at matching dwell.
+#
+# tpr_* are true-positive rates at the LOWEST THRESHOLD THAT GIVES ZERO FALSE POSITIVES on
+# that control, so the two arms are compared at the same operating point rather than at the
+# same threshold.
+#
+# fixed    3 x 14 geometry, minimizer window 10, fixed-width segmentation
+# detected 4 x 12 geometry, minimizer window 1, two-window t-test segmentation
+#
+# Transcribed from the sweep recorded in docs/paper-direction.md on 2026-10-05 (single seed)
+# and 2026-10-09 (three seeds). Re-run with bench/squig_sweep.cpp.
+dwell_cv,fixed_mean,fixed_lo,fixed_hi,detected_mean,detected_lo,detected_hi
+0.00,49.7,49.2,50.2,18.4,17.0,19.8
+0.10,5.9,5.4,6.6,19.3,15.2,23.0
+0.20,1.7,1.2,2.0,17.9,17.2,19.0
+0.30,2.3,1.4,4.2,15.5,12.6,18.8
+0.44,1.3,1.0,1.6,14.1,13.0,15.0
+0.60,1.7,0.4,3.4,7.5,7.2,8.0
