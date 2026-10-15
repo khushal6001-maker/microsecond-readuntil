@@ -1,0 +1,39 @@
+# Regime R3: per-chunk decision latency at the FROZEN configuration against the 64 Mb
+# reference, under variable dwell. Captured 2026-10-15 by scripts/rerun_r3_latency.sh.
+# Per-run HdrHistogram dumps in results/hgrm/r3_frozen_b{1,2}_*.hgrm, daemon logs with full
+# environment provenance in results/r3-raw/.
+#
+# This file exists because Appendix F flagged the R3 column as the largest provenance gap in
+# the thesis: the figures quoted in 5.6, 8.1 and 1.9 had no recorded histogram, and the
+# genome-scale dumps that did survive were minimizer-window-10 runs reporting 22-26 us.
+#
+# CONFIGURATION, from the daemon's own startup line, which is in every log:
+#   index: 9-mer model, 63981237 reference bases, geometry 4 x 12 = 48-bit keys, window 1
+#   index: 63981229 events, 63981218 minimizers of 63981218 keys, 32888127 distinct,
+#          10430593 capped, 79 insert failures, 512.0 MiB table + 204.3 MiB positions
+# Geometry flags were NOT passed: --bits, --events and --min-window take a 0 sentinel and
+# --detect a -1 sentinel, so omitting them selects the frozen PolicyConfig values. 2 shards,
+# pinned. 40 s of streaming per run against Icarust with ICARUST_DWELL_CV=0.35, 512 channels,
+# sample rate 4000, mean read length 2000, reference chr20_plus_wtc11.fa.
+#
+# ENVIRONMENT: WSL2 on an i5-1135G7, no core isolation, governor unavailable. The harness
+# labels this DEVELOPMENT ONLY. Per 3.8 the median and p90 are properties of the
+# implementation; p99 and above are upper bounds contaminated by the hypervisor, and the
+# spread in `max` across runs -- 2.0 ms to 59.4 ms -- is the direct evidence of that.
+#
+# batch 1 is three runs, batch 2 six. They are pooled: nothing distinguishes them but the
+# invocation, and the one tail outlier (b1_1) is not reproduced by the other first-run of a
+# fresh simulator (b2_1), so there is no warm-up effect to separate out.
+#
+# All latencies in microseconds. chunks is the count the histogram recorded over 40 s.
+run,p50,p90,p99,p99_9,p99_99,max,mean,chunks,chunks_per_s,rss_gb,dropped,late
+b1_1,132.34,306.04,1969.29,3283.97,4168.97,11183.07,206.04,24588,615,3.70,0,0
+b1_2,129.01,196.44,346.78,1158.69,2937.56,38399.28,141.53,24960,624,3.70,0,0
+b1_3,124.77,193.81,393.34,1044.94,4025.65,12381.54,138.22,24756,619,3.70,0,0
+b2_1,121.31,186.22,369.53,1111.05,3015.42,6442.50,133.33,24149,604,3.70,0,0
+b2_2,126.94,223.04,630.24,1179.75,3487.23,59416.87,153.66,25794,645,3.70,0,0
+b2_3,119.94,183.00,348.12,1303.50,3263.17,11007.76,131.96,25663,642,3.70,0,0
+b2_4,118.11,184.96,365.10,1334.73,3188.90,10773.24,132.21,25684,642,3.70,0,0
+b2_5,115.59,188.21,421.52,1224.54,1899.44,2035.81,131.16,25387,635,3.70,0,0
+b2_6,126.14,192.76,370.15,1404.46,2201.38,2350.25,139.83,25168,629,3.70,0,0
+median,124.77,192.76,370.15,1224.54,3188.90,11007.76,138.22,25168,629,3.70,0,0

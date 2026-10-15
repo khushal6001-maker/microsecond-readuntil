@@ -1,0 +1,20 @@
+# The comparison mapper over the same three seeds as decision-rules.csv, so that the headline
+# accuracy comparison is like-for-like. Run 2026-10-15; raw PAF and per-seed scores in
+# results/rawhash-seeds-raw/.
+#
+# RawHash2 v2.1 at its own defaults (-q 4 -e 8 -w 0 --sig-diff 0.35), single-threaded, given
+# the same squigulator-derived R10.4 9-mer model as the signal generator and as this
+# pipeline's reference encoder, on the same 20 Mb chr20 reference and the same SLOW5 files.
+# Scored with tools/score_rawhash_paf.py: a read counts as correct if it maps within 500 bases
+# of the locus squigulator records in its read id, on the matching strand.
+#
+# OPERATING POINT. These are NOT zero-false-positive rates. 8.4 to 10.6 per cent of the reads
+# in the composition-matched shuffled control are mapped, so this mapper's default operating
+# point admits false mappings where the rates in decision-rules.csv are measured at the
+# threshold that admits none. The comparison the thesis draws from these two files is of
+# magnitude, and Chapter 6 section 6.5 states the caveat wherever it is drawn.
+seed,reads,mapped_pct,correct_pct,off_reads,false_mapped_pct
+42,500,95.2,92.4,500,8.4
+43,500,95.0,91.8,500,8.4
+44,500,93.8,91.2,500,10.6
+mean,500,94.7,91.8,500,9.1

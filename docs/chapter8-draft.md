@@ -1,8 +1,9 @@
 # Chapter 8 — Conclusions
 
-> Numbers in this chapter are carried forward from Chapters 3–7 and are marked `[VERIFY]` at
-> first use only; each is to be re-derived from a recorded run before submission, and the
-> chapter of origin is cited so that a single corrected measurement propagates to one place.
+> Numbers in this chapter are carried forward from Chapters 3–7, with the chapter of origin
+> cited so that a single corrected measurement propagates to one place. All are recomputed
+> from committed data by `scripts/verify_thesis_numbers.py` except those marked
+> `[UNVERIFIED]`, which Appendix F.3 lists.
 
 ---
 
@@ -17,7 +18,7 @@ substance of Chapter 7 and is not the answer the work expected.
 streaming API, admits signal chunks with one copy performed by the protobuf runtime into
 arena-backed storage, propagates 56-byte borrowed descriptors through per-shard
 single-producer single-consumer lock-free rings, maintains per-channel decision state of
-3.0 KB under voting or 14.0 KB under chaining `[VERIFY]`, and dispatches eject actions on the
+3.0 KB under voting or 14.0 KB under chaining, and dispatches eject actions on the
 same connection. Per-channel state is reached by exactly one thread, by construction, because
 sharding is by channel identifier; the decision path performs no allocation and takes no lock.
 Lifetime is managed by a reference count in which the reader holds the initial reference, so
@@ -27,13 +28,16 @@ protocol rather than by a bound on dispatch duration.
 **The cost, stated against the budget.** The deadline is physical: a chunk describes signal
 that has already translocated, and the service bound derived in §1.1 and §3.1 is
 `S < W·T_c/C`, which at a two-chunk tolerance, 512 channels and a 0.4 s chunk cadence is
-1.56 ms per decision `[VERIFY]`. Measured per-chunk decision latency against a 64 Mb reference
-in the frozen configuration is a median of 134–174 µs with a 99th percentile of 630–705 µs at
-a resident set of 3.9–4.4 GB, sustaining 975 chunk/s with no drops `[VERIFY]`. The median
-therefore sits roughly an order of magnitude inside the budget — a utilisation of 0.09–0.11 at
-two workers and 512 channels `[VERIFY]` — and the contaminated tail sits inside it by a factor
-of two. Against a 37 kb reference the median is 16.3 µs with a 90th percentile of 24.7 µs
-`[VERIFY]`; §5.6 attributes the order-of-magnitude difference between the two regimes to index
+1.56 ms per decision. Measured per-chunk decision latency against a 64 Mb reference
+in the frozen configuration is a median of 124.8 µs over nine runs, with a 99th percentile of
+370 µs at the median of runs and a resident set of 3.70 GB, at 604–645 chunk/s with no drops
+and no deadline misses recorded. The median therefore sits an order of magnitude inside the
+budget, at a utilisation of 0.080 at two workers and 512 channels. Eight of the nine runs sit
+inside the budget through the 99.9th percentile; the ninth is above it at both the 99th and the
+99.9th and is the worst of the nine at the 90th and the mean as well. On a platform §3.8 has
+already excluded from carrying tail claims, that one run in nine is not evidence of a deadline
+miss and its absence in the other eight is not evidence against one. Against a 37 kb reference the median is
+16.3 µs with a 90th percentile of 24.7 µs; §5.6 attributes the order-of-magnitude difference between the two regimes to index
 scale and to the segmentation and seeding configuration frozen in Chapter 6 rather than to the
 data plane, so the smaller figure is the better bound on what the transport, sharding, handoff
 and dispatch machinery itself costs.
@@ -44,13 +48,12 @@ the 99th percentile and the maximum are upper bounds contaminated by a hyperviso
 deschedule a vCPU mid-decision, and the thesis does not claim them as measurements of the
 software. What can be claimed without reference to the tail is a comparison of configurations
 under identical contamination: thread count dominates placement, and processor pinning does
-not move the median but reduces the run-to-run spread of the 99th percentile from 133% to 8%
-`[VERIFY]` — a result about the variance of the instrument's own environment, which is why it
+not move the median but reduces the run-to-run spread of the 99th percentile from 133% to 8% — a result about the variance of the instrument's own environment, which is why it
 survives the platform caveat.
 
 **The cost that is not latency.** Two costs are paid for the above and are reported rather
-than omitted. Workers spin before yielding, so the system consumes 182–202% of one core
-against readfish's 15.6–25.3% for its orchestration alone `[VERIFY]`, an eight- to twelvefold
+than omitted. Workers spin before yielding, so the system consumes 182–202% of one core `[UNVERIFIED — App. F.3]`
+against readfish's 15.6–25.3% for its orchestration alone `[UNVERIFIED — App. F.3]`, an eight- to twelvefold
 ratio in processor time that buys the low median. And the index for a 64 Mb reference occupies
 most of a 4 GB resident set, which does not scale to a 3.1 Gb human reference in the present
 in-memory form; §8.4 returns to this.
@@ -78,9 +81,9 @@ measurement that produced the withdrawn claim and the measurement that replaced 
 | 5 | Second key-geometry freeze, 4 bits × 13 events | algorithm | Selected from live measurements taken while diagonals were computed chunk-relative; with the defect corrected the ordering of candidate geometries reversed | 4 bits × 12 events, sketching disabled, selected on the external simulator with dwell swept | 4.5, 6.9 |
 | 6 | The vote table was a frequent-items estimator | algorithm | The admission rule `count ≤ 1` with no decrement is permanently false once every way of a set holds two votes; the structure became an arrival-order cache. 0 accepts of 763 decisions at 64 Mb scale, where the same binary accepted 854 of 1366 at 37 kb | Misra–Gries-style replacement with decrement; stress test now drives candidate density to the production value | 4.4 |
 | 7 | Diagonal votes identified a stable locus across chunks | algorithm | Seed offsets restart at each chunk boundary, so the true locus was renamed by one chunk length per chunk. The tell was an *inverted* metric: correct-diagonal fraction fell from 49/300 at two chunks to 7/300 at twenty | Read-relative diagonals via a running consumed-event count; correct-diagonal counts now rise with read length, 118 → 196 of 300 | 4.5 |
-| 8 | The work's headline framing as a competitive signal-space mapper | framing | A baseline run of a published mapper on identical input resolved 92.4% of reads against this system's 18.8% | Reframed to the three contributions the measurements support: the data plane, the measurement methodology, and the ceiling model | 5.8, 7 |
+| 8 | The work's headline framing as a competitive signal-space mapper | framing | A baseline run of a published mapper on identical input resolved 91.8% of reads against this system's 17.6% | Reframed to the three contributions the measurements support: the data plane, the measurement methodology, and the ceiling model | 5.8, 7 |
 | 9 | A two-scale event detector would improve segmentation under dwell | algorithm | Implemented as a standard improvement and measured worse: 3 against 38 correct diagonals at CV 0.50, and it regressed the single-scale path | Reverted; single-scale two-window t-test retained with the frozen calibration | 6.7 |
-| 10 | Difference-based key encoding would remove the shared normalisation error | algorithm | Measured worse, 18.8% falling to 2.8–8.4% true-positive rate; one symbol per event was retained and only its meaning changed, so `E` agreements were still required | Rejected; §7.8 distinguishes it from *merging*, which reduces `E` and remains untested | 7.6 |
+| 10 | Difference-based key encoding would remove the shared normalisation error | algorithm | Measured worse, falling from the high teens to 2.8–8.4% true-positive rate; one symbol per event was retained and only its meaning changed, so `E` agreements were still required | Rejected; §7.8 distinguishes it from *merging*, which reduces `E` and remains untested | 7.6 |
 | 11 | A fixed-width true-positive rate of 8.3% at the swept dwell level | replication | Quoted from a single 60 s run; three replicates placed it at 3.2–3.6% | All dwell results reported as three-seed means with spreads | 6.4 |
 | 12 | The published mapper's minimizer sketching would collapse under dwell dispersion | prediction | Predicted from the mechanism and refuted by measurement: 95.0% to 92.0% across CV 0 to 0.60 | The prediction's failure became §6.5, which bounds every claim in Chapter 6, and redirected the novel finding to the *cost* of sketching rather than its collapse | 6.5 |
 
@@ -109,7 +112,7 @@ evidence degrading an estimate cannot be explained by insufficient evidence.
 the mechanism proposed was sound in isolation and wrong in context. Row 12 is the instructive
 case: the refutation of the prediction became the section that bounds the whole of Chapter 6,
 and the finding that survived — that the accuracy cost of sketching grows with time-domain
-noise, from 12.8 to 21.0 percentage points across CV 0 to 0.60 `[VERIFY]` — is narrower than
+noise, from 12.8 to 21.0 percentage points across CV 0 to 0.60 — is narrower than
 the prediction and better supported.
 
 **Fourth, row 8 is the one that changed the thesis.** The reframing was not a presentational
@@ -128,12 +131,12 @@ neither is contingent on the other.
 with bounded per-channel state, no allocation on the decision path, and no drops at 975
 chunk/s, is sufficient — and the architectural implication is the one Chapter 5 §5.8.1 draws:
 the orchestration layer of a basecalling client, measured with its caller removed, costs
-124 µs per chunk `[VERIFY]`, which is already comparable to a complete signal-space decision
+124 µs per chunk `[UNVERIFIED — App. F.3]`, which is already comparable to a complete signal-space decision
 in this system. The budget is not the obstacle to signal-space adaptive sampling. That is a
 result in its own right and it does not depend on the accuracy figures.
 
-**The matching stage.** This system resolves 18.8% of reads where a published mapper resolves
-92.4% on the same input `[VERIFY]`. Chapter 7 does not excuse this; it accounts for it, and
+**The matching stage.** This system resolves 17.6% of reads [16.6–18.8 across three seeds]
+where a published mapper resolves 91.8% [91.2–92.4] on the same input. Chapter 7 does not excuse this; it accounts for it, and
 the account is now closed on both sides of the comparison rather than fitted to this pipeline
 alone.
 
@@ -141,14 +144,14 @@ Two quantities govern anchor supply. Let `a` be the probability that reference a
 the same bucket to corresponding events, and `g` the rate at which the two event sequences fail
 to correspond at all. A key of `E` consecutive events requires `E` events that both agree and
 correspond, so key match probability goes as `(1 − g)^E · a^E`. Measured under a
-correspondence-aware instrument on identical input `[VERIFY]`:
+correspondence-aware instrument on identical input:
 
 | | `a` | `g` | `E` | P(key match) | anchors/read |
 |---|---|---|---|---|---|
 | this system, frozen configuration | 0.783 | 0.196 | 12 | 0.0055 | 14.9 |
 | the comparison mapper, its defaults | 0.911 | 0.092 | 8 | 0.254 | 467 |
 
-A supply difference of 31× accounts for 18.8% against 92.4% without appeal to the decision
+A supply difference of 31× accounts for 17.6% against 91.8% without appeal to the decision
 rule, and it decomposes into a factor of 4.9 from key length and 9.3 from the encoding itself.
 The larger part is the encoding, and it is specific: the comparison system applies one
 event-merging rule to reference and query alike so that both sides agree on event counts by
@@ -171,8 +174,8 @@ pipeline — segmentation and quantisation — and not in stages 4 and 5, where 
 engineering effort went. Six independent interventions on the decision stage, spanning
 chaining, occurrence filtering, key geometry and key encoding, are accounted for: those that
 reorganise a fixed anchor supply yield tens of percent relative and no more, and the one that
-multiplied anchor yield lost more to specificity than it gained. None exceeded a 32% relative
-improvement `[VERIFY]`. A supply of 14.9 anchor-eligible positions per read against the
+multiplied anchor yield lost more to specificity than it gained. None exceeded a 35% relative
+improvement. A supply of 14.9 anchor-eligible positions per read against the
 comparison system's 467 is a gap no decision rule closes, and because the stages are ordered
 and earlier stages bound later ones, this is a statement about what the method class can
 achieve at this encoding quality rather than about this implementation's decision code.
@@ -219,7 +222,7 @@ ordering this work's own history argues for.
 it working. The comparison system applies one event-merging rule — events whose level differs
 from the last retained event by less than a threshold are dropped — to its reference encoding
 and to its query alike, retaining 73.4% of each, and its event-correspondence failure rate is
-consequently half this pipeline's at the same dispersion, 0.092 against 0.196 `[VERIFY]`. This
+consequently half this pipeline's at the same dispersion, 0.092 against 0.196. This
 pipeline's reference encoder emits one event per k-mer unconditionally while its detector emits
 roughly 0.78, and §7.4.4 measures the resulting indel rate at 0.170 *at zero dwell dispersion*,
 where there is no timing noise to account for it. An indel rate that high with no noise present
@@ -229,7 +232,7 @@ change to the indexing path, not a research question.
 
 **Spend alphabet to buy agreement.** Also measured rather than proposed: the comparison
 system's quantiser is non-uniform, allocating fine resolution to a central band and collapsing
-the tails, and realises about 2.46 bits per event of a nominal 4 `[VERIFY]`. This pipeline's
+the tails, and realises about 2.46 bits per event of a nominal 4. This pipeline's
 uniform quantiser over a clipped z-range realises more of its alphabet and agrees less — 0.783
 against 0.911. An equal-occupancy quantiser was implemented and rejected earlier in this work
 on recall grounds, but equal-occupancy maximises entropy, which is the wrong objective; the
@@ -239,10 +242,10 @@ distribution is dense, which is a different quantiser.
 **Refine normalisation as chunks arrive.** §7.4.4 quantifies this: estimating the shift and
 scale from the whole read rather than the first 2000-sample chunk raises agreement from 0.556
 to 0.726 and measured key match probability from 0.0549 to 0.1113 — a factor of two in anchor
-supply for no change to the index, the geometry or the decision rule `[VERIFY]`. The whole read
+supply for no change to the index, the geometry or the decision rule. The whole read
 is not available at the first chunk, so the deployable form is an estimate refined as chunks
-arrive. The earlier oracle-normalisation figure — 100% of seeds recovered against 50.5% for
-per-read normalisation at zero added noise `[VERIFY]` — bounds what is available.
+arrive. The earlier oracle-normalisation figure `[UNVERIFIED — App. F.3]` — 100% of seeds recovered against 50.5% for
+per-read normalisation at zero added noise — bounds what is available.
 
 **Locate the loss inside the decision stage.** The correspondence-aware measurement of
 Chapter 7 §7.4.4 revises the frozen configuration's anchor supply from a modelled 1.85 per
@@ -293,7 +296,7 @@ rule and requires only paired reference and query events.
 ## 8.5 Closing
 
 The question this work asked was whether the adaptive-sampling decision can be made in
-microseconds. It can: the median is 134–174 µs at genome scale against a 1.56 ms physical
+microseconds. It can: the median is 124.8 µs at genome scale against a 1.56 ms physical
 budget, with bounded state and no drops, and the orchestration layer of the standard
 basecalling client already costs a comparable amount before any decision is made. The question
 the work answers better than the one it asked is why that is insufficient. Quantised-event

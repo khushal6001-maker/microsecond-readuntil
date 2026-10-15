@@ -1,0 +1,13 @@
+# 2026-10-15T17:47:42+00:00
+# label=greedy-band12 seed=42 mode=1 band=12 max_gap=160 lookback=48 max_occ=0
+# on=ref_std4.4.slow5  off=ref_shuf_std4.4.slow5
+# cmd: mru_squig_sweep <model> <ref> <on> <off> 10 1 1 4 12 0 0 0 1 12 160 48 0
+ref 40000000 bases (both strands), 9-mer model, geometry 4 x 12 = 48-bit, window 1, EVENT-DETECTED, 10 chunks of 2000 samples
+decision: STREAMING CHAINS (band 12, max_gap 160, 24 chains/channel)
+index 39999981 minimizers, 26201382 distinct, 3462135 capped | reads on=500 off=500
+per-event bucket agreement: 23.6% over 200 reads (39582 events)
+  implied key match rate a^E for E=12: 0.000%   (E=8: 0.001%)
+events/read on 1562 off 1585 (ideal ~2000 at 10 samples/base)
+on  votes: med 3 p95 29 max 78 | cand/read 383
+off votes: med 4 p95 5 max 8 | cand/read 449
+RESULT  zero-FP: >=9 TPR 17.4%   |   1%-FP: >=7 TPR 21.0%

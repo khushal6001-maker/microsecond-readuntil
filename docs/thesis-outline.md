@@ -1,3 +1,10 @@
+> **Superseded on specifics.** This is the planning document the manuscript was written
+> from, kept for the record. Several numbers in it were corrected by later measurement and
+> should not be quoted from here: accuracy is 17.6% [16.6–18.8] against 91.8% [91.2–92.4],
+> not 18.8 against 92.4; regime R3 is a median of 124.8 µs at 604–645 chunk/s, not 134–174 µs
+> at 975; and longer chainer look-back does help. Appendix F.1 records each correction, and
+> `scripts/verify_thesis_numbers.py` is the current authority.
+
 # Thesis outline: a real-time systems architecture for nanopore adaptive sampling
 
 Target: M.Tech, computer engineering. ~90-110 pages.

@@ -1,7 +1,9 @@
 # Chapter 7 — The Accuracy Ceiling of Quantised-Event Matching
 
-> **Draft status.** Structural first draft. `[VERIFY]` marks figures to be re-derived from a
-> recorded run; `[TABLE 7.x]` / `[FIG 7.x]` mark artefacts still to be produced.
+> **Draft status.** Structural first draft. Every number is recomputed from a committed
+> file in `results/` by `scripts/verify_thesis_numbers.py`; `[UNVERIFIED]` marks the
+> exceptions, which Appendix F.3 lists and explains. `scripts/audit_manuscript.py` checks
+> that no marker, cross-reference or figure in this chapter dangles.
 
 ---
 
@@ -11,16 +13,17 @@ Chapters 3 and 5 establish that the data plane is not the limiting component of 
 Per-chunk decision latency corresponds to a utilisation of approximately 0.1 against the
 budget the instrument imposes, no chunks are dropped at the sustained arrival rate, and the
 concurrency primitives are verified under both thread and address sanitisers. Chapter 6
-establishes that the system nevertheless resolves 18.8% of on-target reads where a published
-signal-space mapper resolves 92.4% on identical simulated input `[VERIFY]`.
+establishes that the system nevertheless resolves 17.6% of on-target reads [16.6–18.8 across
+three seeds] where a published signal-space mapper resolves 91.8% [91.2–92.4] on identical
+simulated input.
 
 A deficiency of that magnitude admits two broad explanations. Either the decision stage —
 how evidence accumulated from matched seeds is converted into an accept or reject — is
 inadequate, or the evidence itself is absent. Six interventions on the decision stage were
 implemented and measured in the course of this work, spanning gap-tolerant chaining,
 best-predecessor chaining with bounded look-back, occurrence-frequency filtering, key
-geometry, and difference-based key encoding. None produced more than a 32% relative
-improvement `[TABLE 7.3]`. The consistency of that outcome across structurally unrelated
+geometry, and difference-based key encoding. None produced more than a 35% relative
+improvement (Table 7.3). The consistency of that outcome across structurally unrelated
 interventions is itself evidence: it suggests a quantity upstream of all of them is binding.
 
 This chapter identifies that quantity, gives a model for how it propagates, measures it,
@@ -108,7 +111,13 @@ and `a^E` becomes an **over-estimate**, by between 1.9× and 14× across the rem
 The consequence for how this chapter should be read is specific rather than general. The
 model's qualitative content — that yield falls geometrically in `E` and that the base is a
 measurable property of the quantiser — is unaffected. Its use as a one-sided bound is
-restricted to the exact-correspondence case. Section 7.4.4 therefore reports the key match
+restricted to the exact-correspondence case.
+
+`[FIG 7.3]` Measured key match probability against what `a^E` predicts, with marker area
+scaled by the correspondence-failure rate, which is the clearest statement of where the simple
+form is a bound and where it is not.
+
+Section 7.4.4 therefore reports the key match
 probability **measured directly** alongside every modelled value, and §7.5 is stated against
 the measurement rather than against the model.
 
@@ -116,7 +125,7 @@ the measurement rather than against the model.
 
 Differentiating `M` with respect to `E` gives `∂M/∂E ∝ a^E · ln a`, so the proportional loss
 per added event is `ln(1/a)`, independent of `E`. At `a = 0.559` each additional event in a
-key removes 44% of the expected anchor yield `[VERIFY]`. Design discussions of key length
+key removes 44% of the expected anchor yield. Design discussions of key length
 conducted in units of bits, as is conventional, obscure this: adding one event to a 4-bit
 geometry adds four bits of nominal key width and removes nearly half the matches.
 
@@ -142,9 +151,7 @@ smaller than the nominal space:
 |---|---|---|---|
 | 3 × 13 | 39 bits | 1,961,432 | 20.9 bits |
 | 3 × 14 | 42 bits | 3,332,137 | 21.7 bits |
-| 4 × 12 | 48 bits | 32,840,924 | 25.0 bits |
-
-`[VERIFY]` `[TABLE 7.1]`
+| 4 × 12 | 48 bits | 32,840,924 | 25.0 bits | `[TABLE 7.1]`
 
 A 39-bit key therefore realises approximately 21 bits of entropy on this reference, a
 shortfall of some 18 bits, and a 48-bit key realises 25. Specificity must be reasoned about
@@ -156,7 +163,7 @@ in key count.
 The index retains at most a fixed number of positions per key. The proportion of seeds whose
 occurrence list is truncated is therefore a direct observable of how far the realised key
 distribution falls short of uniformity. Measured saturation rises steeply as `E` falls: at
-3 × 8 the index caps 99.3% of its seeds into 65,760 distinct keys `[VERIFY]`, at which point
+3 × 8 the index caps 99.3% of its seeds into 65,760 distinct keys, at which point
 a seed carries essentially no positional information and the structure has degenerated.
 
 ### 7.3.3 The squeeze, as a design inequality
@@ -205,9 +212,7 @@ error the production path incurs rather than an oracle value.
 | detected | 0.00 | 4 | 24.4% | ~0 |
 | detected | 0.44 | 4 | 23.6% | ~0 |
 | detected | 0.44 | 3 | 38.2% | 0.001% |
-| detected | 0.44 | 2 | 57.5% | 0.130% |
-
-`[VERIFY]` `[TABLE 7.2]`
+| detected | 0.44 | 2 | 57.5% | 0.130% | `[TABLE 7.2]`
 
 Two observations. Agreement is at best 55.9%, attained in the most favourable configuration
 available — no dwell variability, fixed-width segmentation, the frozen 4-bit geometry.
@@ -259,8 +264,7 @@ rather than modelled, and it is reported for `E` = 12 (this pipeline) and `E` = 
 
 **Validation.** Under the conditions of §7.4.2 — fixed-width segmentation, zero dwell
 dispersion, normalisation from the first 2000-sample chunk as the production path performs it
-— the independent instrument returns `a_affine` = 0.556, against the 0.559 of §7.4.2
-`[VERIFY]`. The two measurements are made by different code on the same input and agree to
+— the independent instrument returns `a_affine` = 0.556, against the 0.559 of §7.4.2. The two measurements are made by different code on the same input and agree to
 0.3 percentage points, which is the basis for trusting the figures below.
 
 **Results**, 200 reads per cell, 20 Mb chr20, both strands indexed, the same
@@ -274,7 +278,10 @@ squigulator-derived model on both sides.
 | detected (frozen), read normalisation | 0.00 | 0.797 | 0.182 | 0.170 | 0.0124 | 33.8 |
 | detected (frozen), read normalisation | 0.44 | 0.783 | 0.188 | 0.196 | 0.00554 | 14.9 |
 
-`[TABLE 7.4]` `[VERIFY]`
+`[TABLE 7.4]`
+
+`[FIG 7.4]` The per-read distributions behind these pooled figures, so that the separation is
+visible as a distribution rather than asserted as a mean.
 
 Four readings, in descending order of how much they change the chapter.
 
@@ -312,7 +319,7 @@ performed here.
 
 The comparison system is run at its own defaults, which the help text gives as `-q 4` (four
 bits, sixteen buckets), `-e 8` (eight events per key), `-w 0` (no sketching) and
-`--sig-diff 0.35` `[VERIFY]`.
+`--sig-diff 0.35`.
 
 | system | segmentation | bits | `E` | dwell CV | `a_dp` | indel | P(key) at own `E` | anchors/read |
 |---|---|---|---|---|---|---|---|---|
@@ -321,12 +328,15 @@ bits, sixteen buckets), `-e 8` (eight events per key), `-w 0` (no sketching) and
 | comparison | its own | 4 | 8 | 0.00 | **0.913** | 0.055 | **0.350** | 651 |
 | comparison | its own | 4 | 8 | 0.44 | **0.911** | 0.092 | **0.254** | 467 |
 
-`[TABLE 7.5]` `[VERIFY]`
+`[TABLE 7.5]`
+
+`[FIG 7.2]` Agreement, correspondence-failure rate and measured key match probability for both
+systems side by side.
 
 **The gap is real and it is large.** At squigulator's default dispersion the comparison
 system's per-event agreement is 0.911 against this pipeline's 0.783, and its measured key
 match probability is 0.254 against 0.00554 — a factor of **46**, giving 467 anchors per read
-against 14.9. Against a reported accuracy of 92.4% for that system and 18.8% for this one on
+against 14.9. Against a measured accuracy of 91.8% for that system and 17.6% for this one on
 the same data, the ceiling model is doing the work it claimed: the accuracy difference is
 accounted for by anchor supply, not by the decision rule, and the anchor supply difference is
 accounted for by what happens before seeding.
@@ -343,7 +353,7 @@ probability over the same range. This is the mechanism behind Chapter 6 §6.5, w
 the robustness and could not explain it. The explanation is that the comparison system's event
 retention rule is applied **symmetrically to both sides**: `--sig-diff` drops any event whose
 level differs from the last retained event by less than 0.35, and it is applied to the
-reference encoding and to the query alike, retaining 73.4% on each `[VERIFY]`. Its indel rate
+reference encoding and to the query alike, retaining 73.4% on each. Its indel rate
 is consequently half this pipeline's at the same dispersion, 0.092 against 0.196. The
 mechanism is visible in its source and consistent with the measurements; it has not been
 isolated by ablation, and is stated as the explanation the evidence supports rather than as a
@@ -352,8 +362,7 @@ demonstrated cause.
 **It buys agreement by spending alphabet, which is the opposite of this pipeline's design
 choice.** Its nominal four bits admit sixteen buckets; the realised symbol distribution over
 chr20 occupies six of them, with frequencies 7.7, 21.1, 9.7, 27.6, 24.0 and 8.8 per cent plus
-a 0.9 per cent outlier bucket, for a realised entropy of approximately 2.46 bits per event
-`[VERIFY]`. Its quantiser is deliberately non-uniform — fine resolution inside a configurable
+a 0.9 per cent outlier bucket, for a realised entropy of approximately 2.46 bits per event. Its quantiser is deliberately non-uniform — fine resolution inside a configurable
 central band and coarse resolution outside it — so events near the distribution's mode are
 resolved and tails are collapsed. This pipeline's uniform quantiser over a clipped z-range
 spends its alphabet evenly and realises more of it, and achieves lower agreement.
@@ -385,7 +394,7 @@ alphabet is the currency available to pay for it.
 Chapter 6 — ten chunks of 2000 samples, ten samples per event, `E` = 12, `w` = 1 — a read
 supplies `N` = 2000 events and `N − E + 1` = 1989 seeds. With the `a` = 0.559 of §7.4.2 the
 simple form predicts `a^E` = 0.0931% and `M` ≈ 1.85 true anchors per read, against a measured
-median best-chain score of 4 `[VERIFY]`. That remains the correct calculation *for the
+median best-chain score of 4. That remains the correct calculation *for the
 configuration it describes* — fixed-width segmentation at zero dwell with chunk normalisation
 — and §7.4.4 confirms it independently, measuring the key match probability of that exact cell
 at 0.0549 against the modelled 0.0108, the model under-predicting by 5.1× in the direction
@@ -418,9 +427,7 @@ The model's behaviour in `E` is also consistent with the geometry results:
 |---|---|---|---|
 | 8 | 0.953% | 19.0 | 3.2% (4 × 8) |
 | 10 | 0.298% | 5.9 | 15.8% (4 × 10) |
-| 12 | 0.093% | 1.85 | 17.4% (4 × 12) |
-
-`[VERIFY]`. Anchor yield rises monotonically as `E` falls while measured accuracy does not,
+| 12 | 0.093% | 1.85 | 17.4% (4 × 12) |. Anchor yield rises monotonically as `E` falls while measured accuracy does not,
 which is precisely the squeeze of §7.3.3: at `E` = 8 the yield is an order of magnitude higher
 and the accuracy is worse, because realised entropy has collapsed and 88% of seeds are
 occurrence-capped. The two constraints are visible acting against each other in the same
@@ -436,18 +443,29 @@ wanting; each operates downstream of key formation and therefore cannot alter `a
 
 | intervention | mechanism addressed | result | model's account |
 |---|---|---|---|
-| gap-tolerant chaining, band 12 | drift between anchors | 14.2 → 17.4% | reorganises 1.85 anchors |
-| anchor-history chaining, look-back 48 | optimality of chain selection | → 18.8% | reorganises 1.85 anchors |
-| occurrence filtering | false anchors | 17.8% | removes noise, adds no signal |
-| longer look-back (128) | predecessor horizon | 18.0% | no additional anchors exist |
+| gap-tolerant chaining, band 12 | drift between anchors | 14.1 → 16.5% | reorganises a fixed supply |
+| anchor-history chaining, look-back 48 | optimality of chain selection | → 17.6% | reorganises a fixed supply |
+| occurrence filtering | false anchors | 16.3% | removes noise, adds no signal |
+| longer look-back (128) | predecessor horizon | 19.0% | the one that does help, and by 1.4 points |
 | shorter keys (4 × 8) | raise `a^E` | 3.2% | yield ↑ 10×, entropy collapses |
 | difference-based keys | normalisation shift | 2.8–8.4% | differencing raises noise by √2 |
 
-`[VERIFY]` `[TABLE 7.3]`
+`[TABLE 7.3]`
 
-The pattern is uniform: interventions that reorganise existing anchors produce improvements
-of tens of percent relative, and the one intervention that raised anchor yield by an order of
-magnitude lost more to specificity than it gained. The difference-based encoding is
+`[FIG 7.5]` Voting against chaining across key geometries, which shows the decision rule
+moving the result by tens of percent where the geometry moves it by an order of magnitude.
+
+The pattern is near-uniform: interventions that reorganise existing anchors produce
+improvements of tens of percent relative and no more — the best of them, a longer predecessor
+horizon, reaches 19.0% against voting's 14.1%, or 35% relative — and the one intervention that
+raised anchor yield by an order of magnitude lost more to specificity than it gained.
+
+One qualification, from replicating the table in triplicate. Longer look-back was previously
+reported as not helping, on the strength of a single run; it does help, by 1.4 points and in
+every seed. That does not disturb the argument, because 35% relative on a supply of 14.9
+anchors is still an order of magnitude short of the 467 the comparison system starts from. It
+does show that the margins between adjacent rows of this table are at the edge of what one
+seed resolves, and §4.7.3 reports the spreads that make that concrete. The difference-based encoding is
 instructive as the only intervention that attacked `a` itself and still failed: differencing
 two noisy quantities cancels a common shift but multiplies the variance of the residual by
 two, and concentrates the resulting distribution near zero where bucket boundaries are most
@@ -478,8 +496,7 @@ reference scale requires
 
 &nbsp;&nbsp;&nbsp;&nbsp;a ≥ (M_min / N)^(1/E)&nbsp;&nbsp; with&nbsp;&nbsp; H_realised(B, E) ≳ log₂ L
 
-For `M_min` = 20, `N` = 2000 and `E` = 12 this requires `a` ≥ 0.80; at `E` = 8, `a` ≥ 0.72
-`[VERIFY]`. These are the agreement levels a designer should treat as entry conditions, and
+For `M_min` = 20, `N` = 2000 and `E` = 12 this requires `a` ≥ 0.80; at `E` = 8, `a` ≥ 0.72. These are the agreement levels a designer should treat as entry conditions, and
 they are far above what this pipeline achieves.
 
 **Where effort belongs.** Given a fixed budget, effort spent on the quantiser, the
@@ -517,7 +534,7 @@ not merely on the query.
 
 **Normalisation.** An earlier measurement in this work recorded that, at zero added noise,
 reference-derived (oracle) normalisation recovers 100% of seeds where per-read normalisation
-recovers 50.5% `[VERIFY]`. Per-read normalisation is unavoidable in principle — a read has
+recovers 50.5% `[UNVERIFIED — App. F.3]`. Per-read normalisation is unavoidable in principle — a read has
 only its own samples — but the estimator need not be the median and MAD of a single 2000-
 sample chunk. The instrument reports `median` and `median_before` per read in its own
 metadata, and a longer or better-conditioned estimate would reduce the shared shift error
@@ -625,8 +642,8 @@ trusting both numbers.
 
 Measured the same way on identical input, the published comparison mapper achieves `a` = 0.911
 with an indel rate of 0.092 and a key match probability of 0.254 at its own key length of 8 —
-467 anchor-eligible positions per read against 14.9, a factor of 31. That accounts for 92.4%
-accuracy against 18.8% without appeal to the decision rule, and it decomposes: a factor of
+467 anchor-eligible positions per read against 14.9, a factor of 31. That accounts for 91.8%
+accuracy against 17.6% without appeal to the decision rule, and it decomposes: a factor of
 4.9 from key length and a factor of 9.3 from the encoding itself. The encoding difference is
 the larger and it is specific. The comparison system applies one event-merging rule to
 reference and query alike, so the two sides agree on event counts by construction and its

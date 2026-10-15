@@ -1,1 +1,4 @@
 * text=auto eol=lf
+
+# Shell scripts are executed inside WSL; CRLF breaks them.
+*.sh text eol=lf

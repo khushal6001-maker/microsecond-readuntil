@@ -1,20 +1,33 @@
-# Decision-rule comparison at the operating point of Chapter 6 (4 x 12, window 1, detected
-# events, squigulator signal at the default dwell dispersion). TPR at the lowest threshold
-# giving zero false positives on a composition-matched shuffled control.
+# Decision-rule comparison at the operating point of Chapter 6, in triplicate.
 #
-# PROVENANCE WARNING. These rows are transcribed from the Chapter 4 draft, which took them
-# from a session log. Unlike geometry-x-chaining.csv they are not a captured tool output, and
-# only the first and third rows are independently corroborated there (14.2 and 17.4). The
-# 18.8% figure is this thesis's headline accuracy and it rests on this transcription alone.
-# Re-run bench/squig_sweep.cpp in each mode and replace this file before submission; until
-# then every number here is [VERIFY] and the two corroborated rows are the safe ones to quote.
+# RE-RUN 2026-10-15 and now backed by captured output: results/decision-rules-raw/ holds all
+# 18 logs, each carrying its own command line. This file replaces an earlier transcription
+# from a session log, which Appendix F had flagged because the thesis's headline accuracy
+# rested on it.
 #
-# beta is the chaining band in events; 0 reproduces exact diagonal equality.
-# lookback applies to the anchor-history chainer only.
-rule,beta,chains,lookback,occ_filter,zeroFP_TPR,corroborated_in_geometry_x_chaining
-exact-diagonal votes (256 counters),,,,,14.2,yes
-greedy chains (control),0,24,,,9.6,no
-greedy chains,12,24,,,17.4,yes
-anchor-history chains,12,,48,no,18.8,no
-anchor-history chains,12,,128,no,18.0,no
-anchor-history chains,12,,48,yes,17.8,no
+# Configuration: 4 bits x 12 events, minimizer window 1, event detection on with the frozen
+# detector (threshold 3.0, min_len 4, window 4), 10 chunks of 2000 samples, 20 Mb chr20
+# indexed on both strands, squigulator's own R10.4 9-mer model on both sides, dwell dispersion
+# at squigulator's default (--dwell-mean 9.0 --dwell-std 4.0, CV ~0.44). Off-target set is a
+# composition-matched shuffle of the same reference simulated at matching dwell. 500 reads per
+# cell. Seeds 42/43/44.
+#
+# tpr_* is the true-positive rate at the LOWEST threshold giving zero false positives on that
+# seed's own control, so the rules are compared at the same operating point rather than at the
+# same threshold.
+#
+# WHAT THE RE-RUN CHANGED. Five of the six rows reproduce their transcribed seed-42 value
+# exactly. The sixth, anchor-history at lookback 128, was transcribed as 18.0 and measures
+# 19.6 on seed 42; 18.0 is this configuration's seed-44 value, so the transcribed table mixed
+# seeds. Longer look-back therefore DOES help, consistently and in every seed, which reverses
+# the claim previously made in 4.7.3 and 7.6.
+#
+# median_votes is the median best-chain score on on-target reads, which 7.5 compares against
+# the measured anchor supply. It is 4 for the voting and anchor-history rules in every seed.
+rule,mode,beta,chains,lookback,occ_filter,tpr_s42,tpr_s43,tpr_s44,tpr_mean,tpr_lo,tpr_hi,median_votes
+exact-diagonal votes (256 counters),votes,,256,,no,14.2,15.0,13.0,14.1,13.0,15.0,4
+greedy chains (control),greedy,0,24,,no,9.6,10.8,7.0,9.1,7.0,10.8,3
+greedy chains,greedy,12,24,,no,17.4,16.6,15.6,16.5,15.6,17.4,3
+anchor-history chains,anchor,12,,48,no,18.8,17.4,16.6,17.6,16.6,18.8,4
+anchor-history chains,anchor,12,,128,no,19.6,19.4,18.0,19.0,18.0,19.6,4
+anchor-history chains,anchor,12,,48,yes,17.8,15.8,15.4,16.3,15.4,17.8,3

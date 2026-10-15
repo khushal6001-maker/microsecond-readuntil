@@ -260,6 +260,130 @@ def fig_5_3(outdir: Path, formats: list[str]) -> None:
     )
 
 
+def fig_5_4(outdir: Path, formats: list[str]) -> None:
+    """Regime R3 across nine runs, against the service bound.
+
+    The point is the contrast between the body of the distribution, which is reproducible, and
+    the tail, which is not: eight runs sit inside the budget through the 99.9th percentile and
+    one does not, and that one is the worst at every percentile including the mean.
+    """
+    rows = [r for r in read_csv_rows(RESULTS / "r3-latency.csv") if r["run"] != "median"]
+    fig, (ax, axb) = plt.subplots(1, 2, figsize=(9.6, 3.9),
+                                  gridspec_kw={"width_ratios": [1.5, 1]})
+
+    for name in sorted(HGRM.glob("r3_frozen_*.hgrm")):
+        v, q = load_hgrm(name)
+        if v.size == 0:
+            continue
+        outlier = "b1_1" in name.name
+        ax.plot(1.0 / (1.0 - q), v,
+                color=THEIRS if outlier else OURS,
+                linewidth=1.5 if outlier else 0.9,
+                alpha=1.0 if outlier else 0.6,
+                zorder=5 if outlier else 2,
+                label=("run b1_1" if outlier else None))
+    ax.axhline(1560, color=NEUTRAL, linestyle=":", linewidth=1.2)
+    ax.text(1.6, 1760, "service bound 1.56 ms", fontsize=7, color=NEUTRAL)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ticks = [(2, "p50"), (10, "p90"), (100, "p99"), (1000, "p99.9"), (10000, "p99.99")]
+    ax.set_xticks([t for t, _ in ticks])
+    ax.set_xticklabels([l for _, l in ticks])
+    ax.minorticks_off()
+    ax.set_xlabel("percentile")
+    ax.set_ylabel("per-chunk decision latency (µs)")
+    ax.set_title("nine runs, 64 Mb reference, frozen geometry", fontsize=9)
+    ax.legend(loc="upper left", frameon=False, fontsize=7.5)
+
+    # Per-run percentiles, so the one crossing run is identifiable rather than merely visible.
+    keys = [("p50", "p50"), ("p90", "p90"), ("p99", "p99"), ("p99_9", "p99.9")]
+    xs = np.arange(len(keys))
+    for r in rows:
+        outlier = r["run"] == "b1_1"
+        axb.plot(xs, [float(r[k]) for k, _ in keys],
+                 marker="o" if outlier else ".",
+                 color=THEIRS if outlier else OURS,
+                 linewidth=1.4 if outlier else 0.8,
+                 alpha=1.0 if outlier else 0.55,
+                 markersize=5 if outlier else 3,
+                 zorder=5 if outlier else 2)
+    axb.axhline(1560, color=NEUTRAL, linestyle=":", linewidth=1.2)
+    axb.set_yscale("log")
+    axb.set_xticks(xs)
+    axb.set_xticklabels([l for _, l in keys])
+    axb.set_ylabel("µs")
+    axb.set_title("per-run percentiles", fontsize=9)
+
+    fig.suptitle(
+        "Figure 5.4  Regime R3: the body reproduces, the tail does not (§5.6)\n"
+        "eight runs lie inside the budget through p99.9; one crosses it at p99 and p99.9",
+        fontsize=9,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.87))
+    save(fig, "fig5-4-r3-distribution", outdir, formats)
+    record(
+        "fig5-4-r3-distribution",
+        "results/hgrm/r3_frozen_*.hgrm, results/r3-latency.csv",
+        "Regime R3 latency across nine runs against the 1.56 ms service bound.",
+    )
+
+
+# ---------------------------------------------------------------------------------------
+# Chapter 4 -- decision rules
+# ---------------------------------------------------------------------------------------
+
+
+def fig_4_1(outdir: Path, formats: list[str]) -> None:
+    """The six decision rules in triplicate, with the seed spread shown rather than hidden."""
+    rows = read_csv_rows(RESULTS / "decision-rules.csv")
+    labels = {
+        "exact-diagonal votes (256 counters)": "votes\n(256 counters)",
+        "greedy chains (control)": "greedy\nβ = 0 control",
+        "greedy chains": "greedy\nβ = 12",
+        "anchor-history chains": "anchor-history",
+    }
+    names, means, los, his, cols = [], [], [], [], []
+    for r in rows:
+        base = labels.get(r["rule"], r["rule"])
+        extra = ""
+        if r["rule"] == "anchor-history chains":
+            extra = f"\nL = {r['lookback']}" + (" + occ" if r["occ_filter"] == "yes" else "")
+        names.append(base + extra)
+        means.append(float(r["tpr_mean"]))
+        los.append(float(r["tpr_lo"]))
+        his.append(float(r["tpr_hi"]))
+        cols.append(NEUTRAL if "control" in r["rule"] else OURS)
+
+    xs = np.arange(len(names))
+    fig, ax = plt.subplots(figsize=(7.4, 4.0))
+    ax.bar(xs, means, 0.6, color=cols, edgecolor="white", linewidth=0.6)
+    ax.errorbar(xs, means,
+                yerr=[np.array(means) - np.array(los), np.array(his) - np.array(means)],
+                fmt="none", ecolor="#222", elinewidth=1.0, capsize=3.5, zorder=4)
+    for x, m, h in zip(xs, means, his):
+        ax.text(x, h + 0.35, f"{m:.1f}", ha="center", fontsize=8)
+    best = int(np.argmax(means))
+    ax.annotate("best measured", xy=(xs[best], his[best] + 0.9),
+                xytext=(xs[best], max(his) + 3.0), ha="center", fontsize=7.5, color=OURS,
+                arrowprops=dict(arrowstyle="->", color=OURS, lw=0.8))
+    ax.set_xticks(xs)
+    ax.set_xticklabels(names, fontsize=7)
+    ax.set_ylabel("TPR at zero false positives (%)")
+    ax.set_ylim(0, max(his) + 5)
+    ax.set_title(
+        "Figure 4.1  Decision rules at the Chapter 6 operating point, 3 seeds × 500 reads\n"
+        "bars span the observed range; adjacent rules overlap, so a single run cannot "
+        "separate them",
+        fontsize=9,
+    )
+    save(fig, "fig4-1-decision-rules", outdir, formats)
+    record(
+        "fig4-1-decision-rules",
+        "results/decision-rules.csv",
+        "The six decision rules with their across-seed ranges.",
+    )
+
+
 # ---------------------------------------------------------------------------------------
 # Chapter 6 -- dwell
 # ---------------------------------------------------------------------------------------
@@ -635,9 +759,11 @@ def fig_7_5(outdir: Path, formats: list[str]) -> None:
 
 
 FIGURES = [
+    ("4.1", fig_4_1),
     ("5.1", fig_5_1),
     ("5.2", fig_5_2),
     ("5.3", fig_5_3),
+    ("5.4", fig_5_4),
     ("6.1", fig_6_1),
     ("6.2", fig_6_2),
     ("6.3", fig_6_3),
@@ -673,7 +799,7 @@ def main() -> int:
             print(f"  FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
             failures.append((num, f"{type(exc).__name__}: {exc}"))
 
-    with open(outdir / "MANIFEST.md", "w") as f:
+    with open(outdir / "MANIFEST.md", "w", encoding="utf-8") as f:
         f.write("# Generated figures\n\n")
         f.write("Produced by `scripts/generate_thesis_figures.py` from the files named\n")
         f.write("below and from nothing else. Regenerate after any correction to a\n")

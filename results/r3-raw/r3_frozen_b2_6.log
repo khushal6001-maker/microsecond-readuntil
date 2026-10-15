@@ -1,0 +1,93 @@
+MinKNOW credentials:
+  CA certificate : /root/icarust/static/tls_certs_fixed/ca.crt (2000 bytes)
+  Auth token     : NOT FOUND
+  Paths examined, in order:
+    /root/icarust/static/tls_certs_fixed/ca.crt
+  Set MRU_MINKNOW_CA and/or MRU_MINKNOW_TOKEN to point at the correct
+  files. These locations are installation- and version-dependent, so the
+  list above is a best-effort search rather than an authoritative set.
+
+pinning:   reader=4 writer=6 workers=0,2
+  layout:  4 physical cores / 8 logical for 4 data-plane threads -- every role on its own physical core.
+index: 9-mer model, 63981237 reference bases, geometry 4 x 12 = 48-bit keys, window 1
+index: 63981229 events, 63981218 minimizers of 63981218 keys, 32888127 distinct, 10430593 capped, 79 insert failures, 512.0 MiB table + 204.3 MiB positions
+rule: accept at >=8 votes, unblock after 10 chunks without them, 4 probes/seed
+connecting to 127.0.0.1:10001 (TLS), channels 1-512, 2 shards
+streaming for 40 s...
+
+  resp     29  chunks      667 (+667/s)  reads    321  actions    122  ok      0  late     0  dropped 0
+  resp     49  chunks     1118 (+451/s)  reads    397  actions    145  ok      0  late     0  dropped 0
+  resp     84  chunks     1911 (+793/s)  reads    494  actions    185  ok      0  late     0  dropped 0
+  resp    110  chunks     2519 (+608/s)  reads    573  actions    269  ok      0  late     0  dropped 0
+  resp    144  chunks     3312 (+793/s)  reads    706  actions    378  ok      0  late     0  dropped 0
+  resp    168  chunks     3859 (+547/s)  reads    797  actions    437  ok      0  late     0  dropped 0
+  resp    190  chunks     4328 (+469/s)  reads    832  actions    494  ok      0  late     0  dropped 0
+  resp    207  chunks     4720 (+392/s)  reads    864  actions    551  ok      0  late     0  dropped 0
+  resp    232  chunks     5263 (+543/s)  reads    970  actions    657  ok      0  late     0  dropped 0
+  resp    250  chunks     5669 (+406/s)  reads   1056  actions    710  ok      0  late     0  dropped 0
+  resp    279  chunks     6342 (+673/s)  reads   1157  actions    760  ok      0  late     0  dropped 0
+  resp    301  chunks     6861 (+519/s)  reads   1235  actions    811  ok      0  late     0  dropped 0
+  resp    322  chunks     7341 (+480/s)  reads   1310  actions    863  ok      0  late     0  dropped 0
+  resp    355  chunks     8099 (+758/s)  reads   1425  actions    946  ok      0  late     0  dropped 0
+  resp    378  chunks     8636 (+537/s)  reads   1537  actions   1010  ok      0  late     0  dropped 0
+  resp    416  chunks     9505 (+869/s)  reads   1647  actions   1108  ok      0  late     0  dropped 0
+  resp    439  chunks    10042 (+537/s)  reads   1723  actions   1165  ok      0  late     0  dropped 0
+  resp    475  chunks    10856 (+814/s)  reads   1823  actions   1267  ok      0  late     0  dropped 0
+  resp    497  chunks    11365 (+509/s)  reads   1917  actions   1338  ok      0  late     0  dropped 0
+  resp    532  chunks    12163 (+798/s)  reads   2032  actions   1435  ok      0  late     0  dropped 0
+  resp    556  chunks    12719 (+556/s)  reads   2123  actions   1497  ok      0  late     0  dropped 0
+  resp    591  chunks    13543 (+824/s)  reads   2219  actions   1583  ok      0  late     0  dropped 0
+  resp    616  chunks    14109 (+566/s)  reads   2304  actions   1645  ok      0  late     0  dropped 0
+  resp    651  chunks    14916 (+807/s)  reads   2410  actions   1773  ok      0  late     0  dropped 0
+  resp    674  chunks    15447 (+531/s)  reads   2498  actions   1834  ok      0  late     0  dropped 0
+  resp    705  chunks    16162 (+715/s)  reads   2598  actions   1953  ok      0  late     0  dropped 0
+  resp    727  chunks    16674 (+512/s)  reads   2708  actions   1984  ok      0  late     0  dropped 0
+  resp    761  chunks    17464 (+790/s)  reads   2809  actions   2085  ok      0  late     0  dropped 0
+  resp    785  chunks    18019 (+555/s)  reads   2893  actions   2110  ok      0  late     0  dropped 0
+  resp    819  chunks    18814 (+795/s)  reads   2987  actions   2236  ok      0  late     0  dropped 0
+  resp    843  chunks    19375 (+561/s)  reads   3100  actions   2270  ok      0  late     0  dropped 0
+  resp    867  chunks    19921 (+546/s)  reads   3185  actions   2329  ok      0  late     0  dropped 0
+  resp    902  chunks    20743 (+822/s)  reads   3294  actions   2427  ok      0  late     0  dropped 0
+  resp    928  chunks    21324 (+581/s)  reads   3385  actions   2476  ok      0  late     0  dropped 0
+  resp    965  chunks    22183 (+859/s)  reads   3484  actions   2569  ok      0  late     0  dropped 0
+  resp    991  chunks    22794 (+611/s)  reads   3576  actions   2636  ok      0  late     0  dropped 0
+  resp   1028  chunks    23628 (+834/s)  reads   3686  actions   2763  ok      0  late     0  dropped 0
+  resp   1052  chunks    24181 (+553/s)  reads   3788  actions   2829  ok      0  late     0  dropped 0
+  resp   1077  chunks    24716 (+535/s)  reads   3885  actions   2905  ok      0  late     0  dropped 0
+  resp   1096  chunks    25172 (+456/s)  reads   3906  actions   2971  ok      0  late     0  dropped 0
+
+ingestion: 1096 responses, 25172 chunks, 0 dropped, 0 arena exhausted, 0 payload mismatch
+decide:    3906 reads, 2971 decisions, 0 dropped
+actions:   2971 sent, 0 ok, 0 read finished, 0 TOO LATE
+policy:    25168 chunks matched, 15802236 seeds probed, 2308298 candidates
+decisions: 1469 accepted (on target), 1502 unblocked, 22197 deferred, 0 chunks too short
+decision path (policy only): n=25168  p50 126.14  p90 192.76  p99 370.15  p99.9 1404.46  p99.99 2119.08  max 2350.25  mean 139.83 us
+  histogram: HdrHistogram 0.12.0 (3 significant figures, 0.1% relative error)
+  distribution written to /mnt/c/Users/Khushal singh/Desktop/mtech project/microsecond-readuntil/results/hgrm/r3_frozen_b2_6.hgrm
+policy calls: 25168
+arena slots returned: 32/32
+
+VERDICT: ingestion WORKED, actions SENT
+	Command being timed: "/root/mru/build-transport/mru_daemon --target 127.0.0.1:10001 --ca /root/icarust/static/tls_certs_fixed/ca.crt --model /root/icarust/static/dna_r10.4.1_e8.2_400bps/R10_model.tsv --reference /root/icarust/docker/squiggle_arrs/chr20_plus_wtc11.fa --seconds 40 --shards 2 --pin --latency-out /mnt/c/Users/Khushal singh/Desktop/mtech project/microsecond-readuntil/results/hgrm/r3_frozen_b2_6.hgrm"
+	User time (seconds): 87.10
+	System time (seconds): 3.30
+	Percent of CPU this job got: 174%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:51.77
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 3876856
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 1032018
+	Voluntary context switches: 83461
+	Involuntary context switches: 392
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 0
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

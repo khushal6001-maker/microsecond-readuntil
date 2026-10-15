@@ -1,0 +1,6 @@
+[M::main::3.351*1.41] loaded/built the index for 1 target sequence(s)
+[M::ri_idx_stat] pore kmer size: 9; concatanated events: 8; quantization bits: 4; w: 0; n: 0; #seq: 1
+[INFO] No files to query index on. Only the index is constructed.
+[M::main] Version: 2.1
+
+[M::main] Real time: 3.383 sec; CPU: 4.757 sec; Peak RSS: 1.056 GB

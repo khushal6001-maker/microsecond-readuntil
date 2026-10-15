@@ -1,0 +1,36 @@
+
+thread 'tokio-rt-worker' (532) panicked at src/impl_services/data.rs:1620:22:
+Failed to send read chunks - has readfish disconnected?
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+[31m[2026-10-15T18:09:31Z [31mERROR[0m icarust::impl_services::data: 499 [31m] Attempt to write empty signal[0m
+[31m[2026-10-15T18:09:31Z [31mERROR[0m icarust::impl_services::data: 499 [31m] Attempt to write empty signal[0m
+[33m[2026-10-15T18:09:31Z [33mWARN[0m icarust::impl_services::data: 480 [33m] Read seen twice?[0m
+
+thread 'tokio-rt-worker' (530) panicked at src/impl_services/data.rs:1620:22:
+Failed to send read chunks - has readfish disconnected?
+[33m[2026-10-15T18:10:12Z [33mWARN[0m icarust::impl_services::data: 480 [33m] Read seen twice?[0m
+[33m[2026-10-15T18:10:12Z [33mWARN[0m icarust::impl_services::data: 480 [33m] Read seen twice?[0m
+[33m[2026-10-15T18:10:54Z [33mWARN[0m icarust::impl_services::data: 480 [33m] Read seen twice?[0m
+[33m[2026-10-15T18:10:54Z [33mWARN[0m icarust::impl_services::data: 480 [33m] Read seen twice?[0m
+
+thread 'tokio-rt-worker' (532) panicked at src/impl_services/data.rs:1620:22:
+Failed to send read chunks - has readfish disconnected?
+[33m[2026-10-15T18:11:37Z [33mWARN[0m icarust::impl_services::data: 480 [33m] Read seen twice?[0m
+[33m[2026-10-15T18:11:37Z [33mWARN[0m icarust::impl_services::data: 480 [33m] Read seen twice?[0m
+[33m[2026-10-15T18:11:37Z [33mWARN[0m icarust::impl_services::data: 480 [33m] Read seen twice?[0m
+
+thread 'tokio-rt-worker' (533) panicked at src/impl_services/data.rs:1620:22:
+Failed to send read chunks - has readfish disconnected?
+[33m[2026-10-15T18:12:21Z [33mWARN[0m icarust::impl_services::data: 480 [33m] Read seen twice?[0m
+[33m[2026-10-15T18:12:21Z [33mWARN[0m icarust::impl_services::data: 480 [33m] Read seen twice?[0m
+[33m[2026-10-15T18:12:21Z [33mWARN[0m icarust::impl_services::data: 480 [33m] Read seen twice?[0m
+
+thread 'tokio-rt-worker' (529) panicked at src/impl_services/data.rs:1620:22:
+Failed to send read chunks - has readfish disconnected?
+[33m[2026-10-15T18:13:03Z [33mWARN[0m icarust::impl_services::data: 480 [33m] Read seen twice?[0m
+
+thread 'tokio-rt-worker' (532) panicked at src/impl_services/data.rs:1620:22:
+Failed to send read chunks - has readfish disconnected?
+[33m[2026-10-15T18:13:33Z [33mWARN[0m icarust: 411 [33m] Caught keyboard interrupt, exiting in 10 seconds![0m
+[33m[2026-10-15T18:13:35Z [33mWARN[0m icarust::impl_services::data: 480 [33m] Read seen twice?[0m
+[33m[2026-10-15T18:13:35Z [33mWARN[0m icarust::impl_services::data: 480 [33m] Read seen twice?[0m

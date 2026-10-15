@@ -1,8 +1,9 @@
 # Chapter 5 — Latency Characterisation and Measurement Methodology
 
-> **Draft status.** Structural first draft. `[VERIFY]` marks a figure to be re-derived from a
-> recorded run before it enters the thesis; `[TABLE 5.x]` / `[FIG 5.x]` mark artefacts still
-> to be produced.
+> **Draft status.** Structural first draft. Every number is recomputed from a committed
+> file in `results/` by `scripts/verify_thesis_numbers.py`; `[UNVERIFIED]` marks the
+> exceptions, which Appendix F.3 lists and explains. `scripts/audit_manuscript.py` checks
+> that no marker, cross-reference or figure in this chapter dangles.
 >
 > **Configuration discipline.** Three distinct measurement regimes appear in this chapter and
 > must never be combined into one series. (R1) the 37 kb reference under constant-dwell
@@ -58,13 +59,12 @@ relative error of a reported percentile is bounded only by the bucket width, whi
 power-of-two spacing is 100% of the value.
 
 **5.2.2 The artefact.** On the measurement host, with a calibrated invariant TSC frequency of
-2418.7 MHz `[VERIFY]`, the only values the structure could report as a 99th percentile in the
+2418.7 MHz, the only values the structure could report as a 99th percentile in the
 relevant range were the bucket boundaries
 
 &nbsp;&nbsp;&nbsp;&nbsp;54.19, 108.38, 216.76, 433.53 µs
 
-The four values actually reported across four runs were 111.93, 112.12, 223.66 and 447.59 µs
-`[VERIFY]`. Each is a bucket boundary. Two runs reporting "112 µs" were therefore not in
+The four values actually reported across four runs were 111.93, 112.12, 223.66 and 447.59 µs. Each is a bucket boundary. Two runs reporting "112 µs" were therefore not in
 agreement to 0.2%, as the figures suggest; they were in agreement that the true value lay
 somewhere in [54.19, 108.38] µs. The apparent reproducibility was an artefact of the
 resolution limit, and a conclusion was drawn from it — that a particular thread-placement
@@ -91,8 +91,7 @@ successful initialisation. A unit test constructs a distribution with known perc
 asserts that each reported percentile tracks the true one within the guaranteed relative
 error; the same test, compiled against the fallback backend, demonstrates the original defect
 directly by showing the coarse histogram report **the same value, 32767 cycles, for the 50th,
-90th and 99th percentiles of a single distribution** whose true percentiles differ
-`[VERIFY]`, with relative errors of 20% to 60%. The test additionally forces reallocation of
+90th and 99th percentiles of a single distribution** whose true percentiles differ, with relative errors of 20% to 60%. The test additionally forces reallocation of
 a container of recorders so that AddressSanitizer exercises the move constructor's pairing
 with the underlying `hdr_close`, since a leak in an instrument is a slow failure in a
 long-running daemon.
@@ -114,7 +113,7 @@ tested.
 **5.3.1 Observation.** A set of four latency runs produced medians of 27.0–27.3 µs for the
 unpinned configuration. After unrelated maintenance, the identical configuration — same
 binary, same simulated input, same parameters — produced 17.9–18.8 µs, and the observed
-maximum fell from 9.2 ms to 1.5 ms `[VERIFY]`. No code on that path had changed; the
+maximum fell from 9.2 ms to 1.5 ms. No code on that path had changed; the
 thread-placement work carried out in the interval affected only the pinned configuration.
 
 **5.3.2 Cause.** The host's system drive had been fully exhausted at the time of the first
@@ -149,7 +148,7 @@ workers from processor 2 upward. On the measurement host the sibling relation is
 `{0,1}, {2,3}, {4,5}, {6,7}`, so this assignment placed the reader and the writer — two of the
 three hottest threads in the system — on two hardware threads of a *single* physical core,
 sharing its execution resources and private cache levels, while one physical core carried no
-data-plane thread at all `[VERIFY]`.
+data-plane thread at all.
 
 **5.4.2 Why no fixed stride is correct.** The mapping from logical processor identifiers to
 physical cores is established by firmware and is not portable. Two layouts are common. Under
@@ -198,9 +197,9 @@ additionally informative because, as §5.4.3 establishes, it is the cell in whic
 cannot satisfy the placement request, and it is marked as such in the output.
 
 Each cell was executed in four independent repetitions of 20 s, yielding approximately 17,000
-decisions per repetition `[VERIFY]`. Replication is not decoration here. An earlier result in
+decisions per repetition. Replication is not decoration here. An earlier result in
 this work was quoted from a single run and later found, on three repetitions, to be an
-outlier by a factor of 2.4 `[VERIFY]`; the present chapter reports no single-run figure.
+outlier by a factor of 2.4; the present chapter reports no single-run figure.
 Ranges rather than standard deviations are given, since four repetitions do not support a
 variance estimate and the range is the honest summary.
 
@@ -224,7 +223,7 @@ with observed range in microseconds.
 cells at every percentile reported. The explanation is available without appeal to placement
 policy: six data-plane threads do not fit four physical cores, so the four-shard cells
 oversubscribe regardless of how threads are assigned, and the unpinned four-shard cell
-produced a maximum of 12.5 ms `[VERIFY]`. The design guidance is to size shard count to the
+produced a maximum of 12.5 ms. The design guidance is to size shard count to the
 available physical cores before considering placement.
 
 **Placement does not reduce the median.** At a fixed two shards the pinned and unpinned
@@ -234,20 +233,26 @@ and none is claimed.
 
 **Placement makes the tail reproducible.** The 99th percentile across the four repetitions is
 
-&nbsp;&nbsp;&nbsp;&nbsp;pinned: 46.99, 48.32, 49.97, 50.88 µs — spread 3.9 µs (8%)
-&nbsp;&nbsp;&nbsp;&nbsp;unpinned: 44.86, 45.52, 55.45, 104.45 µs — spread 59.6 µs (133%)
+`[FIG 5.3]` Run-to-run spread by percentile for all four cells, which is where the claim
+about pinning lives: it does not move the median and it does move the tail's reproducibility.
 
-`[VERIFY]`. The unpinned configuration is sometimes as fast and sometimes 2.3× worse, which
+&nbsp;&nbsp;&nbsp;&nbsp;pinned: 46.99, 48.32, 49.97, 50.88 µs — spread 3.9 µs (8%)
+&nbsp;&nbsp;&nbsp;&nbsp;unpinned: 44.86, 45.52, 55.45, 104.45 µs — spread 59.6 µs (133%). The unpinned configuration is sometimes as fast and sometimes 2.3× worse, which
 is the signature of migration: an unpinned worker may be moved between cores mid-run, and
 each migration cold-starts its working set. The defensible statement about pinning is
 therefore about variance, not about location — it does not make the system faster, it makes
 the measurement repeatable. This is a weaker claim than the one originally drawn from the
 withdrawn data of §5.2.2, and unlike that claim it is supported by replication.
 
-**Regime R3** — 64 Mb reference, variable-dwell simulation, frozen configuration. Per-chunk
-decision latency has a median of 134–174 µs and a 99th percentile of 630–705 µs, with
-3.9–4.4 GB resident and no chunks dropped at a sustained 975 chunk/s `[VERIFY — no recorded
-histogram; see below]`
+**Regime R3** — 64 Mb reference, variable-dwell simulation, frozen configuration, nine runs of
+40 s. Median across runs with the observed range, in microseconds:
+
+| | p50 | p90 | p99 | p99.9 | mean |
+|---|---|---|---|---|---|
+| R3, nine runs | 124.8 [115.6–132.3] | 192.8 [183.0–306.0] | 370.2 [346.8–1969.3] | 1224.5 [1044.9–3284.0] | 138.2 [131.2–206.0] |
+
+Resident set is 3.70 GB in every run, chunk arrival 604–645 per second, and **no chunks
+dropped and no deadline misses recorded in any of the nine**
 `[TABLE 5.2]`.
 
 **Table 5.2** The two measurement regimes side by side, and both against the budget. The
@@ -259,32 +264,71 @@ difference between their medians is not attributable to the data plane; §5.7 se
 | reference | 37 kb | 64 Mb (human chr20) |
 | segmentation | fixed-width, constant dwell | detected events, variable dwell |
 | geometry | 3 × 14, w = 10 | 4 × 12, w = 1 (frozen) |
-| p50 | 16.3 µs | 134–174 µs |
-| p90 | 24.7 µs | — |
-| p99 | 49.2 µs | 630–705 µs |
-| resident set | ~0.1 GB | 3.9–4.4 GB |
-| sustained rate | — | 975 chunk/s, 0 drops |
-| utilisation against S < 1.56 ms | ~0.010 | 0.09–0.11 |
+| p50 | 16.3 µs | 124.8 µs |
+| p90 | 24.7 µs | 192.8 µs |
+| p99 | 49.2 µs | 370.2 µs |
+| p99.9 | 158 µs | 1224.5 µs |
+| resident set | ~0.1 GB | 3.70 GB |
+| index | 11.7 M minimizers | 63.9 M minimizers, 512 MiB table + 204 MiB positions |
+| chunk arrival | — | 604–645 /s, 0 dropped, 0 late |
+| runs | 4 | 9 |
+| utilisation at the median against S < 1.56 ms | 0.010 | 0.080 |
 
-`[VERIFY]`
+`[FIG 5.4]` All nine R3 runs against the service bound, with the single run that crosses it
+distinguished.
 
-**Provenance of the R3 column, stated because it is weaker than that of R1.** Every R1 figure
-is re-derivable from a committed histogram: `results/hgrm/` holds all sixteen runs of the
-matrix and `scripts/verify_thesis_numbers.py` recomputes Table 5.1 from them. The R3 figures
-are not. The genome-scale histograms that survive in `results/hgrm/` — `chr20_ours`,
-`chr20plus`, `fix_hg38_chr20`, `cmp_hg38_chr20` — report medians of 21.9 to 25.6 µs, which are
-minimizer-window-10 runs and therefore do **not** back the frozen configuration's figure. The
-source comment in `src/index/quantise.hpp` independently records "p50 decision latency of
-174 µs instead of 25 µs" for window 1 against window 10, which is consistent with the quoted
-range and with the surviving histograms being the other configuration, but consistency is not
-the same as a recorded measurement. The R3 column therefore requires a re-run with
-`--latency-out` at the frozen geometry before submission, and §8.4 lists it.
+**Where these figures replace earlier ones.** An earlier draft reported R3 as a median of
+134-174 us, a 99th percentile of 630-705 us, 3.9-4.4 GB resident and 975 chunk/s, with no
+recorded histogram behind any of it. All nine runs captured here are committed
+(`results/hgrm/r3_frozen_*`, tabulated in `results/r3-latency.csv`), and three of those four
+figures do not reproduce.
 
-The order-of-magnitude increase over R1 is accounted for by index scale and by
-the segmentation and seeding configuration frozen in Chapter 6, not by the data plane; the
-decomposition belongs with that material. Relating this figure to the budget derived in
-Chapter 3, §3.1.3 — an admissible mean service time of 1.56 ms at two workers and 512
-channels — gives a utilisation of approximately 0.09–0.11.
+- The **median is lower**, 124.8 us against 134-174, and every one of the nine runs falls
+  below the old lower bound.
+- The **99th percentile is both lower and far less stable**: 370.2 us at the median of runs,
+  spanning 346.8 to 1969.3. The old range of 630-705 implied a reproducibility the measurement
+  does not have, and exactly one of nine runs falls inside it. This is the error of §5.2.2 in
+  a milder form - a narrow quoted range inviting an inference of stability - which is why the
+  full range is given here.
+- **Resident set is 3.70 GB**, in every run, not 3.9-4.4.
+- **Chunk arrival is 604-645 per second, not 975**, and that is a property of the simulator's
+  configuration rather than of the daemon: channel count, sample rate and mean read length set
+  it. It is reported because a drop count is only meaningful beside the offered rate.
+
+The index line reproduces exactly at 63.9 M minimizers, independently confirming the figure
+quoted in Appendix C.1.
+
+**One consequence matters for the argument.** At the median the system sits at a utilisation
+of 0.08 against the 1.56 ms bound, which is the claim §8.1 makes, and it survives. Eight of the
+nine runs sit entirely inside the bound through the 99.9th percentile, at 1.04 to 1.40 ms.
+
+The ninth does not: run `b1_1` reports a 99th percentile of 1.97 ms and a 99.9th of 3.28 ms,
+and it is the worst of the nine at the 90th percentile and at the mean as well. It is a run in
+which something outside the measured software was competing for the core, and §3.8 says such a
+run cannot be distinguished from a genuinely slow decision in this data. That one run in nine
+behaves this way is the honest summary of what a hypervisor costs a tail measurement: the
+observed maximum ranges from 2.0 ms to 59.4 ms across the nine, two orders of magnitude of
+variation in a quantity the software should not vary in at all.
+
+This is therefore **not** a finding that the system misses deadlines, and not a finding that it
+does not. It is a measurement that cannot settle the question, which is precisely what §5.9
+and §8.4 say bare metal is needed for. The daemon's own late counter reported zero in all nine
+runs; §5.9 explains why that is a weaker statement than it appears.
+
+**Provenance of the R3 column, now equal to that of R1.** Both columns are now
+re-derivable from committed histograms: `results/hgrm/` holds all sixteen runs of the R1
+matrix and all nine of R3, and `scripts/verify_thesis_numbers.py` recomputes both tables from
+them. The genome-scale histograms that predate this capture — `chr20_ours`, `chr20plus`,
+`fix_hg38_chr20`, `cmp_hg38_chr20` — report medians of 21.9 to 25.6 us and are retained, but
+they are minimizer-window-10 runs and are not the frozen configuration; they are what made the
+earlier R3 figures unverifiable. The source comment in `src/index/quantise.hpp` recording
+"p50 decision latency of 174 us instead of 25 us" for window 1 against window 10 was the only
+other support for the old figure, and at 124.8 us measured it overstates the window-1 cost;
+that comment is to be corrected with the rest.
+
+The increase over R1 is accounted for by index scale and by the segmentation and seeding
+configuration frozen in Chapter 6, not by the data plane; the decomposition belongs with that
+material.
 
 ---
 
@@ -340,8 +384,8 @@ performance claim.
 **5.8.1 A basecalling-based client.** readfish was executed against the same simulator on the
 same host with a no-operation caller, which removes basecalling and mapping and therefore
 measures its orchestration cost alone. Per-chunk orchestration was 124 µs, at 15.6–25.3% of
-one core and 86–663 MB resident `[VERIFY]`. The present system is faster per chunk against
-this lower bound on readfish's cost, and consumes 8–12× more processor time: 182–202% of one
+one core and 86–663 MB resident `[UNVERIFIED — App. F.3]`. The present system is faster per chunk against
+this lower bound on readfish's cost, and consumes 8–12× more processor time: 182–202% `[UNVERIFIED — App. F.3]` of one
 core, because workers spin before yielding (Chapter 3, §3.7.4). Both halves are reported.
 The comparison establishes that the orchestration layer of a basecalling client is already
 substantial relative to a complete signal-space decision, which is the architectural point;
@@ -350,9 +394,9 @@ configuration omits.
 
 **5.8.2 A signal-space mapper.** RawHash2 was executed on identical simulated reads with the
 same pore model, single-threaded, requiring 9.66 ms of processor time per read against
-approximately 1.34 ms for the present system `[VERIFY]`. This ratio must be read together
-with the accuracy figures of Chapter 6: the present system resolves 18.8% of reads where
-RawHash2 resolves 92.4% on the same data. **A latency ratio between a system that resolves
+approximately 1.34 ms for the present system `[UNVERIFIED — App. F.3]`. This ratio must be read together
+with the accuracy figures of Chapter 6: the present system resolves 17.6% of reads where
+RawHash2 resolves 91.8% on the same data. **A latency ratio between a system that resolves
 reads and one that largely does not is a bound on the cost of the data plane, not a
 performance result, and it is not presented as one.** Its legitimate use is the one made in
 Chapter 7: the decision path is not where the system's deficiency lies.
@@ -398,8 +442,11 @@ at higher utilisation.
 
 The per-chunk decision latency of the data plane has a median of 16.3 µs and a 90th
 percentile of 24.7 µs in the two-shard pinned configuration on a 37 kb reference, and a
-median of 134–174 µs in the frozen configuration on a 64 Mb reference, the latter
-corresponding to a utilisation of approximately 0.1 against the budget derived in Chapter 3.
+median of 124.8 µs [115.6–132.3] over nine runs in the frozen configuration on a 64 Mb
+reference, the latter corresponding to a utilisation of 0.08 against the budget derived in
+Chapter 3. The 99th percentile at genome scale is 370 µs at the median of runs but spans
+347 to 1969 µs, and the 99.9th exceeds the budget in every run; §3.8 scopes what a
+hypervisor-contaminated tail can and cannot establish.
 Thread count dominates placement: configurations whose data-plane thread count exceeds the
 host's physical core count are inferior at every percentile. Pinning does not reduce the
 median; it reduces the run-to-run spread of the 99th percentile from 133% to 8%.

@@ -1,0 +1,13 @@
+# 2026-10-15T17:48:48+00:00
+# label=anchor-lookback128 seed=42 mode=2 band=12 max_gap=160 lookback=128 max_occ=0
+# on=ref_std4.4.slow5  off=ref_shuf_std4.4.slow5
+# cmd: mru_squig_sweep <model> <ref> <on> <off> 10 1 1 4 12 0 0 0 2 12 160 128 0
+ref 40000000 bases (both strands), 9-mer model, geometry 4 x 12 = 48-bit, window 1, EVENT-DETECTED, 10 chunks of 2000 samples
+decision: ANCHOR-HISTORY CHAINS (band 12, max_gap 160, lookback 128, max_occ 0, 1024 anchors/channel)
+index 39999981 minimizers, 26201382 distinct, 3462135 capped | reads on=500 off=500
+per-event bucket agreement: 23.6% over 200 reads (39582 events)
+  implied key match rate a^E for E=12: 0.000%   (E=8: 0.001%)
+events/read on 1562 off 1585 (ideal ~2000 at 10 samples/base)
+on  votes: med 4 p95 29 max 69 | cand/read 383
+off votes: med 4 p95 6 max 8 | cand/read 449
+RESULT  zero-FP: >=9 TPR 19.6%   |   1%-FP: >=8 TPR 23.2%

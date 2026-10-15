@@ -1,8 +1,10 @@
 # Chapter 6 — Dwell-Time Variability as an Evaluation Axis
 
-> **Draft status.** Structural first draft. `[VERIFY]` marks figures to be re-derived from a
-> recorded run; `[TABLE 6.x]` / `[FIG 6.x]` mark artefacts still to be produced. Raw data for
-> §6.6 is in `results/rawhash-dwell-sweep.csv`.
+> **Draft status.** Structural first draft. Every number is recomputed from a committed
+> file in `results/` by `scripts/verify_thesis_numbers.py`; `[UNVERIFIED]` marks the
+> exceptions, which Appendix F.3 lists and explains. `scripts/audit_manuscript.py` checks
+> that no marker, cross-reference or figure in this chapter dangles. Raw data for §6.6 is in
+> `results/rawhash-dwell-sweep.csv`.
 >
 > **Scoping discipline.** This chapter makes three claims that are easily conflated and must
 > be kept separate throughout. (i) *This system's* fixed-width configuration collapses as
@@ -37,7 +39,7 @@ the second part is no, and the consequences of that omission are the chapter's s
 
 An established signal simulator exposes time-domain noise directly as the standard deviation
 of the number of samples per base, and its documented default is a mean of 9.0 samples with a
-standard deviation of 4.0 `[VERIFY]` — a coefficient of variation of approximately 0.44. The
+standard deviation of 4.0 — a coefficient of variation of approximately 0.44. The
 axis is therefore neither hypothetical nor obscure; the default setting of the accepted tool
 sits in the middle of the range this chapter sweeps. What is absent from the literature is any
 evaluation that varies it.
@@ -90,7 +92,7 @@ They are reported because they generalise to any comparison of this kind.
 
 **6.3.1 The pore model must be identical on both sides and in the generator.** The simulator's
 built-in R10 9-mer table and the table shipped with the read-until simulator disagree: for the
-k-mer `AAAAAAAAA` they give 54.316 pA and 57.203 pA respectively `[VERIFY]`, a difference of
+k-mer `AAAAAAAAA` they give 54.316 pA and 57.203 pA respectively, a difference of
 approximately 2.9 pA against a per-k-mer level standard deviation of approximately 1.2 pA.
 Encoding the reference with one table while generating signal from the other therefore measures
 model mismatch, and would do so monotonically in nothing at all. The model used here is
@@ -127,7 +129,7 @@ conducted at zero dispersion would lead that developer to choose. It is not a fi
 published systems are mis-designed, and §6.5 bounds it further.
 
 True positive rate at the lowest zero-false-positive threshold, three seeds, mean with observed
-range `[TABLE 6.1]` `[VERIFY]`:
+range `[TABLE 6.1]`:
 
 | dwell CV | fixed-width segmentation | detected-event segmentation |
 |---|---|---|
@@ -141,7 +143,7 @@ range `[TABLE 6.1]` `[VERIFY]`:
 The fixed-width configuration falls by a factor of approximately 38 across the range and is
 already reduced sevenfold at CV 0.10, the smallest non-zero dispersion tested. The
 detected-event configuration is comparatively flat, declining from 18.4% to 7.5%, and its
-event-per-read count is stable at 1507–1625 across the whole sweep `[VERIFY]`, which is the
+event-per-read count is stable at 1507–1625 across the whole sweep, which is the
 segmentation behaving as intended: the number of events a read yields is determined by the
 number of level changes it contains and not by how long each level is held.
 
@@ -167,7 +169,7 @@ default CV indicated on the axis.
 The same sweep was run against RawHash2, given the same simulator-derived pore model, the same
 reference indexed on both strands, and the same signal files. Proportion of reads mapped within
 500 bases of the locus recorded in the read identifier, with matching strand
-`[TABLE 6.2]` `[VERIFY]`:
+`[TABLE 6.2]`:
 
 | minimizer window | CV 0.00 | 0.10 | 0.20 | 0.30 | 0.44 | 0.60 | change |
 |---|---|---|---|---|---|---|---|
@@ -198,15 +200,14 @@ flatness of an underlying encoding property and not a compensating effect downst
 The mechanism, visible in that system's source and consistent with every measurement taken
 here, is that its event-retention rule is applied **symmetrically to the reference encoding and
 to the query**: events whose level differs from the last retained event by less than a
-threshold are merged on both sides alike, retaining 73.4% of each `[VERIFY]`. Both sides
+threshold are merged on both sides alike, retaining 73.4% of each. Both sides
 therefore agree on how many events a given span contains, which is the property fixed-width
 segmentation loses as soon as dwell varies. This pipeline's reference encoder, by contrast,
 emits one event per k-mer unconditionally while its detector emits roughly 0.78. The mechanism
 has not been isolated by ablation and is stated as the explanation the evidence supports.
 
 A fairness note belongs with the numbers. The comparison system's default operating point is
-not zero-false-positive: 8–10% of control reads are mapped at window 0 and 11–15% at window 10
-`[VERIFY]`. Its 95% is therefore not level-comparable with the zero-false-positive rates of
+not zero-false-positive: 8–10% of control reads are mapped at window 0 and 11–15% at window 10. Its 95% is therefore not level-comparable with the zero-false-positive rates of
 §6.4, and the comparison drawn here is of *shape* — the response to the swept axis — not of
 level. The comparison system also receives whole reads of approximately 2500 bases where §6.4
 uses the first ten chunks, which favours it slightly. Neither consideration affects the
@@ -222,13 +223,12 @@ percentage points of correctly-mapped reads, is:
 
 | dwell CV | 0.00 | 0.10 | 0.20 | 0.30 | 0.44 | 0.60 |
 |---|---|---|---|---|---|---|
-| penalty (pts) | 12.8 | 13.0 | 12.4 | 15.0 | 15.2 | **21.0** |
-
-`[VERIFY]` `[FIG 6.2]`
+| penalty (pts) | 12.8 | 13.0 | 12.4 | 15.0 | 15.2 | **21.0** | `[FIG 6.2]`
 
 The penalty grows by approximately 64% across the range. At window 10 and CV 0.60, sketching
-costs 21 points of sensitivity and also raises the false-mapping rate from 8.4% to 15.2%
-`[VERIFY]`, so both error types worsen together.
+costs 21 points of sensitivity and also raises the false-mapping rate from 8.4% to 15.2%, so both error types worsen together.
+
+`[FIG 6.3]` The penalty against dwell dispersion.
 
 **The growth is not monotone, and the claim is made accordingly.** The series dips at
 CV 0.20, from 13.0 to 12.4 points, before rising. With one seed per cell and 500 reads, a
@@ -258,7 +258,7 @@ and that is not done here.
 
 An independent and much larger version of the same effect appears in this system, where
 sketching at window 10 under detected segmentation reduced the true positive rate to
-near zero against 18.2% at window 1 `[VERIFY]`. That magnitude is specific to a pipeline whose
+near zero against 18.2% at window 1. That magnitude is specific to a pipeline whose
 per-event agreement is low (Chapter 7) and should not be generalised.
 
 ---
@@ -273,7 +273,7 @@ the number of events it emits matches the number of bases the read contains, on 
 that one event per k-mer is the intended output. That target is wrong. At CV 0.44, a threshold
 producing 2017 events per read against an ideal of approximately 2000 yields a true positive
 rate of 2.0%, whereas a threshold producing 1562 events — deliberately under-segmenting by
-about 22% — yields 14.2% `[VERIFY]`. A sevenfold improvement is obtained by emitting
+about 22% — yields 14.2%. A sevenfold improvement is obtained by emitting
 materially fewer events than the nominally correct number.
 
 The asymmetry has a mechanism. A key is a window of `E` consecutive events. A spurious extra
@@ -285,7 +285,7 @@ general property of frame-based keying and not specific to this implementation.
 **6.7.2 A detector calibration does not transfer between signal generators.** The calibration
 derived against this project's own generator, applied unchanged to the external simulator,
 produced a true positive rate of 0.6% at CV 0 where the simulator-derived calibration produces
-18.4% — a factor of approximately 30 `[VERIFY]`. The two generators differ in their amplitude
+18.4% — a factor of approximately 30. The two generators differ in their amplitude
 noise model, and the detector's threshold is a t-statistic over sample windows, so its operating
 point depends on that model.
 
@@ -306,7 +306,7 @@ quantity could be derived from a dwell-time distribution, and does not do so. It
 therefore the CV = 0 case exactly, and no configuration of it produces time-domain noise.
 
 Measured consequence, with the same daemon, reference and duration, differing only in whether
-the simulator models dwell `[TABLE 6.3]` `[VERIFY]`:
+the simulator models dwell `[TABLE 6.3]`:
 
 | simulator | fixed-width accept | detected accept |
 |---|---|---|

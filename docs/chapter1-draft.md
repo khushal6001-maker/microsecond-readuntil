@@ -1,8 +1,10 @@
 # Chapter 1 — Introduction
 
-> **Draft status.** Structural first draft. `[VERIFY]` marks figures to be re-derived from a
-> recorded run before submission. Literature claims in this chapter are deliberately scoped to
-> the systems surveyed in Chapter 2; §1.7 states the scoping convention and the reason for it.
+> **Draft status.** Structural first draft. Every number is recomputed from a committed
+> file in `results/` by `scripts/verify_thesis_numbers.py`; `[UNVERIFIED]` marks the
+> exceptions, which Appendix F.3 lists and explains. `scripts/audit_manuscript.py` checks
+> that no marker, cross-reference or figure in this chapter dangles. Literature claims in this chapter are deliberately
+> scoped to the systems surveyed in Chapter 2; §1.7 states the convention and its reason.
 
 ---
 
@@ -36,7 +38,7 @@ arrivals is therefore the correct policy under saturation, and a client that blo
 merely slower but incorrect. Chapter 3 §3.5 develops this argument and Chapter 3 §3.1.3 derives
 the admissible service time it implies: with `C` active channels delivering a chunk every `T_c`
 and `W` workers, mean per-chunk service must satisfy `S < W·T_c/C`, which for 512 channels, a
-0.4 s cadence and two workers is 1.56 ms `[VERIFY]`.
+0.4 s cadence and two workers is 1.56 ms.
 
 These two framings are conventional in real-time systems and are, among the systems surveyed in
 Chapter 2, not the framings under which read-until clients are usually characterised; that
@@ -58,7 +60,7 @@ components.
 Its cost is architectural rather than algorithmic. The basecaller is typically a separate,
 accelerator-resident process, so the decision path spans a process boundary and a queue.
 Measured here, the orchestration of such a client — with basecalling and mapping removed, so
-that only its own loop remains — costs 124 µs per chunk `[VERIFY]`, which is already comparable
+that only its own loop remains — costs 124 µs per chunk, which is already comparable
 to a complete signal-space decision. Its polling interval additionally imposes a latency floor
 independent of how quickly any computation completes.
 
@@ -105,8 +107,9 @@ concatenating consecutive quantised values, hashing the concatenation, matching 
 — is the construction already published by the systems surveyed in Chapter 2 §2.4.3.
 
 **This thesis does not claim a superior end-to-end classifier.** At realistic dwell-time
-variability the system resolves 18.8% of on-target reads at a zero-false-positive threshold,
-where a current event-detecting mapper correctly maps 92.4% of the same reads `[VERIFY]`. The
+variability the system resolves 17.6% of on-target reads at a zero-false-positive threshold
+[16.6–18.8 across three seeds], where a current event-detecting mapper correctly maps 91.8%
+[91.2–92.4] of the same reads. The
 two figures are taken at different operating points and are compared on shape rather than level
 in Chapter 6 §6.5, but no reading of them favours the present system's accuracy, and none is
 offered.
@@ -119,7 +122,7 @@ default.
 
 **What the thesis delivers** is a characterised real-time data plane — single-copy admission,
 zero-copy propagation, lock-free handoff, state bounded in the number of channels, and
-per-chunk decision latency under 200 µs at genome scale `[VERIFY]` — together with a
+per-chunk decision latency under 200 µs at genome scale — together with a
 quantitative account of why this class of pipeline fails when its segmentation assumes constant
 translocation, and of why the evaluation practice represented by the simulators and benchmarks
 surveyed in Chapter 2 does not expose that failure.
@@ -174,7 +177,7 @@ between logical processor identifiers and physical cores. The methodological fin
 this timescale the instrument and the environment require the same scrutiny as the system under
 test. The substantive findings are that data-plane thread count dominates placement, and that
 processor pinning does not reduce the median but reduces the run-to-run spread of the 99th
-percentile from 133% to 8% `[VERIFY]`.
+percentile from 133% to 8%.
 
 **C4 — Time-domain noise as an evaluation axis (Chapter 6).** Dwell-time dispersion is swept
 over a coefficient of variation from 0 to 0.60 on an external simulator, with a
@@ -186,11 +189,11 @@ contrast, declines by three percentage points across the same range — which bo
 is stated in that chapter before any interpretation. The novel finding is narrower: the accuracy
 cost of minimizer sketching in that published mapper is dwell-dependent, rising from
 approximately 13 to 21 percentage points across the range with the false-mapping rate rising in
-parallel `[VERIFY]`, a dependence that the evaluation practice represented by the benchmark
+parallel, a dependence that the evaluation practice represented by the benchmark
 surveyed in Chapter 2 §2.6 does not measure. Separately, the simulator used to drive live
 read-until clients over the instrument's own API emits a fixed sample count per k-mer and
 therefore cannot exercise the axis: against it, the configuration that is worse on realistic
-signal measures 4.5 times better `[VERIFY]`.
+signal measures 4.5 times better.
 
 **C5 — An information-loss account of stages 2 and 3, and a comparative measurement
 (Chapter 7).** Two quantities govern how many true anchors a read can supply: `a`, the
@@ -203,8 +206,8 @@ symbol streams, applied identically to this pipeline and to a published mapper, 
 agreement figure computed two different ways for two systems is not a comparison. Second, the
 resulting measurement: this pipeline's frozen configuration achieves `a` = 0.783 at `g` = 0.196
 and `E` = 12, giving 14.9 anchor-eligible positions per read, against the published mapper's
-`a` = 0.911 at `g` = 0.092 and `E` = 8, giving 467 `[VERIFY]`. A 31-fold supply difference
-accounts for 18.8% accuracy against 92.4% on the same input without appeal to the decision
+`a` = 0.911 at `g` = 0.092 and `E` = 8, giving 467. A 31-fold supply difference
+accounts for 17.6% accuracy against 91.8% on the same input without appeal to the decision
 rule, and decomposes into a factor of 4.9 from key length and 9.3 from the encoding. Third,
 the design axis this exposes: the published mapper realises about 2.46 bits per event of a
 nominal 4 and applies one event-merging rule to both reference and query, trading alphabet and
@@ -299,7 +302,7 @@ Appendix D expands the retraction log.
 
 | | result | chapter |
 |---|---|---|
-| Per-chunk decision latency, genome scale | p50 134–174 µs, p99 630–705 µs, utilisation ≈ 0.1 | 5 |
+| Per-chunk decision latency, genome scale | p50 124.8 µs, p99 370 µs [347–1969], utilisation 0.08 | 5 |
 | Per-chunk decision latency, small reference | p50 16.3 µs, p90 24.7 µs | 5 |
 | Per-channel decision state | 3.0 KB (voting) / 14.0 KB (chaining) | 3, 4 |
 | Effect of pinning | median unchanged; p99 spread 133% → 8% | 5 |
@@ -310,9 +313,9 @@ Appendix D expands the retraction log.
 | Read-until simulator at constant dwell | reports the worse configuration as 4.5× better | 6 |
 | Per-event agreement, this pipeline frozen | `a` = 0.783, `g` = 0.196, 14.9 anchors/read | 7 |
 | Per-event agreement, published mapper | `a` = 0.911, `g` = 0.092, 467 anchors/read | 7 |
-| Anchor-supply gap accounting for 18.8% vs 92.4% | 31×, as 4.9× key length and 9.3× encoding | 7 |
+| Anchor-supply gap accounting for 17.6% vs 91.8% | 31×, as 4.9× key length and 9.3× encoding | 7 |
 | Realised quantiser entropy, published mapper | ≈2.46 bits of a nominal 4 | 7 |
 | Normalisation from whole read vs first chunk | agreement 0.556 → 0.726, yield 2.0× | 7 |
-| Interventions on stages 4–5 | six, none exceeding +32% relative | 4, 7 |
+| Interventions on stages 4–5 | six, none exceeding +35% relative | 4, 7 |
 
-All figures `[VERIFY]`.
+All figures.

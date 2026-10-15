@@ -141,6 +141,66 @@ if rh:
 else:
     MISS.append(("RawHash dwell sweep", "§6.5", "results/rawhash-dwell-sweep.csv absent"))
 
+# ---------------------------------------------------------------- RawHash, three seeds
+rhs = rows("rawhash-seeds.csv")
+if rhs:
+    per = {r["seed"]: r for r in rhs}
+    check("comparison mapper, three-seed mean correct %", "§1.4, §7.4.5, §8.3",
+          float(per["mean"]["correct_pct"]), 91.8)
+    check("comparison mapper, seed 42 reproduces the 92.4 figure", "§5.8.2, §6.5",
+          float(per["42"]["correct_pct"]), 92.4)
+    check("comparison mapper, range across seeds", "§1.4, §8.3",
+          [float(per[k]["correct_pct"]) for k in ("44", "42")], [91.2, 92.4])
+    check("its default operating point is not zero-false-positive", "§6.5, §7.4.5",
+          all(float(per[k]["false_mapped_pct"]) > 5.0 for k in ("42", "43", "44")), True)
+else:
+    MISS.append(("RawHash three-seed accuracy", "§1.4", "results/rawhash-seeds.csv absent"))
+
+# ---------------------------------------------------------------- regime R3 latency
+r3 = rows("r3-latency.csv")
+if r3:
+    runs = [r for r in r3 if r["run"] != "median"]
+    med = next(r for r in r3 if r["run"] == "median")
+    check("R3 runs captured", "§5.6 T5.2", len(runs), 9)
+    check("R3 p50, median of runs", "§5.6, §8.1, §1.9, §3.1.3", float(med["p50"]), 124.77)
+    check("R3 p90, median of runs", "§5.6", float(med["p90"]), 192.76)
+    check("R3 p99, median of runs", "§5.6, §1.9", float(med["p99"]), 370.15)
+    check("R3 p50 range across runs", "§5.6, §5.10",
+          [min(float(r["p50"]) for r in runs), max(float(r["p50"]) for r in runs)],
+          [115.59, 132.34])
+    check("R3 p99 range across runs", "§5.6, §5.10",
+          [min(float(r["p99"]) for r in runs), max(float(r["p99"]) for r in runs)],
+          [346.78, 1969.29])
+    check("R3 resident set, identical in every run", "§5.6, §8.1",
+          len({r["rss_gb"] for r in runs}) == 1 and float(med["rss_gb"]), 3.70)
+    check("R3 drops and late, zero in every run", "§5.6, §8.1, §3.5",
+          all(r["dropped"] == "0" and r["late"] == "0" for r in runs), True)
+    check("R3 offered chunk rate range", "§5.6, §3.1.3",
+          [min(int(r["chunks_per_s"]) for r in runs),
+           max(int(r["chunks_per_s"]) for r in runs)], [604, 645])
+    check("R3 utilisation at the median", "§5.6, §8.1, §3.1.3",
+          round(float(med["p50"]) / 1560.0, 3), 0.080, 0.02)
+    # What §5.6 says about the tail against the budget. Both percentiles cross it in the
+    # same single run, b1_1, whose p90 and mean are also the worst of the nine; the other
+    # eight sit entirely inside the budget through the 99.9th.
+    over99 = [r["run"] for r in runs if float(r["p99"]) > 1560.0]
+    over999 = [r["run"] for r in runs if float(r["p99_9"]) > 1560.0]
+    check("p99 exceeds the 1.56 ms budget in exactly one run", "§5.6, §8.1", over99, ["b1_1"])
+    check("p99.9 exceeds the budget in the same single run", "§5.6, §8.1",
+          over999, ["b1_1"])
+    check("eight of nine runs are inside the budget through p99.9", "§5.6, §8.1",
+          len(runs) - len(over999), 8)
+    check("the crossing run is the worst at p90 and mean too", "§5.6",
+          max(runs, key=lambda r: float(r["p90"]))["run"] == "b1_1"
+          and max(runs, key=lambda r: float(r["mean"]))["run"] == "b1_1", True)
+    # The superseded figures, asserted to be superseded.
+    check("no run reaches the withdrawn p50 lower bound of 134", "§5.6",
+          max(float(r["p50"]) for r in runs) < 134.0, True)
+    check("exactly one run falls in the withdrawn p99 range 630-705", "§5.6",
+          sum(1 for r in runs if 630.0 <= float(r["p99"]) <= 705.0), 1)
+else:
+    MISS.append(("regime R3 latency", "§5.6 T5.2", "results/r3-latency.csv absent"))
+
 # ---------------------------------------------------------------- agreement
 ag = rows("agreement-summary.csv")
 if ag:
@@ -206,26 +266,47 @@ if gx:
 # transcription rather than a captured output -- see that file's header.
 dr = rows("decision-rules.csv")
 if dr:
-    def d(rule, lookback="", occ=""):
+    def d2(rule, lookback, occ, key):
         for r in dr:
             if r["rule"] == rule and r["lookback"] == lookback and r["occ_filter"] == occ:
-                return float(r["zeroFP_TPR"])
+                v = r[key]
+                return v if key == "median_votes" else float(v)
         return None
 
+    def d(rule, lookback="", occ="no"):
+        return d2(rule, lookback, occ, "tpr_mean")
+
     votes = d("exact-diagonal votes (256 counters)")
-    anchor = d("anchor-history chains", "48", "no")
-    check("best intervention is +32% relative over votes", "§7.6, §1.5, §8.3",
-          round(100 * (anchor / votes - 1)), 32, 0.04)
-    check("the 18.8% headline", "§1.4, §7.1, §7.4.5, §8.3", anchor, 18.8)
+    anchor48 = d("anchor-history chains", "48", "no")
+    anchor128 = d("anchor-history chains", "128", "no")
+    check("headline accuracy, three-seed mean", "§1.4, §7.1, §7.4.5, §8.3", anchor48, 17.6)
+    check("headline accuracy, range", "§1.4, §7.1, §8.3",
+          [d2("anchor-history chains", "48", "no", k) for k in ("tpr_lo", "tpr_hi")],
+          [16.6, 18.8])
+    check("18.8 is the seed-42 value, not the mean", "§4.7.3",
+          d2("anchor-history chains", "48", "no", "tpr_s42"), 18.8)
+    check("votes, three-seed mean", "§4.7.3, §7.6", votes, 14.1)
+    check("best intervention is +35% relative over votes", "§7.6, §1.5, §8.3",
+          round(100 * (anchor128 / votes - 1)), 35, 0.04)
+    check("longer look-back DOES help", "§4.7.3, T7.3", anchor128 > anchor48, True)
+    check("longer look-back helps in every seed", "§4.7.3",
+          all(d2("anchor-history chains", "128", "no", k)
+              > d2("anchor-history chains", "48", "no", k)
+              for k in ("tpr_s42", "tpr_s43", "tpr_s44")), True)
+    check("longer look-back, three-seed mean", "§4.7.3, T7.3", anchor128, 19.0)
     check("beta=0 control is worse than votes", "§4.7.3",
-          d("greedy chains (control)", "", "") < votes, True)
-    check("longer look-back does not help", "§4.7.3, T7.3", d("anchor-history chains", "128", "no"), 18.0)
-    check("occurrence filtering does not help", "§4.7.3, T7.3", d("anchor-history chains", "48", "yes"), 17.8)
-    # Cross-file agreement on the two rows both files carry.
+          d("greedy chains (control)") < votes, True)
+    check("occurrence filtering does not help", "§4.7.3, T7.3",
+          d("anchor-history chains", "48", "yes"), 16.3)
+    check("median best-chain score on on-target reads", "§7.5, §8.3",
+          d2("anchor-history chains", "48", "no", "median_votes"), "4")
+    # Cross-file agreement on the two rows both files carry, at seed 42.
     if gx:
-        check("14.2 agrees across the two files", "§4.7.3 vs §7.6", votes, g("4x12", "votes"))
-        check("17.4 agrees across the two files", "§4.7.3 vs §7.6",
-              d("greedy chains", "", ""), g("4x12", "chain"))
+        check("14.2 agrees across the two files at seed 42", "§4.7.3 vs §7.6",
+              d2("exact-diagonal votes (256 counters)", "", "no", "tpr_s42"),
+              g("4x12", "votes"))
+        check("17.4 agrees across the two files at seed 42", "§4.7.3 vs §7.6",
+              d2("greedy chains", "", "no", "tpr_s42"), g("4x12", "chain"))
 else:
     MISS.append(("decision-rule comparison", "§4.7.3 T4.2", "results/decision-rules.csv absent"))
 
@@ -271,6 +352,10 @@ check("utilisation at R3 p50 174 us against the bound", "§5.6, §8.1",
       round(174 / 1560.0, 2), 0.11, 0.05)
 check("3.1 Gb against 64 Mb is 'roughly fifty times'", "§8.4",
       round(3.1e9 / 64e6), 48, 0.05)
+# From the daemon's own index line, reproduced in every results/r3-raw/r3_frozen_*.log.
+check("minimizers at window 1 on chr20", "App C.1, §5.6",
+      round(63981218 / 1e6, 1), 63.9, 0.01)
+check("reference bases indexed", "§5.6", round(63981237 / 1e6), 64, 0.01)
 
 # ---------------------------------------------------------------- report
 W = 62
@@ -293,21 +378,15 @@ if MISS:
 print("\n" + "=" * 78)
 print("OUTSTANDING: claims no committed file can settle")
 print("=" * 78)
-for claim, where, needs in [
-    ("Regime R3 latency: p50 134-174 us, p99 630-705 us, 3.9-4.4 GB, 975 chunk/s",
-     "§5.6 T5.2, §8.1, §1.9",
-     "re-run at minimizer window 1 with --latency-out. The chr20 dumps in results/hgrm "
-     "are window-10 runs (p50 22-26 us) and do NOT back this figure"),
+OUTSTANDING = [
+
     ("readfish orchestration: 124 us/chunk, 15.6-25.3% of a core, 86-663 MB",
      "§5.8.1, §8.1, §8.3", "re-run readfish with the no-op caller, capture to results/"),
     ("This system's processor use: 182-202% of one core", "§5.8.1, §8.1",
      "capture alongside the readfish comparison"),
     ("RawHash2 9.66 ms/read against ~1.34 ms", "§5.8.2",
      "re-run both single-threaded with /usr/bin/time, capture to results/"),
-    ("This pipeline's headline accuracy, 18.8%", "§1.4, §5.8.2, §7.1, §8.3",
-     "it is the anchor-history chainer row of decision-rules.csv, which is a TRANSCRIPTION "
-     "and not a captured run. geometry-x-chaining.csv corroborates 14.2 and 17.4 but not "
-     "18.8. Re-run bench/squig_sweep.cpp in anchor-history mode and replace that file"),
+
     ("Vote-table lockout: 0 accepts of 763; 854 of 1366 at 37 kb", "§4.4, T8.1",
      "recoverable only by re-running the pre-fix binary; cite the commit instead"),
     ("Chunk-relative diagonal: 49/300 -> 7/300, corrected 118->160->170->196",
@@ -316,24 +395,25 @@ for claim, where, needs in [
      "re-run; superseded in part by §7.4.4's whole-read result, which IS backed"),
     ("Realised key entropy ~18 bits below nominal; 3x8 truncates 99.3%", "§7.3.1, §7.10",
      "re-run bench/real_reference.cpp, capture to results/"),
-    ("Median best-chain score of 4 on on-target reads", "§7.5, §8.3",
-     "re-run; this is the observation the whole of §7.5 is compared against"),
+
     ("Two-scale detector: 3 against 38 correct diagonals at CV 0.50", "T8.1 row 9",
      "the implementation was reverted; cite the commit that reverted it"),
     ("Difference keys: 18.8% falling to 2.8-8.4%", "§7.6, T8.1 row 10",
      "delta_keys is still in QuantConfig; re-runnable with bench/squig_sweep.cpp"),
-    ("Index footprint 63.9M vs 11.7M minimizers, 3.9 vs 1.6 GB", "App C.1, §3.6.3",
-     "re-run index build at both windows, capture to results/"),
+    ("Index footprint at window 10: 11.7M minimizers, 1.6 GB", "App C.1, §3.6.3",
+     "the WINDOW 1 half is now captured (63.9M minimizers, 3.70 GB, in every "
+     "results/r3-raw/r3_frozen_*.log). Re-run the window-10 build for the other half"),
     ("Withdrawn figures in T8.1 rows 1, 2, 3 (111.93/112.12/223.66/447.59; 27.0-27.3 "
      "and 17.9-18.8; 9.2 ms and 1.5 ms)", "§5.2.2, §5.3.1, T8.1",
      "these are withdrawn results and are quoted as such; the ORIGINAL runs are gone. "
      "Cite the session record, or re-state as 'approximately'"),
-]:
+]
+for claim, where, needs in OUTSTANDING:
     print(f"\n  {claim}")
     print(f"    cited at : {where}")
     print(f"    needs    : {needs}")
 
 print()
 print(f"summary: {len(PASS)} agree, {len(FAIL)} disagree, {len(MISS)} missing file, "
-      f"14 outstanding")
+      f"{len(OUTSTANDING)} outstanding")
 sys.exit(1 if FAIL else 0)

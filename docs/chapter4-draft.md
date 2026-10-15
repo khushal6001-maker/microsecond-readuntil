@@ -1,7 +1,9 @@
 # Chapter 4 — Streaming Decision Structures
 
-> **Draft status.** Structural first draft. `[VERIFY]` marks figures to be re-derived from a
-> recorded run; `[TABLE 4.x]` / `[FIG 4.x]` mark artefacts still to be produced.
+> **Draft status.** Structural first draft. Every number is recomputed from a committed
+> file in `results/` by `scripts/verify_thesis_numbers.py`; `[UNVERIFIED]` marks the
+> exceptions, which Appendix F.3 lists and explains. `scripts/audit_manuscript.py` checks
+> that no marker, cross-reference or figure in this chapter dangles.
 
 ---
 
@@ -34,7 +36,7 @@ complete stream before producing an answer is inadmissible regardless of its acc
 **C3 — Bounded per-observation cost.** The service-time budget derived in Chapter 3 §3.1.3
 is a mean over all work in a chunk, and the candidate count per chunk is itself variable
 (measured medians range from under one to approximately ninety-six depending on reference
-scale `[VERIFY]`). Per-observation cost must therefore be bounded by a small constant, not
+scale). Per-observation cost must therefore be bounded by a small constant, not
 amortised over a long stream.
 
 **C4 — No allocation.** The structure is on the decision path, which Chapter 3 establishes
@@ -80,12 +82,12 @@ C3, and the cost of that choice is a weaker worst-case bound, stated quantitativ
 
 The table comprises `S` = 64 sets of `K` = 4 ways, giving 256 counters. Each entry holds a
 64-bit diagonal and a 32-bit count, so an entry is 12 bytes and the table is 3.0 KB per
-channel — 1.57 MB across 512 channels and 8.22 MB across 2675 `[VERIFY]`.
+channel — 1.57 MB across 512 channels and 8.22 MB across 2675.
 
 **Table 4.1** The two decision structures, against the classical alternative at the same
 counter count. Update cost is what rules classical Misra–Gries out here: decrementing every
 counter on a miss is O(n) on the decision path, and at 256 counters that is 256 writes per
-observation against four `[VERIFY]`.
+observation against four.
 
 | structure | counters | bytes/channel | update cost | retention threshold |
 |---|---|---|---|---|
@@ -136,8 +138,7 @@ justification is empirical, resting on the measured behaviour of §4.7, not on a
 ### 4.3.4 Querying the maximum
 
 The reported decision is the largest count in the table, obtained by scanning all 256
-counters once per chunk — 48 cachelines, a cost of order 0.1 µs at the measured clock
-`[VERIFY]`.
+counters once per chunk — 48 cachelines, a cost of order 0.1 µs at the measured clock.
 
 A running maximum updated on each insertion was implemented first and is incorrect. Because
 step 2 of the update rule may *decrement* an entry, a running maximum records the historical
@@ -173,7 +174,7 @@ density, which is why it survived initial testing. With approximately one candid
 condition stays satisfiable. With approximately ninety-six candidates per chunk — a 64 Mb
 reference — every way of every set passes two votes within the first chunk, and any diagonal
 not among the first few observed can never be installed. The measured consequence was 0
-accepts from 763 decisions `[VERIFY]`, where the same binary on the smaller reference
+accepts from 763 decisions `[UNVERIFIED — App. F.3]`, where the same binary on the smaller reference
 accepted 854 of 1366.
 
 **Lesson.** A bounded structure's correctness argument must be stated in terms of the arrival
@@ -205,7 +206,7 @@ never across chunks, and the per-chunk evidence is a small fraction of a read's 
 **The diagnostic is the transferable part.** The symptom was not a low score, which would
 have been attributed to weak signal and investigated in the matching stage. It was an
 *inverted* relationship: the fraction of reads whose best diagonal was the correct one
-*decreased* with read length, from 49/300 at two chunks to 7/300 at twenty `[VERIFY]`.
+*decreased* with read length, from 49/300 at two chunks to 7/300 at twenty `[UNVERIFIED — App. F.3]`.
 Additional evidence producing a worse answer cannot be explained by insufficient evidence; it
 is the signature of accumulating a quantity other than the intended one. Monotonicity in
 evidence is therefore a cheap and sensitive invariant to assert, and it is now checked
@@ -213,7 +214,7 @@ explicitly in the offline harness.
 
 The correction carries a running count of events consumed by the read and expresses diagonals
 read-relative. With it, correct-diagonal counts rise with read length as they must:
-118 → 160 → 170 → 196 of 300 `[VERIFY]`.
+118 → 160 → 170 → 196 of 300.
 
 ---
 
@@ -288,38 +289,55 @@ An **anchor-history** realisation retains a ring of the most recent 1024 anchors
 with the best chain score ending at each, and scores a new anchor against up to `L` = 48
 recent predecessors, taking the maximum. This is minimap2-style best-predecessor scoring
 restricted to a bounded look-back. Footprint is 14 bytes per anchor, 14.0 KB per channel,
-7.34 MB across 512 channels and 38.35 MB across 2675 `[VERIFY]`. Update is O(L) per anchor,
+7.34 MB across 512 channels and 38.35 MB across 2675. Update is O(L) per anchor,
 paid once and never re-paid when later chunks arrive.
 
-Measured at the operating point of Chapter 6 `[TABLE 4.2]` `[VERIFY]`:
+Measured at the operating point of Chapter 6, three seeds, 500 reads per cell, true-positive
+rate at the lowest threshold giving zero false positives on that seed's own control
+`[TABLE 4.2]`:
 
-| decision rule | TPR at zero false positives | corroborated |
-|---|---|---|
-| exact-diagonal votes, 256 counters | 14.2% | yes |
-| chains, β = 0, 24 chains *(control)* | 9.6% | no |
-| chains, β = 12, 24 chains | 17.4% | yes |
-| anchor-history chains, β = 12, L = 48 | 18.8% | **no** |
-| anchor-history chains, L = 128 | 18.0% | no |
-| anchor-history chains, with occurrence filtering | 17.8% | no |
+| decision rule | seed 42 | seed 43 | seed 44 | mean [range] |
+|---|---|---|---|---|
+| exact-diagonal votes, 256 counters | 14.2 | 15.0 | 13.0 | 14.1 [13.0–15.0] |
+| chains, β = 0, 24 chains *(control)* | 9.6 | 10.8 | 7.0 | 9.1 [7.0–10.8] |
+| chains, β = 12, 24 chains | 17.4 | 16.6 | 15.6 | 16.5 [15.6–17.4] |
+| anchor-history chains, β = 12, L = 48 | 18.8 | 17.4 | 16.6 | 17.6 [16.6–18.8] |
+| anchor-history chains, L = 128 | 19.6 | 19.4 | 18.0 | **19.0** [18.0–19.6] |
+| anchor-history chains, L = 48, occurrence filtering | 17.8 | 15.8 | 15.4 | 16.3 [15.4–17.8] |
 
-**A provenance note on this table, because one of its rows is the thesis's headline accuracy.**
-The rows marked corroborated appear independently in `results/geometry-x-chaining.csv`, which is
-a captured tool output. The remainder, including the 18.8% that §7.1 and Chapter 8 quote
-against the comparison mapper's 92.4%, exist only as a transcription from a session log
-(`results/decision-rules.csv`, whose header says so). The two figures are consistent — 17.4%
-for the greedy chainer is corroborated and 18.8% for the anchor-history chainer is the same
-measurement with a better chainer — but a headline number resting on a transcription is a
-weaker thing than one resting on a captured run, and a reader is entitled to know which this
-is. Re-running the four uncorroborated rows is listed in Chapter 8 §8.4 and is cheap.
+`[FIG 4.1]` The same six rules with their across-seed ranges drawn, which is the form in
+which the overlap between adjacent rules is visible.
+
+Raw output for all eighteen runs is in `results/decision-rules-raw/`, each log carrying its own
+command line, and the table is in `results/decision-rules.csv`.
+
+**What replicating this table changed.** An earlier version reported single-run figures, and
+it is reproduced here because two of its claims did not survive. Five of the six single-run
+values are reproduced exactly at seed 42. The sixth, anchor-history at `L` = 128, was reported
+as 18.0% and measures 19.6% at seed 42; 18.0% is that configuration's *seed 44* value, so the
+original table mixed seeds without saying so.
+
+The consequence is that **increasing look-back from 48 to 128 does help**, by 1.4 points of
+mean true-positive rate and in every seed individually. The earlier text asserted the opposite.
+Occurrence filtering still does not help, at 16.3% against 17.6%, and that claim is unchanged.
+
+**The spread is the other lesson.** Across seeds, single rules vary by up to 3.8 points —
+the β = 0 control spans 7.0 to 10.8 — which is comparable to the gaps *between* rules. The
+15.6–17.4 range of greedy chaining and the 16.6–18.8 range of anchor-history chaining overlap
+substantially. The ordering is stable (anchor-history beats greedy in every seed, and both beat
+voting in every seed), but the margins are not resolvable at one seed, and any single-run
+comparison between two adjacent rows of this table would have been noise.
 
 The `β = 0` control is the informative row. It isolates the tolerance from the restructuring:
-with tolerance removed, chaining is *worse* than the vote table (9.6% against 14.2%), which is
-the expected result given that it tracks 24 candidates where the table tracks 256. The
-improvement from 14.2% to 18.8% is therefore attributable to the tolerance and not to the
-change of data structure — a distinction that a comparison without the control could not
-support.
+with tolerance removed, chaining is *worse* than the vote table, 9.1% against 14.1% at the
+three-seed mean, which is the expected result given that it tracks 24 candidates where the
+table tracks 256. The improvement from 14.1% to 17.6% is therefore attributable to the
+tolerance and not to the change of data structure — a distinction that a comparison without
+the control could not support, and the one row of this table whose margin is comfortably
+larger than the seed-to-seed spread.
 
-Increasing look-back from 48 to 128 does not help, and occurrence filtering does not help.
+Increasing look-back from 48 to 128 **does** help, by 1.4 points and in every seed, which
+replication established and a single run had not. Occurrence filtering does not help.
 Chapter 7 explains why the whole family saturates near 19%: the structures are reorganising an
 expected 1.85 true anchors per read, and no reorganisation of two anchors yields a confident
 decision.

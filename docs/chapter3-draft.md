@@ -1,8 +1,9 @@
 # Chapter 3 — System Architecture
 
-> **Draft status.** Structural first draft. Markers used throughout:
-> `[VERIFY]` a figure taken from session logs that must be re-derived from a recorded run
-> before it enters the thesis; `[TABLE 3.x]` / `[FIG 3.x]` artefacts still to be produced.
+> **Draft status.** Structural first draft. Every number is recomputed from a committed
+> file in `results/` by `scripts/verify_thesis_numbers.py`; `[UNVERIFIED]` marks the
+> exceptions, which Appendix F.3 lists and explains. `scripts/audit_manuscript.py` checks
+> that no marker, cross-reference or figure in this chapter dangles.
 
 ---
 
@@ -40,9 +41,10 @@ service time that keeps the system stable (utilisation ρ = λ·S/W < 1) is boun
 &nbsp;&nbsp;&nbsp;&nbsp;S < W / λ = W·T_c / C
 
 For `W` = 2 and the figures above, `S` < 1.56 ms per chunk. The measured median per-chunk
-decision cost of the frozen configuration is 134–174 µs `[VERIFY]`, giving ρ ≈ 0.09–0.11 at
-two workers. The observed sustained rate in the live rig was 975 chunk/s with zero chunks
-dropped `[VERIFY]`, consistent with that utilisation. The practical consequence is that the
+decision cost of the frozen configuration is 124.8 µs over nine runs, giving ρ = 0.080 at
+two workers. The live rig offered 604–645 chunk/s with zero chunks dropped and zero deadline
+misses recorded, consistent with that utilisation; the offered rate is set by the simulator's
+channel count, sample rate and read length rather than by the daemon. The practical consequence is that the
 data plane is not the capacity constraint; the matching stage is, and Chapter 7 quantifies
 why.
 
@@ -57,6 +59,9 @@ initialisation. Section 3.6 gives the resulting byte budget.
 ---
 
 ## 3.2 Ingestion: single-copy admission, zero-copy propagation
+
+`[FIG 3.1]` The data plane end to end, with the copy boundary marked: one copy, performed by
+the protobuf runtime into arena-backed storage, and none downstream of it.
 
 **3.2.1 What the transport boundary does not permit.** The client communicates with MinKNOW
 over gRPC with TLS, consuming a server-streaming `get_live_reads` response. gRPC
@@ -99,7 +104,7 @@ and server, which is the division that corresponds to what the implementation co
 **Table 3.1** `ChunkRef` field layout. Field order is chosen for size rather than for reading
 order: the eight-byte members are declared first and the narrow ones packed into the tail.
 Declared in reading order the structure is 72 bytes; packed it is 56, and the compile-time
-assertion that it does not exceed 64 is what caught the difference `[VERIFY]`.
+assertion that it does not exceed 64 is what caught the difference.
 
 | field | type | bytes | purpose |
 |---|---|---|---|
@@ -140,8 +145,7 @@ Passing pointers into arena-owned storage across threads replaces a copying cost
 lifetime obligation. The protocol that discharges it is the most subtle part of the data
 plane and is set out here in full.
 
-**3.3.1 The protocol.** A fixed pool of arena slots is allocated at startup `[VERIFY: 32
-slots]`. The reader acquires a slot, deserialises one response into it, constructs a
+**3.3.1 The protocol.** A fixed pool of arena slots is allocated at startup. The reader acquires a slot, deserialises one response into it, constructs a
 descriptor per chunk, and pushes each descriptor to the shard selected by its channel. A
 worker that has finished reading a chunk's signal releases the slot. The release that drives
 the count to zero resets the arena and returns the slot to the free list.
@@ -167,7 +171,7 @@ arena and hands out spans over it; workers verify that value. If the protocol pe
 reset while a span was still live, the magic value would be clobbered and the check would
 fail. Independently, the test is run under AddressSanitizer, under which a premature reset
 manifests as a use-after-free at the point of access rather than as silent corruption. The
-pool is deliberately starved relative to the number of workers `[VERIFY: 8 slots, 4 workers]`
+pool is deliberately starved relative to the number of workers
 so that the handoff runs at saturation. The test further asserts that no slot leaks and that
 each acquisition is matched by exactly one reset, the latter using a per-slot cycle counter.
 
@@ -179,7 +183,8 @@ matters because the sanitiser configurations are the ones in which the protocol 
 validated and those builds are substantially faster and simpler without the generated
 transport code. The abstraction is static, so it costs no indirection on the decision path.
 
-`[FIG 3.1]` Arena slot state machine: free → acquired (count 1, reader) → dispatched (count
+`[FIG 3.2]` Arena slot lifetime, and the reset-under-dispatch race the reader's own
+reference makes unrepresentable: free → acquired (count 1, reader) → dispatched (count
 1 + n pushed) → draining → reset → free.
 
 ---
@@ -242,7 +247,7 @@ and no cross-channel ordering has semantic content.
 **Table 3.2** Ring geometry. Capacity is a power of two so that the index is a mask rather
 than a modulus, and the full `Capacity` is usable rather than `Capacity - 1`, because the
 free-running 64-bit counters distinguish an empty ring from a full one without sacrificing a
-slot `[VERIFY]`.
+slot.
 
 | ring | element | capacity | element bytes | slots bytes | per shard |
 |---|---|---|---|---|---|
@@ -283,7 +288,7 @@ which is asserted by the stress test under contention, with the further requirem
 every pushed element is eventually consumed exactly once. This is the property that makes
 loss accountable: a run reports how many chunks it declined, so a reported decision rate can
 never be inflated by silently discarded work. Chapter 5 reports zero drops at the measured
-operating point `[VERIFY]`, which is a statement about headroom and not about the policy
+operating point, which is a statement about headroom and not about the policy
 being untested — the policy is exercised deliberately in the stress test at saturation.
 
 **3.5.3 What loss costs.** Discarding a chunk does not discard a read. A read contributes
@@ -300,12 +305,12 @@ decision depended on a single sample.
 a chunk counter, the accumulated event base used to express positions in read-relative
 coordinates, and the decision structure of Chapter 4. The decision structure dominates: the
 bounded vote table occupies approximately 3 KB per channel, giving approximately 1.5 MB
-across 512 channels `[VERIFY]`; the anchor-history chainer occupies approximately 14 KB per
+across 512 channels; the anchor-history chainer occupies approximately 14 KB per
 channel. Thread-local scratch for quantisation and probing is sized per worker rather than
 per channel and is therefore O(W).
 
 **Table 3.3** Per-channel byte budget. The decision structure dominates by two orders of
-magnitude; everything else is a handful of words `[VERIFY]`.
+magnitude; everything else is a handful of words.
 
 | structure | bytes/channel | C = 512 | C = 2675 |
 |---|---|---|---|
@@ -332,7 +337,7 @@ analyses what that summary loses — a Misra-Gries style guarantee for the vote 
 bounded look-back for the chainer.
 
 **3.6.3 Where the memory actually goes.** The per-channel budget is a small fraction of
-resident memory; the index dominates, at 1.6–4.4 GB depending on configuration `[VERIFY]`.
+resident memory; the index dominates, at 1.6–4.4 GB depending on configuration.
 This is worth stating plainly because it locates the engineering achievement correctly: the
 contribution of bounded per-channel state is that it does not *grow*, not that it is the
 largest term.
@@ -340,6 +345,9 @@ largest term.
 ---
 
 ## 3.7 Thread topology and processor affinity
+
+`[FIG 3.3]` The measurement host's SMT sibling map, with the defective placement of §5.4 and
+the corrected one derived from the kernel's sibling sets.
 
 **3.7.1 Roles.** The data plane runs one reader (draining the gRPC stream), one action
 writer (dispatching ejection requests), and `N` workers, one per shard. Total thread count
@@ -370,7 +378,7 @@ against pinning establishes that the dominant effect is whether the data-plane t
 fits the physical core count, not how threads are placed within it. Pinning's
 measurable benefit is not a lower median but a reproducible tail: at a fixed thread count the
 pinned and unpinned medians are not separable, while the run-to-run spread of the 99th
-percentile differs by an order of magnitude `[VERIFY: 8% against 133%]`. The practical
+percentile differs by an order of magnitude. The practical
 guidance that follows is to size the shard count to the available physical cores first and
 treat pinning as a variance-reduction measure.
 
@@ -378,7 +386,7 @@ treat pinning as a variance-reduction measure.
 by spinning for a bounded number of iterations before yielding. This removes the wakeup
 latency of a blocking wait from the critical path at the cost of occupying a core while idle.
 The cost is measurable and substantial: aggregate CPU utilisation is 182–202% of one core
-against a basecalling-based client's 15.6–25.3% for comparable orchestration `[VERIFY]`. This
+against a basecalling-based client's 15.6–25.3% for comparable orchestration. This
 is a deliberate trade and is reported as one. On a dedicated sequencing host the trade is
 favourable, since the alternative use of those cycles is nil; on a shared host it is not, and
 the configuration should be revisited. The word "efficient" is not applicable to this design
@@ -393,7 +401,7 @@ one worker; the reader and writer are one each regardless.
 | 2 | 1 | 1 | 2 | 4 | yes |
 | 4 | 1 | 1 | 4 | 6 | no, oversubscribed |
 
-`[TABLE 3.4]` `[VERIFY]`
+`[TABLE 3.4]`
 
 
 ---
@@ -439,7 +447,9 @@ O(channels) with compile-time per-channel constants and no allocation on the dec
 Thread placement is derived from the operating system's sibling topology rather than from an
 assumed processor numbering, and the system reports when it has been forced to oversubscribe.
 
-Measured per-chunk decision latency of 134–174 µs at the median corresponds to a utilisation
-of approximately 0.1 at two workers and 512 channels `[VERIFY]`, with no chunks dropped at the
-sustained observed rate. The data plane is consequently not the limiting component of the
+Measured per-chunk decision latency of 124.8 µs at the median corresponds to a utilisation
+of 0.080 at two workers and 512 channels, with no chunks dropped at the offered rate. The
+upper percentiles are a different matter: §5.6 reports eight of nine runs inside the budget
+through the 99.9th percentile and one run outside it at both the 99th and the 99.9th, on a
+platform §3.8 has already said cannot be trusted there. The data plane is consequently not the limiting component of the
 system; Chapters 6 and 7 identify and quantify what is.

@@ -249,7 +249,7 @@ read-until clients are, and decisive for any client that segments raw signal by 
 Fixed-width segmentation is *exactly* correct under constant dwell. A signal-space client can
 therefore measure as accurate against Icarust and fail on an instrument.
 
-Measured on the same daemon, same reference, same 22 s run `[VERIFY]`:
+Measured on the same daemon, same reference, same 22 s run:
 
 | Icarust configuration | fixed-width segmentation | event detection |
 |---|---|---|
@@ -274,7 +274,7 @@ should not be cross-compared.
 
 so the distribution's mean is the nominal sample count. Lognormal because dwell is positive
 and right-skewed, and because it is the long holds that displace segmentation; published R10
-variability is roughly CV 0.3–0.5 `[VERIFY]`. Draws are clamped below at one sample — a k-mer
+variability is roughly CV 0.3–0.5. Draws are clamped below at one sample — a k-mer
 contributing nothing is a skip, which is a different phenomenon — and above at eight times
 nominal, beyond which it is a pore block rather than a dwell.
 
@@ -300,7 +300,7 @@ this patch does not.
 # Appendix C — Frozen parameters
 
 Each entry gives the value, the file it is defined in, and the measurement recorded in the
-source comment that selected it. Figures are `[VERIFY]` throughout. Three of these parameters
+source comment that selected it. Figures are throughout. Three of these parameters
 were frozen more than once; §6.9 and §7.3.3 explain why, and Appendix D records the withdrawn
 freezes.
 
@@ -350,7 +350,10 @@ chr20 at dwell CV 0.35 with detection, 400 reads, zero-FP threshold, 10-chunk re
 
 The cost of disabling it is real and is reported with the benefit: 63.9 M minimizers against
 11.7 M for chr20, approximately 3.9 GB resident against 1.6 GB, and a p50 decision latency of
-174 µs against 25 µs. Windows 2 and 3 were measured as intermediate points and lose most of
+174 µs against 25 µs. The window-1 half of that comparison is now measured directly — 63.9 M
+minimizers and 3.70 GB resident, in every `results/r3-raw/r3_frozen_*.log`, and a p50 of
+124.8 µs rather than 174 — so this comment's window-1 figures are to be corrected; the
+window-10 half `[UNVERIFIED — App. F.3]` is not captured. Windows 2 and 3 were measured as intermediate points and lose most of
 the accuracy (14.3% and 1.5% live accept against 97.5% at window 1 before thresholding), so
 the trade is not smooth and there is no cheap middle.
 
@@ -445,7 +448,7 @@ unrelated loci are not stitched together.
 is the structural difference from a batch chainer that re-chains every accumulated anchor on
 every chunk and so does work quadratic in chunk count over a read (§4.8, and the untested
 hypothesis of §5.8.2). minimap2 uses 25–50 with an early exit and RawHash's `--max-iterations`
-defaults to 200 `[VERIFY]`; 48 sits inside that range.
+defaults to 200; 48 sits inside that range.
 
 `max_occ` = 0 disables the occurrence filter. The probe returns at most
 `SeedMatches::kMaxPerSeed` positions, so a saturated count indicates an ambiguous key;
@@ -458,7 +461,7 @@ anchor-history chainer (§3.6, §4.8).
 
 64 sets × 4 ways, `kDiagCapacity = 16384`, 3.0 KB per channel. Update is O(ways) = O(4) rather
 than O(counters) = O(256); the expected frequency threshold is m/320 against classical
-Misra–Gries at m/257 for the same footprint (§4.3.3) `[VERIFY]`.
+Misra–Gries at m/257 for the same footprint (§4.3.3).
 
 Diagonals are made read-relative by passing the running count of events consumed by the read,
 which is the correction of row 7 of Table 8.1:
@@ -567,7 +570,9 @@ read-relative; correct-diagonal counts then rise with read length as they must, 
 
 **D.8 — The headline framing (framing; §5.8, Chapter 7).** *Withdrawn:* the positioning of the
 work as a competitive signal-space mapper. *Diagnosis:* a baseline run of RawHash2 on identical
-input with the same pore model resolved 92.4% of reads against this system's 18.8%. Every prior
+input with the same pore model resolved 92.4% of reads against this system's 18.8% — the
+seed-42 values; replication later put the pair at 91.8% and 17.6% (F.1), which does not
+disturb the conclusion drawn at the time. Every prior
 intervention had been measured against this system's own earlier numbers, which rose and fell
 credibly and gave no indication that the ceiling lay in an earlier pipeline stage.
 *Replacement:* the three contributions the measurements support — the data plane, the
@@ -588,7 +593,7 @@ calibration of Appendix C.2.
 
 **D.10 — Difference-based key encoding (algorithm; §7.6).** *Withdrawn:* the proposal that
 encoding successive level *differences* would remove the shared per-read normalisation error.
-*Diagnosis:* measured worse, 18.8% falling to 2.8–8.4%. The encoding retained one symbol per
+*Diagnosis:* measured worse, falling from the high teens to 2.8–8.4%. The encoding retained one symbol per
 event and changed only what the symbol encoded, so E agreements were still required while each
 symbol became noisier, being a function of two noisy levels rather than one. *Replacement:*
 rejected. §7.8 distinguishes it from *merging*, which reduces E and is untested.
@@ -707,7 +712,7 @@ error rather than as a YAML error, which is what makes it expensive to diagnose.
 
 # Appendix F — Verification register
 
-Every number in Chapters 1 to 8 was marked `[VERIFY]` on first drafting, on the principle that
+Every number in Chapters 1 to 8 was marked on first drafting, on the principle that
 a figure lifted from a session log is not a measurement until something re-derives it. This
 appendix records the result of doing that.
 
@@ -722,8 +727,9 @@ python scripts/verify_thesis_numbers.py
 
 ## F.1 Outcome
 
-**83 claims agree, none disagree.** The audit found two errors in the prose, both now
-corrected, and one provenance weakness that could not be corrected without a re-run.
+**111 claims agree, none disagree, 11 remain outstanding.** The audit found four errors in the
+prose, all corrected, and two provenance gaps that have since been closed by re-running the
+measurements.
 
 **Error 1 — a monotonicity claim the data do not support (§6.6).** The sketching penalty was
 described as growing monotonically with dwell dispersion. The measured series is 12.8, 13.0,
@@ -732,19 +738,46 @@ is within what the measurement resolves, so the dip is not evidence of structure
 claim of monotonicity was not supportable and has been withdrawn. The finding that survives —
 a 64% increase across the range — is unaffected.
 
-**Error 2 — a mis-attributed improvement figure (§7.6).** The statement that no intervention
-exceeded a 32% relative improvement is correct, but the 32% is 14.2% to 18.8%, which is the
-*anchor-history* chainer. Checked against `results/geometry-x-chaining.csv`, which contains the
-greedy chainer, the figure is 23%. The two refer to different decision rules and the chapters
-now say which.
+**Error 2 — a mis-attributed improvement figure (§7.6).** The bound on how much any
+intervention achieved was quoted as 32% relative. That figure was 14.2% to 18.8%, which
+compares the voting rule against the *anchor-history* chainer; checked against the greedy
+chainer in `results/geometry-x-chaining.csv` the figure is 23%. Replication then changed it
+again, to 35% — see Error 4.
 
-**Provenance weakness — the headline accuracy figure.** 18.8% appears in §1.4, §5.8.2, §7.1,
-§7.4.5 and §8.3, always against the comparison mapper's 92.4%. It exists only as a
-transcription in `results/decision-rules.csv`, whose header says so; the captured output in
-`results/geometry-x-chaining.csv` corroborates 14.2% and 17.4% but not 18.8%. The figures are
-mutually consistent and nothing suggests the transcription is wrong, but a headline resting on
-a transcription is weaker than one resting on a captured run, and §4.7.3 now says which rows
-are which.
+**Error 3 — "longer look-back does not help" (§4.7.3, §7.6).** It does, by 1.4 points of mean
+true-positive rate and in every seed. The claim rested on a single run reporting 18.0% for a
+128-anchor look-back; that value is the configuration's *seed 44* result, and the three-seed
+mean is 19.0%. The original Table 4.2 had mixed seeds without saying so: five of its six rows
+are seed-42 values and the sixth is not.
+
+**Error 4 — the headline accuracy was the maximum of three seeds, not a central estimate.**
+18.8% is the seed-42 value for anchor-history chaining at look-back 48; the three-seed mean is
+17.6% with a range of 16.6 to 18.8. Quoting the top of a range as a headline is the error
+Table 8.1 row 11 already records once in this work, and it is corrected the same way, by
+replication. The comparison mapper was re-run over the same three seeds for symmetry: its
+92.4% is likewise a seed-42 value and its three-seed mean is 91.8% [91.2–92.4]. The thesis now
+quotes **17.6% against 91.8%**, both as three-seed means with ranges.
+
+### Gaps closed by re-running
+
+**The headline accuracy configuration** had no captured run behind it. It is now in
+`results/decision-rules-raw/` as eighteen logs, each carrying its own command line, tabulated
+in `results/decision-rules.csv`. Five of the six original values reproduced exactly at seed 42,
+which is why the discrepancies above are attributable to seed selection rather than to the
+transcription being wrong.
+
+**Regime R3** had no recorded histogram at all, and the genome-scale dumps that survived were
+minimizer-window-10 runs reporting 22–26 µs. Nine runs at the frozen geometry are now in
+`results/hgrm/r3_frozen_*` and `results/r3-latency.csv`. Three of the four figures previously
+quoted do not reproduce, and §5.6 sets out what replaced them: the median is 124.8 µs rather
+than 134–174, the 99th percentile is 370 µs at the median of runs but spans 347 to 1969 rather
+than the stated 630–705, the resident set is 3.70 GB rather than 3.9–4.4, and the offered
+chunk rate is 604–645 per second rather than 975. The index line reproduced exactly at 63.9 M
+minimizers, which independently confirms Appendix C.1.
+
+The narrow 630–705 µs range is worth naming as a recurrence of §5.2.2's failure in milder
+form: a quoted range too narrow for the measurement's real variance invites an inference of
+stability the data do not support. Exactly one of nine runs falls inside it.
 
 ## F.2 What is backed, and by what
 
@@ -752,6 +785,12 @@ are which.
 |---|---|---|
 | Regime R1 latency, all four cells, all percentiles | `results/hgrm/*.hgrm`, `results/latency-matrix-wsl2.csv` | recomputed |
 | p99 run-to-run spread, 133% against 8% | `results/latency-matrix-wsl2.csv` | recomputed |
+| Regime R3 latency, nine runs, and the budget crossings | `results/hgrm/r3_frozen_*.hgrm`, `results/r3-latency.csv` | recomputed |
+| Index at window 1: 63.9 M minimizers, 64 Mb indexed | `results/r3-raw/*.log` | recomputed |
+| Decision rules, six rules, three seeds | `results/decision-rules.csv`, `results/decision-rules-raw/` | recomputed |
+| Headline accuracy, 17.6% [16.6–18.8] | `results/decision-rules.csv` | recomputed |
+| Comparison mapper accuracy, 91.8% [91.2–92.4] | `results/rawhash-seeds.csv`, `results/rawhash-seeds-raw/` | recomputed |
+| Median best-chain score of 4 | `results/decision-rules.csv` | recomputed |
 | Dwell sweep, both arms, six levels | `results/dwell-sweep-ours.csv` | recomputed |
 | Comparison mapper dwell sweep, three windows | `results/rawhash-dwell-sweep.csv` | recomputed |
 | Sketching penalty series and its 64% growth | `results/rawhash-dwell-sweep.csv` | recomputed |
@@ -759,36 +798,47 @@ are which.
 | The 31× supply gap and its 4.9 × 9.3 decomposition | `results/agreement-summary.csv` | recomputed |
 | Reproduction of the 55.9% figure as 0.556 | `results/agreement-summary.csv` | recomputed |
 | Icarust stock against patched, and the 4.5× inversion | `results/icarust-stock-vs-patched.csv` | recomputed |
-| Decision-rule comparison, six rules | `results/decision-rules.csv` | recomputed, file is transcribed |
 | Per-channel and per-ring footprints | arithmetic from source constants | recomputed |
 | Service bound of 1.56 ms | arithmetic | recomputed |
 | The four power-of-two bucket edges of §5.2.2 | arithmetic from the TSC frequency | recomputed |
 
 ## F.3 Outstanding: claims no committed file can settle
 
-Fourteen, listed in full by the script. In descending order of how much they matter:
+Eleven, listed in full by the script. In descending order of how much they matter:
 
-1. **Regime R3 latency** — p50 134–174 µs, p99 630–705 µs, 3.9–4.4 GB, 975 chunk/s (§5.6,
-   §8.1, §1.9). The surviving genome-scale histograms are window-10 runs reporting 22–26 µs
-   and do not back the frozen configuration. Needs a re-run with `--latency-out`.
-2. **The 18.8% headline** — see F.1.
-3. **Median best-chain score of 4** (§7.5, §8.3). The whole of §7.5 compares the measured
-   anchor supply against this one observation.
-4. **readfish orchestration cost** — 124 µs per chunk, 15.6–25.3% of a core, 86–663 MB
+1. **readfish orchestration cost** — 124 µs per chunk, 15.6–25.3% of a core, 86–663 MB
    (§5.8.1), and this system's 182–202% beside it.
-5. **RawHash2 9.66 ms per read against ~1.34 ms** (§5.8.2).
-6. **Realised key entropy, ~18 bits below nominal, and the 99.3% truncation at 3 × 8**
+2. **RawHash2 9.66 ms per read against ~1.34 ms** (§5.8.2).
+3. **Realised key entropy, ~18 bits below nominal, and the 99.3% truncation at 3 × 8**
    (§7.3.1, §7.10).
-7. **Oracle normalisation, 100% of seeds against 50.5%** (§7.8). Partly superseded by §7.4.4's
+4. **Oracle normalisation, 100% of seeds against 50.5%** (§7.8). Partly superseded by §7.4.4's
    whole-read result, which is backed.
-8. **Index footprint, 63.9 M against 11.7 M minimizers and 3.9 against 1.6 GB** (Appendix C.1).
-9. **Vote-table lockout, 0 accepts of 763 and 854 of 1366** (§4.4) and the **chunk-relative
-   diagonal series, 49/300 to 7/300 and the corrected 118 → 196** (§4.5). Both describe code
-   that no longer exists; cite the commits that fixed them rather than re-running.
-10. **Withdrawn figures in Table 8.1 rows 1 to 3.** These are quoted *as* withdrawn results and
-    their original runs are gone by construction. They should be cited to the session record,
-    or restated with "approximately".
+5. **Index footprint at window 10** — 11.7 M minimizers and 1.6 GB (Appendix C.1). The
+   window-1 half is now captured; only the comparison point is missing.
+6. **Difference keys falling to 2.8–8.4%** (§7.6). `delta_keys` is still in `QuantConfig`, so
+   this is re-runnable with `bench/squig_sweep.cpp` exactly as the decision rules were.
+7. **Vote-table lockout, 0 accepts of 763 and 854 of 1366** (§4.4); the **chunk-relative
+   diagonal series** (§4.5); the **two-scale detector**, 3 against 38 correct diagonals
+   (Table 8.1 row 9). All three describe code that no longer exists. Cite the commits that
+   fixed or reverted them rather than re-running.
+8. **Withdrawn figures in Table 8.1 rows 1 to 3.** These are quoted *as* withdrawn results and
+   their original runs are gone by construction. They should be cited to the session record,
+   or restated with "approximately".
 
-The distinction that matters for a viva is between 1 to 8, which are live claims that a
-reader may check, and 9 to 10, which describe history. The first group should be re-run; the
-second should be cited.
+The distinction that matters for a viva is between 1 to 6, which are live claims a reader may
+check and which are all re-runnable with tooling that now exists, and 7 to 8, which describe
+history and should be cited rather than measured again.
+
+## F.4 What replication cost, and what it bought
+
+The two gaps closed here took one afternoon of compute. They produced four corrections, two of
+which — the headline accuracy and the R3 latency column — change figures appearing in five
+chapters each.
+
+The general lesson is the one §4.7.3 draws from the spreads: at 500 reads per cell the
+seed-to-seed range of a single decision rule reaches 3.8 points, which is comparable to the
+gaps *between* adjacent rules. Any comparison in this thesis between two configurations
+differing by less than roughly four points therefore requires replication to mean anything,
+and those that have it now carry their ranges. A single run is adequate only for differences
+of the size Chapter 6 reports, where fixed-width segmentation falls from 49.7% to 1.3% and no
+plausible seed variation would reverse the ordering.
