@@ -19,3 +19,13 @@ perf.data.old
 # Scratch scripts dropped into build/ while driving WSL from the Windows side.
 build/_*.sh
 build/_*.py
+
+# LaTeX build products; manuscript.pdf is committed deliberately, the rest is not.
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.fls
+paper/*.fdb_latexmk
+paper/*.synctex.gz
+paper/*.bbl
+paper/*.blg

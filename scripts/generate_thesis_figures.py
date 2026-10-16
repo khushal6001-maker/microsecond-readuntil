@@ -60,6 +60,22 @@ OURS = "#1f3b73"
 THEIRS = "#a6360a"
 NEUTRAL = "#555555"
 
+# Figure-level titles are suppressed by --no-titles, for the standalone paper, which puts
+# them in the LaTeX caption instead. Panel titles on individual axes are kept either way:
+# they label sub-axes and no caption replaces them.
+TITLES = True
+
+
+def ftitle(fig, *args, **kwargs):
+    if TITLES:
+        fig.suptitle(*args, **kwargs)
+
+
+def atitle(ax, *args, **kwargs):
+    if TITLES:
+        ax.set_title(*args, **kwargs)
+
+
 MANIFEST: list[tuple[str, str, str]] = []
 
 
@@ -163,7 +179,7 @@ def fig_5_1(outdir: Path, formats: list[str]) -> None:
         9000, 1900, "service bound 1.56 ms", fontsize=7, color=NEUTRAL, ha="right",
     )
     ax.legend(loc="lower right", frameon=False)
-    fig.suptitle(
+    ftitle(fig,
         "Figure 5.1  Decision latency by shard count and placement, 4 repetitions per cell\n"
         "37 kb reference (regime R1); p99 and above are contaminated by the hypervisor (§3.8)",
         fontsize=9,
@@ -207,7 +223,7 @@ def fig_5_2(outdir: Path, formats: list[str]) -> None:
     ax.set_yticks([])
     ax.set_xlabel("reported 99th percentile (µs, log scale)")
     ax.grid(False)
-    ax.set_title(
+    atitle(ax,
         "Figure 5.2  Four reported p99 values against the instrument's representable set\n"
         f"power-of-two cycle buckets at an invariant TSC of {tsc_mhz} MHz",
         fontsize=9,
@@ -252,7 +268,7 @@ def fig_5_3(outdir: Path, formats: list[str]) -> None:
     ax.set_ylabel("run-to-run spread (% of minimum)")
     ax.set_yscale("log")
     ax.legend(frameon=False, ncol=2)
-    ax.set_title(
+    atitle(ax,
         "Figure 5.3  Run-to-run spread by percentile, 4 repetitions per cell\n"
         "pinning does not move the median; it makes the tail repeatable",
         fontsize=9,
@@ -319,7 +335,7 @@ def fig_5_4(outdir: Path, formats: list[str]) -> None:
     axb.set_ylabel("µs")
     axb.set_title("per-run percentiles", fontsize=9)
 
-    fig.suptitle(
+    ftitle(fig,
         "Figure 5.4  Regime R3: the body reproduces, the tail does not (§5.6)\n"
         "eight runs lie inside the budget through p99.9; one crosses it at p99 and p99.9",
         fontsize=9,
@@ -375,7 +391,7 @@ def fig_4_1(outdir: Path, formats: list[str]) -> None:
     ax.set_xticklabels(names, fontsize=7)
     ax.set_ylabel("TPR at zero false positives (%)")
     ax.set_ylim(0, max(his) + 5)
-    ax.set_title(
+    atitle(ax,
         "Figure 4.1  Decision rules at the Chapter 6 operating point, 3 seeds × 500 reads\n"
         "bars span the observed range; adjacent rules overlap, so a single run cannot "
         "separate them",
@@ -418,7 +434,7 @@ def fig_6_1(outdir: Path, formats: list[str]) -> None:
     ax.set_ylabel("true-positive rate at zero false positives (%)")
     ax.set_ylim(0, 55)
     ax.legend(frameon=False, loc="center right")
-    ax.set_title(
+    atitle(ax,
         "Figure 6.1  Dwell sensitivity of two segmentation choices, 3 seeds, 500 reads/cell\n"
         "bars span the observed range across seeds",
         fontsize=9,
@@ -465,7 +481,7 @@ def fig_6_2(outdir: Path, formats: list[str]) -> None:
     handles.append(Line2D([], [], color=NEUTRAL, linestyle=":", alpha=0.6))
     labels.append("false-mapped on shuffled control")
     ax.legend(handles, labels, frameon=False, loc="center left", ncol=2)
-    ax.set_title(
+    atitle(ax,
         "Figure 6.2  Comparison mapper under the same dwell sweep, by minimizer window\n"
         "solid: correctly mapped. Its default operating point is not zero-false-positive.",
         fontsize=9,
@@ -500,7 +516,7 @@ def fig_6_3(outdir: Path, formats: list[str]) -> None:
     ax.set_ylabel("accuracy cost of sketching (percentage points)")
     ax.set_ylim(0, 25)
     ax.legend(frameon=False, loc="upper left")
-    ax.set_title(
+    atitle(ax,
         "Figure 6.3  The sketching trade-off is dwell-dependent\n"
         "the tool documents that -w may reduce accuracy; that the cost grows with\n"
         "time-domain noise is not documented or measured elsewhere",
@@ -568,7 +584,7 @@ def fig_7_1(outdir: Path, formats: list[str]) -> None:
     cbar.set_label("$a^E$, modelled key match probability")
     ax.set_xlabel("per-event bucket agreement $a$")
     ax.set_ylabel("events per key $E$")
-    ax.set_title(
+    atitle(ax,
         "Figure 7.1  Modelled key match probability over the $(a, E)$ plane, at CV 0.44\n"
         "measured $P$ sits below $a^E$ in both cases, because $a^E$ omits the\n"
         "correspondence-failure factor $(1-g)^E$ (§7.2.3)",
@@ -618,7 +634,7 @@ def fig_7_2(outdir: Path, formats: list[str]) -> None:
         if not logy:
             ax.set_ylim(0, max(vals) * 1.28)
     axes[2].set_ylim(min(p_vals) * 0.4, max(p_vals) * 3.0)
-    fig.suptitle(
+    ftitle(fig,
         "Figure 7.2  Both systems under one estimator, identical input (§7.4.5)\n"
         "a 31-fold difference in anchor supply accounts for 18.8% against 92.4% accuracy",
         fontsize=9,
@@ -674,7 +690,7 @@ def fig_7_3(outdir: Path, formats: list[str]) -> None:
     ax.set_ylim(*lims)
     ax.set_xlabel("$a^E$, modelled from measured $a$")
     ax.set_ylabel("$P$(key), measured directly from the alignment")
-    ax.set_title(
+    atitle(ax,
         "Figure 7.3  Why $a^E$ is not a one-sided bound in general (§7.2.3)\n"
         "marker area grows with the correspondence-failure rate $g$",
         fontsize=9,
@@ -712,7 +728,7 @@ def fig_7_4(outdir: Path, formats: list[str]) -> None:
     ax2.set_xlabel("per-read correspondence failure $g$")
     ax2.set_title("indel fraction", fontsize=9)
     ax.legend(frameon=False, loc="upper left", fontsize=7)
-    fig.suptitle(
+    ftitle(fig,
         "Figure 7.4  Per-read distributions behind the pooled figures of Table 7.5\n"
         "200 reads per cell; the separation is in the distribution, not only in the mean",
         fontsize=9,
@@ -767,7 +783,7 @@ def fig_7_6(outdir: Path, formats: list[str]) -> None:
     axc.set_title("short keys saturate the occurrence cap", fontsize=9)
     axc.legend(frameon=False, loc="lower right", fontsize=7.5)
 
-    fig.suptitle(
+    ftitle(fig,
         "Figure 7.6  Realised key entropy and cap survival by geometry (§7.3)\n"
         "both depend on reference size, which is why Table 7.1 states it",
         fontsize=9,
@@ -805,7 +821,7 @@ def fig_7_5(outdir: Path, formats: list[str]) -> None:
     ax.set_xlabel("key geometry (bits × events)")
     ax.set_ylabel("TPR at zero false positives (%)")
     ax.legend(frameon=False, loc="upper left")
-    ax.set_title(
+    atitle(ax,
         "Figure 7.5  Changing the decision rule reorganises a fixed anchor supply\n"
         "the best improvement across all six interventions is +32% relative (§7.6)",
         fontsize=9,
@@ -841,8 +857,13 @@ def main() -> int:
     ap.add_argument("--outdir", default=str(REPO / "figures"))
     ap.add_argument("--format", default="pdf,png",
                     help="comma-separated: pdf, png, svg")
+    ap.add_argument("--no-titles", action="store_true",
+                    help="omit figure-level titles; for a paper that captions them instead")
     ap.add_argument("--only", default="", help="comma-separated figure numbers, e.g. 7.2,7.3")
     args = ap.parse_args()
+
+    global TITLES
+    TITLES = not args.no_titles
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
