@@ -1,0 +1,9 @@
+ref 40000000 bases (both strands), 9-mer model, geometry 4 x 12 = 48-bit, window 1, EVENT-DETECTED, 10 chunks of 2000 samples
+decision: ANCHOR-HISTORY CHAINS (band 12, max_gap 160, lookback 48, max_occ 0, 1024 anchors/channel)
+index 39999981 minimizers, 26201382 distinct, 3462135 capped | reads on=500 off=500
+per-event bucket agreement: 23.3% over 200 reads (39393 events)
+  implied key match rate a^E for E=12: 0.000%   (E=8: 0.001%)
+events/read on 1591 off 1602 (ideal ~2000 at 10 samples/base)
+on  votes: med 4 p95 21 max 62 | cand/read 394
+off votes: med 4 p95 6 max 8 | cand/read 472
+RESULT  zero-FP: >=9 TPR 17.4%   |   1%-FP: >=8 TPR 20.6%

@@ -726,6 +726,61 @@ def fig_7_4(outdir: Path, formats: list[str]) -> None:
     )
 
 
+def fig_7_6(outdir: Path, formats: list[str]) -> None:
+    """Realised entropy against nominal key width, and cap survival, at both reference sizes.
+
+    Two things the table states but a reader has to do arithmetic to see: that the shortfall
+    grows faster than the nominal width, and that the occurrence cap collapses for short keys
+    far more sharply than the reference grows.
+    """
+    rows = read_csv_rows(RESULTS / "key-entropy.csv")
+    fig, (ax, axc) = plt.subplots(1, 2, figsize=(9.6, 3.9))
+
+    for ref, colour, marker, ls in ((20, OURS, "o", "-"), (64, THEIRS, "D", "--")):
+        rs = sorted((r for r in rows if int(r["ref_mb"]) == ref),
+                    key=lambda r: int(r["nominal_bits"]))
+        nom = [int(r["nominal_bits"]) for r in rs]
+        real = [float(r["realised_bits"]) for r in rs]
+        ax.plot(nom, real, color=colour, marker=marker, linestyle=ls,
+                label=f"{ref} Mb reference")
+        axc.plot(nom, [float(r["cap_kept_pct"]) for r in rs],
+                 color=colour, marker=marker, linestyle=ls, label=f"{ref} Mb reference")
+        for r, x, y in zip(rs, nom, real):
+            if ref == 20:
+                ax.annotate(r["geometry"], xy=(x, y), xytext=(0, -13),
+                            textcoords="offset points", fontsize=7, ha="center", color=colour)
+
+    lim = [20, 52]
+    ax.plot(lim, lim, color=NEUTRAL, linestyle=":", linewidth=1.0)
+    ax.text(44, 45.5, "realised = nominal", fontsize=7, color=NEUTRAL, rotation=31, ha="center")
+    ax.set_xlim(*lim)
+    ax.set_ylim(14, 52)
+    ax.set_xlabel("nominal key width (bits)")
+    ax.set_ylabel("realised entropy (bits)")
+    ax.set_title("the shortfall grows with the key", fontsize=9)
+    ax.legend(frameon=False, loc="upper left", fontsize=7.5)
+
+    axc.axhline(50, color=NEUTRAL, linestyle=":", linewidth=1.0)
+    axc.set_xlabel("nominal key width (bits)")
+    axc.set_ylabel("minimizer occurrences surviving the cap (%)")
+    axc.set_ylim(0, 100)
+    axc.set_title("short keys saturate the occurrence cap", fontsize=9)
+    axc.legend(frameon=False, loc="lower right", fontsize=7.5)
+
+    fig.suptitle(
+        "Figure 7.6  Realised key entropy and cap survival by geometry (§7.3)\n"
+        "both depend on reference size, which is why Table 7.1 states it",
+        fontsize=9,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.86))
+    save(fig, "fig7-6-key-entropy", outdir, formats)
+    record(
+        "fig7-6-key-entropy",
+        "results/key-entropy.csv",
+        "Realised entropy and occurrence-cap survival by geometry, at both reference sizes.",
+    )
+
+
 def fig_7_5(outdir: Path, formats: list[str]) -> None:
     """Six interventions against the anchor supply they could not change."""
     rows = read_csv_rows(RESULTS / "geometry-x-chaining.csv")
@@ -777,6 +832,7 @@ FIGURES = [
     ("7.3", fig_7_3),
     ("7.4", fig_7_4),
     ("7.5", fig_7_5),
+    ("7.6", fig_7_6),
 ]
 
 

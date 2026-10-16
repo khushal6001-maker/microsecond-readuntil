@@ -384,8 +384,11 @@ performance claim.
 **5.8.1 A basecalling-based client.** readfish was executed against the same simulator on the
 same host with a no-operation caller, which removes basecalling and mapping and therefore
 measures its orchestration cost alone. Per-chunk orchestration was 124 µs, at 15.6–25.3% of
-one core and 86–663 MB resident `[UNVERIFIED — App. F.3]`. The present system is faster per chunk against
-this lower bound on readfish's cost, and consumes 8–12× more processor time: 182–202% `[UNVERIFIED — App. F.3]` of one
+one core and 86.0–663.4 MiB resident. The 124 µs is readfish's own progress line divided
+out — 0.0235 s for 189 reads — and not a figure this work's instrument produced; the
+processor and memory figures are from `/usr/bin/time -v` on the same invocations
+(`results/comparison-costs.csv`). The present system is faster per chunk against
+this lower bound on readfish's cost, and consumes 8–12× more processor time: 181.5–202.3% of one
 core, because workers spin before yielding (Chapter 3, §3.7.4). Both halves are reported.
 The comparison establishes that the orchestration layer of a basecalling client is already
 substantial relative to a complete signal-space decision, which is the architectural point;
@@ -393,8 +396,18 @@ it does not establish superiority, since a production readfish performs work thi
 configuration omits.
 
 **5.8.2 A signal-space mapper.** RawHash2 was executed on identical simulated reads with the
-same pore model, single-threaded, requiring 9.66 ms of processor time per read against
-approximately 1.34 ms for the present system `[UNVERIFIED — App. F.3]`. This ratio must be read together
+same pore model, single-threaded, requiring **10.64 ms** of processor time per read over 500
+reads, or **10.18 ms** excluding the index load that a long-running daemon would pay once
+(`results/comparison-costs.csv`). The present system's comparable figure is **1.25 ms**, and
+that number is a *derivation* rather than a measurement: a read is ten chunks at this
+operating point and §5.6 measures the median per-chunk decision at 124.8 µs. It is quoted here
+with its arithmetic exposed because the two systems do not instrument the same boundary — the
+mapper reports processor time for a whole invocation, this system reports wall-clock latency
+for one decision — and a ratio between them is only as good as that caveat. An earlier draft
+gave 9.66 ms against 1.34 ms; the first was not reproduced on re-running and the second was
+derived from the regime R3 median that §5.6 has since corrected.
+
+This ratio must be read together
 with the accuracy figures of Chapter 6: the present system resolves 17.6% of reads where
 RawHash2 resolves 91.8% on the same data. **A latency ratio between a system that resolves
 reads and one that largely does not is a bound on the cost of the data plane, not a

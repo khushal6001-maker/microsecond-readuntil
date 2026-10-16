@@ -385,7 +385,7 @@ treat pinning as a variance-reduction measure.
 **3.7.4 Spin-then-yield, and the resource trade it represents.** Workers wait on their rings
 by spinning for a bounded number of iterations before yielding. This removes the wakeup
 latency of a blocking wait from the critical path at the cost of occupying a core while idle.
-The cost is measurable and substantial: aggregate CPU utilisation is 182–202% of one core
+The cost is measurable and substantial: aggregate CPU utilisation is 181.5–202.3% of one core
 against a basecalling-based client's 15.6–25.3% for comparable orchestration. This
 is a deliberate trade and is reported as one. On a dedicated sequencing host the trade is
 favourable, since the alternative use of those cycles is nil; on a shared host it is not, and

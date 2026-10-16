@@ -52,8 +52,8 @@ not move the median but reduces the run-to-run spread of the 99th percentile fro
 survives the platform caveat.
 
 **The cost that is not latency.** Two costs are paid for the above and are reported rather
-than omitted. Workers spin before yielding, so the system consumes 182–202% of one core `[UNVERIFIED — App. F.3]`
-against readfish's 15.6–25.3% for its orchestration alone `[UNVERIFIED — App. F.3]`, an eight- to twelvefold
+than omitted. Workers spin before yielding, so the system consumes 181.5–202.3% of one core
+against readfish's 15.6–25.3% for its orchestration alone, an eight- to twelvefold
 ratio in processor time that buys the low median. And the index for a 64 Mb reference occupies
 most of a 4 GB resident set, which does not scale to a 3.1 Gb human reference in the present
 in-memory form; §8.4 returns to this.
@@ -72,20 +72,24 @@ are not.
 `[TABLE 8.1]` **Retraction log.** Appendix D gives the full entry for each row, with the
 measurement that produced the withdrawn claim and the measurement that replaced it.
 
-| | withdrawn claim or position | class | cause | replacement | § |
-|---|---|---|---|---|---|
-| 1 | A thread-placement change produced a stable 99th percentile, reproducible to 0.2% | instrument | Power-of-two bucketing; the four reported values were all boundaries of the representable set at the host's TSC frequency | HdrHistogram at three significant figures, 0.1% bounded relative error, backend labelled in every line of output | 5.2 |
-| 2 | Unpinned median latency of 27.0–27.3 µs | environment | Host system drive exhausted; the guest's expanding disk image could not extend, stalling incidental writes. About one third of the reported median was host state | Re-measured at 17.9–18.8 µs for the identical configuration; harness now records virtualisation, topology, clocksource, governor, isolation, storage and load per run | 5.3 |
-| 3 | Reader and writer threads were placed on distinct physical cores | platform | Logical processor adjacency was assumed to imply distinct cores; on the measurement host CPUs 0 and 1 are SMT siblings | Sibling sets read from `thread_siblings_list`; placement derived from topology rather than from identifier arithmetic | 5.4 |
-| 4 | First key-geometry freeze, selected analytically | model | An analytical model of key-space occupancy whose fit did not converge | Replaced by empirical sweep | 6.9 |
-| 5 | Second key-geometry freeze, 4 bits × 13 events | algorithm | Selected from live measurements taken while diagonals were computed chunk-relative; with the defect corrected the ordering of candidate geometries reversed | 4 bits × 12 events, sketching disabled, selected on the external simulator with dwell swept | 4.5, 6.9 |
-| 6 | The vote table was a frequent-items estimator | algorithm | The admission rule `count ≤ 1` with no decrement is permanently false once every way of a set holds two votes; the structure became an arrival-order cache. 0 accepts of 763 decisions at 64 Mb scale, where the same binary accepted 854 of 1366 at 37 kb | Misra–Gries-style replacement with decrement; stress test now drives candidate density to the production value | 4.4 |
-| 7 | Diagonal votes identified a stable locus across chunks | algorithm | Seed offsets restart at each chunk boundary, so the true locus was renamed by one chunk length per chunk. The tell was an *inverted* metric: correct-diagonal fraction fell from 49/300 at two chunks to 7/300 at twenty | Read-relative diagonals via a running consumed-event count; correct-diagonal counts now rise with read length, 118 → 196 of 300 | 4.5 |
-| 8 | The work's headline framing as a competitive signal-space mapper | framing | A baseline run of a published mapper on identical input resolved 91.8% of reads against this system's 17.6% | Reframed to the three contributions the measurements support: the data plane, the measurement methodology, and the ceiling model | 5.8, 7 |
-| 9 | A two-scale event detector would improve segmentation under dwell | algorithm | Implemented as a standard improvement and measured worse: 3 against 38 correct diagonals at CV 0.50, and it regressed the single-scale path | Reverted; single-scale two-window t-test retained with the frozen calibration | 6.7 |
-| 10 | Difference-based key encoding would remove the shared normalisation error | algorithm | Measured worse, falling from the high teens to 2.8–8.4% true-positive rate; one symbol per event was retained and only its meaning changed, so `E` agreements were still required | Rejected; §7.8 distinguishes it from *merging*, which reduces `E` and remains untested | 7.6 |
-| 11 | A fixed-width true-positive rate of 8.3% at the swept dwell level | replication | Quoted from a single 60 s run; three replicates placed it at 3.2–3.6% | All dwell results reported as three-seed means with spreads | 6.4 |
-| 12 | The published mapper's minimizer sketching would collapse under dwell dispersion | prediction | Predicted from the mechanism and refuted by measurement: 95.0% to 92.0% across CV 0 to 0.60 | The prediction's failure became §6.5, which bounds every claim in Chapter 6, and redirected the novel finding to the *cost* of sketching rather than its collapse | 6.5 |
+Each row cites the commit whose message records the withdrawn figures. Those commits are
+the primary record: the code they changed no longer exists, so no current run reproduces
+them, and `scripts/verify_thesis_numbers.py` checks the citations still match.
+
+| | withdrawn claim or position | class | cause | replacement | § | commit |
+|---|---|---|---|---|---|---|
+| 1 | A thread-placement change produced a stable 99th percentile, reproducible to 0.2% | instrument | Power-of-two bucketing; the four reported values were all boundaries of the representable set at the host's TSC frequency | HdrHistogram at three significant figures, 0.1% bounded relative error, backend labelled in every line of output | 5.2 | `0c620fa` |
+| 2 | Unpinned median latency of 27.0–27.3 µs | environment | Host system drive exhausted; the guest's expanding disk image could not extend, stalling incidental writes. About one third of the reported median was host state | Re-measured at 17.9–18.8 µs for the identical configuration; harness now records virtualisation, topology, clocksource, governor, isolation, storage and load per run | 5.3 | `ab4614f` |
+| 3 | Reader and writer threads were placed on distinct physical cores | platform | Logical processor adjacency was assumed to imply distinct cores; on the measurement host CPUs 0 and 1 are SMT siblings | Sibling sets read from `thread_siblings_list`; placement derived from topology rather than from identifier arithmetic | 5.4 | `ab4614f` |
+| 4 | First key-geometry freeze, selected analytically | model | An analytical model of key-space occupancy whose fit did not converge | Replaced by empirical sweep | 6.9 | — |
+| 5 | Second key-geometry freeze, 4 bits × 13 events | algorithm | Selected from live measurements taken while diagonals were computed chunk-relative; with the defect corrected the ordering of candidate geometries reversed | 4 bits × 12 events, sketching disabled, selected on the external simulator with dwell swept | 4.5, 6.9 | `b6e939a` |
+| 6 | The vote table was a frequent-items estimator | algorithm | The admission rule `count ≤ 1` with no decrement is permanently false once every way of a set holds two votes; the structure became an arrival-order cache. 0 accepts of 763 decisions at 64 Mb scale, where the same binary accepted 854 of 1366 at 37 kb | Misra–Gries-style replacement with decrement; stress test now drives candidate density to the production value | 4.4 | `284908b` |
+| 7 | Diagonal votes identified a stable locus across chunks | algorithm | Seed offsets restart at each chunk boundary, so the true locus was renamed by one chunk length per chunk. The tell was an *inverted* metric: correct-diagonal fraction fell from 49/300 at two chunks to 7/300 at twenty | Read-relative diagonals via a running consumed-event count; correct-diagonal counts now rise with read length, 118 → 196 of 300 | 4.5 | `b6e939a` |
+| 8 | The work's headline framing as a competitive signal-space mapper | framing | A baseline run of a published mapper on identical input resolved 91.8% of reads against this system's 17.6% | Reframed to the three contributions the measurements support: the data plane, the measurement methodology, and the ceiling model | 5.8, 7 | — |
+| 9 | A two-scale event detector would improve segmentation under dwell | algorithm | Implemented as a standard improvement and measured worse: 3 against 38 correct diagonals at CV 0.50, and it regressed the single-scale path | Reverted; single-scale two-window t-test retained with the frozen calibration | 6.7 | `e58d6fe` |
+| 10 | Difference-based key encoding would remove the shared normalisation error | algorithm | Measured worse: 8.3% against 17.6% over three seeds, and worse in every seed; one symbol per event was retained and only its meaning changed, so `E` agreements were still required | Rejected; §7.8 distinguishes it from *merging*, which reduces `E` and remains untested | 7.6 | — |
+| 11 | A fixed-width true-positive rate of 8.3% at the swept dwell level | replication | Quoted from a single 60 s run; three replicates placed it at 3.2–3.6% | All dwell results reported as three-seed means with spreads | 6.4 | `668a6a8` |
+| 12 | The published mapper's minimizer sketching would collapse under dwell dispersion | prediction | Predicted from the mechanism and refuted by measurement: 95.0% to 92.0% across CV 0 to 0.60 | The prediction's failure became §6.5, which bounds every claim in Chapter 6, and redirected the novel finding to the *cost* of sketching rather than its collapse | 6.5 | — |
 
 Four observations about this table are more useful than the individual rows.
 
@@ -131,7 +135,7 @@ neither is contingent on the other.
 with bounded per-channel state, no allocation on the decision path, and no drops at 975
 chunk/s, is sufficient — and the architectural implication is the one Chapter 5 §5.8.1 draws:
 the orchestration layer of a basecalling client, measured with its caller removed, costs
-124 µs per chunk `[UNVERIFIED — App. F.3]`, which is already comparable to a complete signal-space decision
+124 µs per chunk, which is already comparable to a complete signal-space decision
 in this system. The budget is not the obstacle to signal-space adaptive sampling. That is a
 result in its own right and it does not depend on the accuracy figures.
 
@@ -244,7 +248,7 @@ scale from the whole read rather than the first 2000-sample chunk raises agreeme
 to 0.726 and measured key match probability from 0.0549 to 0.1113 — a factor of two in anchor
 supply for no change to the index, the geometry or the decision rule. The whole read
 is not available at the first chunk, so the deployable form is an estimate refined as chunks
-arrive. The earlier oracle-normalisation figure `[UNVERIFIED — App. F.3]` — 100% of seeds recovered against 50.5% for
+arrive. The earlier oracle-normalisation figure (commit `6cb90bb`) — 100% of seeds recovered against 50.5% for
 per-read normalisation at zero added noise — bounds what is available.
 
 **Locate the loss inside the decision stage.** The correspondence-aware measurement of

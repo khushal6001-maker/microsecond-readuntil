@@ -1,0 +1,42 @@
+pore model : /root/icarust/static/dna_r10.4.1_e8.2_400bps/R10_model.tsv
+             262144 levels, k=9, range 53.53 .. 169.97 pA
+reference  : /root/icarust/docker/squiggle_arrs/chr20_plus_wtc11.fa
+             63981237 ACGT bases used, 499911 non-ACGT skipped (N runs)
+quantiser  : uniform
+geometry   : 4 bits x 12 events = 48-bit keys, window 10
+
+events     : 63981229
+bucket use : 0:0.0% 1:0.0% 2:0.0% 3:0.1% 4:7.8% 5:22.6% 6:8.3% 7:11.4% 8:19.3% 9:17.2% 10:10.2% 11:2.8% 12:0.4% 13:0.0% 14:0.0% 15:0.0% 
+             entropy 2.84 of 4 bits (71% of the alphabet used)
+
+--- key frequency distribution on real DNA ---
+most frequent key occurs 48517 times
+    freq<= |    keys kept   of all |    positions   of all
+         1 |     23329497    70.9% |     23329497    36.5%
+         2 |     28454667    86.5% |     33579837    52.5%
+         4 |     31281294    95.1% |     42971203    67.2%
+         8 |     32396734    98.5% |     49619481    77.6%
+        16 |     32734407    99.5% |     53416129    83.5%
+        32 |     32830027    99.8% |     55526908    86.8%
+        64 |     32862145    99.9% |     56956665    89.0%
+       128 |     32877296   100.0% |     58293785    91.1%
+       256 |     32882683   100.0% |     59229549    92.6%
+      1024 |     32886924   100.0% |     61460982    96.1%
+
+--- key diversity on real DNA ---
+positions           : 63981218
+distinct keys       : 32888127 (51.40% unique)
+representable space : 2.815e+14
+effective space     : 4.210e+07  (6686484x smaller than representable)
+
+--- index at this geometry ---
+minimizers kept     : 11665467 of 63981218 (18.2%)
+distinct keys in idx: 6784107, capped 1702465, insert failures 0
+slots 16777216, load 0.40, 128.0 MiB
+
+--- cap behaviour at THIS reference size ---
+minimizer occurrences kept : 9963002 of 11665467 (85.4%)
+index size at 3.1e9 bases  : 9.0 GB (scales with kept%, not with skew)
+
+Cap survival is the freq<=N table. Run several --bases values for the
+trend; one point cannot be extrapolated.

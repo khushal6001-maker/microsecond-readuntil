@@ -1,0 +1,31 @@
+# Realised key entropy and occurrence-cap survival by geometry, measured with
+# bench/real_reference.cpp on 2026-10-16. Raw output in results/outstanding-raw/.
+#
+# WHY THE REFERENCE SIZE IS A COLUMN. The committed Table 7.1 gave distinct-key counts that
+# reproduce at neither size, so the reference it was measured on was never stated and cannot
+# now be recovered. Both sizes used in this thesis are measured here instead, and the chapter
+# cites the one matching the rest of its argument. The difference is not incidental: realised
+# entropy and cap survival both depend on reference size, which is the scale dependence
+# section 7.3 is about.
+#
+# ref_mb 20 = /root/squigdata/ref.fa, the 20 Mb chr20 prefix used throughout Chapters 6 and 7,
+#             encoded with the squigulator-derived R10.4 9-mer model, the same model used on
+#             both sides there.
+# ref_mb 64 = chr20_plus_wtc11.fa, the 64 Mb reference of regime R3, encoded with Icarust's
+#             R10 model, which is the pairing the daemon runs at.
+#
+# nominal_bits    bits_per_event * events_per_key
+# distinct_keys   distinct keys realised over all reference positions
+# realised_bits   log2(distinct_keys)
+# shortfall_bits  nominal_bits - realised_bits
+# cap_kept_pct    minimizer occurrences surviving the per-seed occurrence cap; its complement
+#                 is the truncation the chapter quotes
+ref_mb,geometry,bits,events,nominal_bits,distinct_keys,realised_bits,shortfall_bits,cap_kept_pct
+20,3x8,3,8,24,92482,16.5,7.5,2.8
+20,4x8,4,8,32,1519844,20.5,11.5,31.2
+20,3x13,3,13,39,5096781,22.3,16.7,63.7
+20,3x14,3,14,42,7985629,22.9,19.1,78.8
+20,4x12,4,12,48,14908778,23.8,24.2,93.5
+64,3x8,3,8,24,66089,16.0,8.0,0.7
+64,3x14,3,14,42,13923335,23.7,18.3,65.7
+64,4x12,4,12,48,32888127,25.0,23.0,83.7

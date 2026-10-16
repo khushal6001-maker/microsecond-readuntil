@@ -1,0 +1,14 @@
+# Difference-based key encoding against the absolute encoding, three seeds, measured
+# 2026-10-16 with bench/squig_sweep.cpp (delta_keys is still in QuantConfig, so this is the
+# committed code path, not a reconstruction). Raw logs in results/outstanding-raw/.
+#
+# Identical in every respect to results/decision-rules.csv's anchor-history row except the
+# final argument, which selects quantise_delta() over quantise_z(): 4 x 12, window 1, detected
+# events, 10 chunks of 2000 samples, anchor-history chaining at band 12 and look-back 48,
+# CV 0.44, 500 reads per cell, zero-false-positive threshold on that seed's own control.
+#
+# The absolute rows reproduce results/decision-rules.csv exactly, which is the control that
+# makes the delta rows comparable.
+encoding,tpr_s42,tpr_s43,tpr_s44,tpr_mean,tpr_lo,tpr_hi
+absolute,18.8,17.4,16.6,17.6,16.6,18.8
+delta,3.6,11.8,9.6,8.3,3.6,11.8

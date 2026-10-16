@@ -1,0 +1,25 @@
+# The Chapter 5 section 5.8 comparison, recomputed from surviving artefacts and one re-run.
+# Raw material in results/comparison-raw/ (original /usr/bin/time -v output and readfish's own
+# progress logs, both dated 2026-10-05) and results/outstanding-raw/rh_map_time.log (2026-10-16).
+#
+# HOW EACH FIGURE IS OBTAINED, because the three systems do not report the same things:
+#
+#   readfish      per-read orchestration cost is readfish's OWN progress line, "Avg: NNNNR/S.SSSSs",
+#                 divided out: 0.0235 s / 189 reads. It is not measured by this work's instrument.
+#                 cpu_pct is (user+sys)/elapsed from /usr/bin/time -v, not the rounded figure
+#                 that tool prints.
+#   this system   per-chunk latency is measured directly (results/r3-latency.csv). The per-read
+#                 figure is DERIVED as 10 chunks x the median per-chunk latency, because a read
+#                 is ten chunks at this operating point. It is a derivation, not a measurement,
+#                 and 5.8.2 says so.
+#   comparison    processor time for 500 reads, single-threaded, from /usr/bin/time -v. Reported
+#                 both including and excluding index load, since the mapper loads a prebuilt
+#                 index each invocation and a daemon would not.
+#
+# All memory in MiB, from "Maximum resident set size" / 1024.
+system,mode,per_read_ms,per_chunk_us,cpu_pct,rss_mib,basis
+readfish,unblock-all (no-op caller),0.1243,,15.6,86.0,readfish progress line 0.0235s/189R
+readfish,targets (with caller and mapper),0.0662,,25.3,663.4,readfish progress line 0.0247s/373R
+ours,frozen 4x12 w1 on 64 Mb,1.248,124.8,181.5-202.3,3786.0,10 x median per-chunk latency
+rawhash2,defaults -w 0 -q 4 -e 8 incl. index load,10.64,,,384.6,5.320 s CPU / 500 reads
+rawhash2,defaults -w 0 -q 4 -e 8 excl. index load,10.18,,,384.6,(5.320 - 0.23) s CPU / 500 reads

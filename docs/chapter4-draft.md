@@ -174,8 +174,13 @@ density, which is why it survived initial testing. With approximately one candid
 condition stays satisfiable. With approximately ninety-six candidates per chunk — a 64 Mb
 reference — every way of every set passes two votes within the first chunk, and any diagonal
 not among the first few observed can never be installed. The measured consequence was 0
-accepts from 763 decisions `[UNVERIFIED — App. F.3]`, where the same binary on the smaller reference
+accepts from 763 decisions, where the same binary on the smaller reference
 accepted 854 of 1366.
+
+These figures describe a structure that no longer exists, so no current run can produce
+them. They are recorded in the commit that replaced it (`284908b`) and in the one that first
+reported the failure (`ba18428`), which is the primary record this thesis cites for every
+claim about superseded code.
 
 **Lesson.** A bounded structure's correctness argument must be stated in terms of the arrival
 density it will actually see, not the density it was tested at. The condition `count ≤ 1` is
@@ -206,7 +211,7 @@ never across chunks, and the per-chunk evidence is a small fraction of a read's 
 **The diagnostic is the transferable part.** The symptom was not a low score, which would
 have been attributed to weak signal and investigated in the matching stage. It was an
 *inverted* relationship: the fraction of reads whose best diagonal was the correct one
-*decreased* with read length, from 49/300 at two chunks to 7/300 at twenty `[UNVERIFIED — App. F.3]`.
+*decreased* with read length, from 49/300 at two chunks to 7/300 at twenty.
 Additional evidence producing a worse answer cannot be explained by insufficient evidence; it
 is the signature of accumulating a quantity other than the intended one. Monotonicity in
 evidence is therefore a cheap and sensitive invariant to assert, and it is now checked
@@ -214,7 +219,8 @@ explicitly in the offline harness.
 
 The correction carries a running count of events consumed by the read and expresses diagonals
 read-relative. With it, correct-diagonal counts rise with read length as they must:
-118 → 160 → 170 → 196 of 300.
+118 → 160 → 170 → 196 of 300. Both series are recorded in the commit that made the correction
+(`b6e939a`); the defective coordinate is gone, so neither is re-measurable.
 
 ---
 

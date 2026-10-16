@@ -41,9 +41,15 @@ for p in CHAPTERS:
     texts[p.name] = p.read_text(encoding="utf-8")
 
 # ---------------------------------------------------------------- 1. [VERIFY] markers
+# Appendix F is the verification register and exists to explain the retired convention, so it
+# necessarily names the marker it retired. Its section is excluded rather than the check being
+# weakened, which would stop it catching a live marker written inside backticks elsewhere.
 for name, t in texts.items():
-    for m in re.finditer(r"\[VERIFY[^\]]*\]", t):
-        line = t[: m.start()].count("\n") + 1
+    body = t
+    if "# Appendix F" in body:
+        body = body[: body.index("# Appendix F")]
+    for m in re.finditer(r"\[VERIFY[^\]]*\]", body):
+        line = body[: m.start()].count("\n") + 1
         add("unresolved [VERIFY]", f"{name}:{line}  {m.group(0)}")
 
 # ---------------------------------------------------------------- 2. table / figure markers

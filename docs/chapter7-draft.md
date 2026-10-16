@@ -147,24 +147,47 @@ per query seed. Keys are not uniformly distributed. Quantised event sequences de
 real sequence are strongly non-uniform, and the realised number of distinct keys is far
 smaller than the nominal space:
 
-| geometry | nominal key width | distinct keys realised | realised entropy |
-|---|---|---|---|
-| 3 × 13 | 39 bits | 1,961,432 | 20.9 bits |
-| 3 × 14 | 42 bits | 3,332,137 | 21.7 bits |
-| 4 × 12 | 48 bits | 32,840,924 | 25.0 bits | `[TABLE 7.1]`
+Measured on the 20 Mb chr20 reference used throughout Chapters 6 and 7, encoded with the
+same squigulator-derived model used on both sides there:
 
-A 39-bit key therefore realises approximately 21 bits of entropy on this reference, a
-shortfall of some 18 bits, and a 48-bit key realises 25. Specificity must be reasoned about
-in realised entropy, not nominal width, and the two differ by more than an order of magnitude
-in key count.
+| geometry | nominal key width | distinct keys realised | realised entropy | shortfall |
+|---|---|---|---|---|
+| 3 × 8 | 24 bits | 92,482 | 16.5 bits | 7.5 |
+| 4 × 8 | 32 bits | 1,519,844 | 20.5 bits | 11.5 |
+| 3 × 13 | 39 bits | 5,096,781 | 22.3 bits | 16.7 |
+| 3 × 14 | 42 bits | 7,985,629 | 22.9 bits | 19.1 |
+| 4 × 12 | 48 bits | 14,908,778 | 23.8 bits | 24.2 |
+
+`[TABLE 7.1]`
+
+`[FIG 7.6]` Realised entropy against nominal width, and cap survival, at both reference sizes.
+
+A 39-bit key therefore realises 22.3 bits of entropy on this reference, a shortfall of 16.7
+bits, and the frozen 48-bit key realises 23.8, a shortfall of 24.2. **The shortfall grows
+faster than the nominal width**: doubling the nominal key space from 24 to 48 bits buys 7.3
+bits of realised entropy. Specificity must be reasoned about in realised entropy, not nominal
+width, and at the frozen geometry the two differ by a factor of 1.6 × 10⁷ in key count.
+
+**Realised entropy depends on reference size, and the dependence is the point.** On the 64 Mb
+reference of regime R3 the same geometries realise 25.0 bits at 4 × 12 and 23.7 at 3 × 14
+(`results/key-entropy.csv`) — more distinct keys, as a larger reference must produce, but a
+*smaller* shortfall reduction than the fourfold size increase would suggest. An earlier version
+of this table quoted counts whose reference size was never recorded and which reproduce at
+neither size; both are now measured and the size is a column.
 
 ### 7.3.2 Occurrence capping as an observable of saturation
 
 The index retains at most a fixed number of positions per key. The proportion of seeds whose
 occurrence list is truncated is therefore a direct observable of how far the realised key
-distribution falls short of uniformity. Measured saturation rises steeply as `E` falls: at
-3 × 8 the index caps 99.3% of its seeds into 65,760 distinct keys, at which point
-a seed carries essentially no positional information and the structure has degenerated.
+distribution falls short of uniformity. Measured saturation rises steeply as `E` falls. At 3 × 8 only 2.8% of minimizer occurrences
+survive the cap on the 20 Mb reference — 97.2% truncated, into 92,482 distinct keys — against
+93.5% surviving at the frozen 4 × 12. At that point a seed carries essentially no positional
+information and the structure has degenerated.
+
+The scale dependence is sharp and worth stating beside it: on the 64 Mb reference the same
+3 × 8 geometry keeps 0.7% of occurrences, truncating 99.3%, while 4 × 12 keeps 83.7%
+(`results/key-entropy.csv`). Short keys degrade faster than the reference grows, which is why
+a geometry chosen on a small reference does not transfer to a large one.
 
 ### 7.3.3 The squeeze, as a design inequality
 
@@ -448,7 +471,7 @@ wanting; each operates downstream of key formation and therefore cannot alter `a
 | occurrence filtering | false anchors | 16.3% | removes noise, adds no signal |
 | longer look-back (128) | predecessor horizon | 19.0% | the one that does help, and by 1.4 points |
 | shorter keys (4 × 8) | raise `a^E` | 3.2% | yield ↑ 10×, entropy collapses |
-| difference-based keys | normalisation shift | 2.8–8.4% | differencing raises noise by √2 |
+| difference-based keys | normalisation shift | 8.3% [3.6–11.8] | differencing raises noise by √2 |
 
 `[TABLE 7.3]`
 
@@ -534,7 +557,7 @@ not merely on the query.
 
 **Normalisation.** An earlier measurement in this work recorded that, at zero added noise,
 reference-derived (oracle) normalisation recovers 100% of seeds where per-read normalisation
-recovers 50.5% `[UNVERIFIED — App. F.3]`. Per-read normalisation is unavoidable in principle — a read has
+recovers 50.5% (commit `6cb90bb`). Per-read normalisation is unavoidable in principle — a read has
 only its own samples — but the estimator need not be the median and MAD of a single 2000-
 sample chunk. The instrument reports `median` and `median_before` per read in its own
 metadata, and a longer or better-conditioned estimate would reduce the shared shift error
@@ -652,8 +675,9 @@ realising about 2.46 bits of a nominal 4 where this pipeline's uniform quantiser
 more and agrees less.
 
 Raising anchor yield by shortening keys fails for the reason §7.3 gives: realised key entropy,
-some 18 bits below the nominal key width, collapses before the yield becomes useful, and a
-3 × 8 geometry truncates 99.3% of its occurrence lists. The two constraints define a feasible
+16.7 bits below the nominal key width at 3 × 13 and 24.2 below it at the frozen 4 × 12,
+collapses before the yield becomes useful, and a 3 × 8 geometry truncates 97.2% of its
+occurrence lists on the 20 Mb reference and 99.3% on the 64 Mb one. The two constraints define a feasible
 region whose width is set by `a`, and at `a` below 0.8 that region is narrow enough that the
 ordering of adjacent geometries is unstable under changes elsewhere in the pipeline — which is
 the behaviour Chapter 6 observed and could not explain.

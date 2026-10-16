@@ -1,0 +1,42 @@
+pore model : /root/icarust/static/dna_r10.4.1_e8.2_400bps/R10_model.tsv
+             262144 levels, k=9, range 53.53 .. 169.97 pA
+reference  : /root/icarust/docker/squiggle_arrs/chr20_plus_wtc11.fa
+             63981237 ACGT bases used, 499911 non-ACGT skipped (N runs)
+quantiser  : uniform
+geometry   : 3 bits x 14 events = 42-bit keys, window 10
+
+events     : 63981229
+bucket use : 0:0.0% 1:0.1% 2:30.4% 3:19.6% 4:36.5% 5:12.9% 6:0.5% 7:0.0% 
+             entropy 1.94 of 3 bits (65% of the alphabet used)
+
+--- key frequency distribution on real DNA ---
+most frequent key occurs 109247 times
+    freq<= |    keys kept   of all |    positions   of all
+         1 |      6836994    49.1% |      6836994    10.7%
+         2 |      9205239    66.1% |     11573484    18.1%
+         4 |     11193992    80.4% |     18296733    28.6%
+         8 |     12562706    90.2% |     26698668    41.7%
+        16 |     13337668    95.8% |     35699845    55.8%
+        32 |     13701037    98.4% |     43875250    68.6%
+        64 |     13846696    99.4% |     50305180    78.6%
+       128 |     13899095    99.8% |     54875621    85.8%
+       256 |     13915030    99.9% |     57615236    90.1%
+      1024 |     13921984   100.0% |     60965443    95.3%
+
+--- key diversity on real DNA ---
+positions           : 63981216
+distinct keys       : 13923335 (21.76% unique)
+representable space : 4.398e+12
+effective space     : 1.407e+07  (312526x smaller than representable)
+
+--- index at this geometry ---
+minimizers kept     : 11692640 of 63981216 (18.3%)
+distinct keys in idx: 3331808, capped 4007882, insert failures 1
+slots 8388608, load 0.40, 64.0 MiB
+
+--- cap behaviour at THIS reference size ---
+minimizer occurrences kept : 7684758 of 11692640 (65.7%)
+index size at 3.1e9 bases  : 9.1 GB (scales with kept%, not with skew)
+
+Cap survival is the freq<=N table. Run several --bases values for the
+trend; one point cannot be extrapolated.

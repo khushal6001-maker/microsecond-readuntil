@@ -1,0 +1,42 @@
+pore model : /root/squig_r10_9mer.tsv
+             262144 levels, k=9, range 50.58 .. 163.20 pA
+reference  : /root/squigdata/ref.fa
+             20000000 ACGT bases used, 0 non-ACGT skipped (N runs)
+quantiser  : uniform
+geometry   : 3 bits x 8 events = 24-bit keys, window 1
+
+events     : 19999992
+bucket use : 0:0.0% 1:2.3% 2:32.1% 3:15.6% 4:38.5% 5:11.0% 6:0.5% 7:0.0% 
+             entropy 1.99 of 3 bits (66% of the alphabet used)
+
+--- key frequency distribution on real DNA ---
+most frequent key occurs 75251 times
+    freq<= |    keys kept   of all |    positions   of all
+         1 |        12687    13.7% |        12687     0.1%
+         2 |        19809    21.4% |        26931     0.1%
+         4 |        28842    31.2% |        57927     0.3%
+         8 |        38727    41.9% |       120310     0.6%
+        16 |        48646    52.6% |       239771     1.2%
+        32 |        58064    62.8% |       460966     2.3%
+        64 |        66523    71.9% |       853257     4.3%
+       128 |        73801    79.8% |      1521383     7.6%
+       256 |        79875    86.4% |      2633628    13.2%
+      1024 |        88151    95.3% |      6894484    34.5%
+
+--- key diversity on real DNA ---
+positions           : 19999985
+distinct keys       : 92482 (0.46% unique)
+representable space : 1.678e+07
+effective space     : 9.248e+04  (181x smaller than representable)
+
+--- index at this geometry ---
+minimizers kept     : 19999985 of 19999985 (100.0%)
+distinct keys in idx: 92482, capped 19449635, insert failures 0
+slots 262144, load 0.35, 2.0 MiB
+
+--- cap behaviour at THIS reference size ---
+minimizer occurrences kept : 550350 of 19999985 (2.8%)
+index size at 3.1e9 bases  : 49.6 GB (scales with kept%, not with skew)
+
+Cap survival is the freq<=N table. Run several --bases values for the
+trend; one point cannot be extrapolated.

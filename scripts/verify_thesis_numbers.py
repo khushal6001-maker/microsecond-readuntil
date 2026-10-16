@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import csv
 import math
+import subprocess
 import sys
 from pathlib import Path
 
@@ -34,6 +35,32 @@ def rows(name: str) -> list[dict]:
     with open(p, newline="") as f:
         lines = [ln for ln in f if not ln.lstrip().startswith("#")]
     return list(csv.DictReader(lines))
+
+
+def git_record(claim: str, where: str, sha: str, needles: list[str]) -> None:
+    """Assert each needle appears verbatim in the commit message of `sha`.
+
+    Some figures describe code that no longer exists -- a structure that was replaced, a
+    variant that was reverted, a measurement that was withdrawn -- so no current data file
+    can produce them and re-running is impossible by construction. They are not therefore
+    unsupported: each was recorded in the commit message that fixed, reverted or withdrew it,
+    and a commit message is a content-addressed, immutable record made at the time of the
+    measurement. Citing the commit is the correct discipline for a historical claim, and this
+    check keeps the citation honest by failing if the text ever stops matching.
+    """
+    try:
+        body = subprocess.run(
+            ["git", "log", "-1", "--format=%B", sha],
+            cwd=REPO, capture_output=True, text=True, check=True, encoding="utf-8",
+        ).stdout
+    except Exception as exc:  # a missing object is a failure, not a skip
+        FAIL.append((claim, where, f"git read failed: {exc}", sha))
+        return
+    missing = [n for n in needles if n not in body]
+    if missing:
+        FAIL.append((claim, where, f"not in {sha[:7]}: {missing}", sha[:7]))
+    else:
+        PASS.append((claim, f"{where} [commit {sha[:7]}]", None, None))
 
 
 def check(claim: str, where: str, got, want, tol=0.0) -> None:
@@ -357,6 +384,110 @@ check("minimizers at window 1 on chr20", "App C.1, §5.6",
       round(63981218 / 1e6, 1), 63.9, 0.01)
 check("reference bases indexed", "§5.6", round(63981237 / 1e6), 64, 0.01)
 
+# ---------------------------------------------------------------- realised key entropy
+ke = rows("key-entropy.csv")
+if ke:
+    def k(ref, geo, key):
+        for r in ke:
+            if int(r["ref_mb"]) == ref and r["geometry"] == geo:
+                return float(r[key]) if key != "geometry" else r[key]
+        return None
+
+    check("3x13 realised entropy on the 20 Mb reference", "§7.3.1 T7.1",
+          k(20, "3x13", "realised_bits"), 22.3)
+    check("3x13 shortfall below nominal", "§7.3.1, §7.10",
+          k(20, "3x13", "shortfall_bits"), 16.7)
+    check("4x12 realised entropy, frozen geometry", "§7.3.1 T7.1",
+          k(20, "4x12", "realised_bits"), 23.8)
+    check("4x12 shortfall below nominal", "§7.3.1, §7.10",
+          k(20, "4x12", "shortfall_bits"), 24.2)
+    check("3x8 distinct keys on the 20 Mb reference", "§7.3.2",
+          k(20, "3x8", "distinct_keys"), 92482)
+    check("3x8 truncation on the 20 Mb reference (%)", "§7.3.2, §7.10",
+          round(100 - k(20, "3x8", "cap_kept_pct"), 1), 97.2)
+    check("3x8 truncation on the 64 Mb reference (%)", "§7.3.2, §7.10",
+          round(100 - k(64, "3x8", "cap_kept_pct"), 1), 99.3)
+    check("4x12 cap survival on the 20 Mb reference (%)", "§7.3.2",
+          k(20, "4x12", "cap_kept_pct"), 93.5)
+    check("entropy is monotone in nominal width", "§7.3.1",
+          all(k(20, a, "realised_bits") < k(20, b, "realised_bits")
+              for a, b in (("3x8", "4x8"), ("4x8", "3x13"), ("3x13", "3x14"), ("3x14", "4x12"))),
+          True)
+    check("shortfall grows faster than nominal width", "§7.3.1",
+          k(20, "4x12", "shortfall_bits") > 3 * k(20, "3x8", "shortfall_bits"), True)
+    check("minimizers at window 10 on the 64 Mb reference", "App C.1, §3.6.3",
+          round(11665467 / 1e6, 1), 11.7, 0.01)
+else:
+    MISS.append(("realised key entropy", "§7.3.1", "results/key-entropy.csv absent"))
+
+# ---------------------------------------------------------------- difference keys
+dk = rows("delta-keys.csv")
+if dk:
+    enc = {r["encoding"]: r for r in dk}
+    check("difference keys, three-seed mean", "§7.6 T7.3, T8.1 row 10",
+          float(enc["delta"]["tpr_mean"]), 8.3)
+    check("difference keys, range", "§7.6, T8.1 row 10",
+          [float(enc["delta"][k]) for k in ("tpr_lo", "tpr_hi")], [3.6, 11.8])
+    check("the absolute control reproduces decision-rules.csv", "§7.6",
+          float(enc["absolute"]["tpr_mean"]), 17.6)
+    check("difference keys are worse in every seed", "§7.6",
+          all(float(enc["delta"][k]) < float(enc["absolute"][k])
+              for k in ("tpr_s42", "tpr_s43", "tpr_s44")), True)
+else:
+    MISS.append(("difference keys", "§7.6", "results/delta-keys.csv absent"))
+
+# ---------------------------------------------------------------- comparison costs
+cc = rows("comparison-costs.csv")
+if cc:
+    def c(system, frag, key):
+        for r in cc:
+            if r["system"] == system and frag in r["mode"]:
+                return r[key]
+        return None
+
+    check("readfish orchestration, per read (us)", "§5.8.1, §8.1, §8.3",
+          round(float(c("readfish", "no-op", "per_read_ms")) * 1000, 1), 124.3)
+    check("readfish no-op caller, processor use (%)", "§5.8.1",
+          float(c("readfish", "no-op", "cpu_pct")), 15.6)
+    check("readfish with caller and mapper, processor use (%)", "§5.8.1",
+          float(c("readfish", "targets", "cpu_pct")), 25.3)
+    check("readfish resident set range (MiB)", "§5.8.1",
+          [float(c("readfish", "no-op", "rss_mib")), float(c("readfish", "targets", "rss_mib"))],
+          [86.0, 663.4])
+    check("this system's processor use", "§5.8.1, §8.1",
+          c("ours", "frozen", "cpu_pct"), "181.5-202.3")
+    check("comparison mapper, per read incl. index load (ms)", "§5.8.2",
+          float(c("rawhash2", "incl", "per_read_ms")), 10.64)
+    check("comparison mapper, per read excl. index load (ms)", "§5.8.2",
+          float(c("rawhash2", "excl", "per_read_ms")), 10.18)
+    check("this system's per-read figure is 10 chunks of the R3 median", "§5.8.2",
+          round(10 * 124.77 / 1000.0, 2), float(c("ours", "frozen", "per_read_ms")), 0.01)
+else:
+    MISS.append(("comparison costs", "§5.8", "results/comparison-costs.csv absent"))
+
+# ---------------------------------------------------------------- the historical record
+# Figures describing code that no longer exists. Each is cited to the commit that fixed,
+# reverted or withdrew it, and the commit message is the primary record.
+git_record("Vote-table lockout: 0 accepts of 763 at 64 Mb", "§4.4, T8.1 row 6",
+           "284908b", ["0 accepts out of 763", "votes[weakest] <= 1"])
+git_record("Vote-table lockout: 854 of 1366 at 37 kb", "§4.4, T8.1 row 6",
+           "ba18428", ["accepts 854 of 1366"])
+git_record("Chunk-relative diagonal: the inverted metric", "§4.5, T8.1 row 7",
+           "b6e939a", ["49/300 at 2 chunks down\nto 7/300 at 20"])
+git_record("Chunk-relative diagonal: the corrected series", "§4.5, T8.1 row 7",
+           "b6e939a", ["118 -> 160 -> 170 -> 196 of 300"])
+git_record("Two-scale detector: 3 against 38 correct diagonals at CV 0.50",
+           "T8.1 row 9", "e58d6fe", ["0.50          38             3", "52/59/27/1"])
+git_record("Oracle normalisation: 100% of seeds against 50.5%", "§7.8, §8.4",
+           "6cb90bb", ["oracle normalisation recovers 100% of seeds and per-read",
+                       "normalisation recovers 50.5%"])
+git_record("Withdrawn p99 values and the TSC frequency", "§5.2.2, T8.1 row 1",
+           "0c620fa", ["111.93", "2418.7"])
+git_record("Withdrawn unpinned medians and maxima", "§5.3.1, T8.1 row 2",
+           "ab4614f", ["27.0", "17.9", "9.2 ms"])
+git_record("Single-run dwell figure withdrawn by replication", "T8.1 row 11",
+           "668a6a8", ["seed"])
+
 # ---------------------------------------------------------------- report
 W = 62
 print("=" * 78)
@@ -379,34 +510,30 @@ print("\n" + "=" * 78)
 print("OUTSTANDING: claims no committed file can settle")
 print("=" * 78)
 OUTSTANDING = [
-
-    ("readfish orchestration: 124 us/chunk, 15.6-25.3% of a core, 86-663 MB",
-     "§5.8.1, §8.1, §8.3", "re-run readfish with the no-op caller, capture to results/"),
-    ("This system's processor use: 182-202% of one core", "§5.8.1, §8.1",
-     "capture alongside the readfish comparison"),
-    ("RawHash2 9.66 ms/read against ~1.34 ms", "§5.8.2",
-     "re-run both single-threaded with /usr/bin/time, capture to results/"),
-
-    ("Vote-table lockout: 0 accepts of 763; 854 of 1366 at 37 kb", "§4.4, T8.1",
-     "recoverable only by re-running the pre-fix binary; cite the commit instead"),
-    ("Chunk-relative diagonal: 49/300 -> 7/300, corrected 118->160->170->196",
-     "§4.5, T8.1", "re-run bench with the diagnostic enabled, capture to results/"),
-    ("Oracle normalisation recovers 100% of seeds against 50.5% per-read", "§7.8, §8.4",
-     "re-run; superseded in part by §7.4.4's whole-read result, which IS backed"),
-    ("Realised key entropy ~18 bits below nominal; 3x8 truncates 99.3%", "§7.3.1, §7.10",
-     "re-run bench/real_reference.cpp, capture to results/"),
-
-    ("Two-scale detector: 3 against 38 correct diagonals at CV 0.50", "T8.1 row 9",
-     "the implementation was reverted; cite the commit that reverted it"),
-    ("Difference keys: 18.8% falling to 2.8-8.4%", "§7.6, T8.1 row 10",
-     "delta_keys is still in QuantConfig; re-runnable with bench/squig_sweep.cpp"),
-    ("Index footprint at window 10: 11.7M minimizers, 1.6 GB", "App C.1, §3.6.3",
-     "the WINDOW 1 half is now captured (63.9M minimizers, 3.70 GB, in every "
-     "results/r3-raw/r3_frozen_*.log). Re-run the window-10 build for the other half"),
-    ("Withdrawn figures in T8.1 rows 1, 2, 3 (111.93/112.12/223.66/447.59; 27.0-27.3 "
-     "and 17.9-18.8; 9.2 ms and 1.5 ms)", "§5.2.2, §5.3.1, T8.1",
-     "these are withdrawn results and are quoted as such; the ORIGINAL runs are gone. "
-     "Cite the session record, or re-state as 'approximately'"),
+    ("Icarust accept rates behind Table 6.2: 43.5 / 0.5 / 9.6 per cent",
+     "§6.8, App B",
+     "live read-until rates against Icarust, recorded in third_party_patches/README.md and "
+     "results/icarust-stock-vs-patched.csv but not from a captured run. Needs a re-run of "
+     "the patched and stock simulator with the daemon, roughly an hour including the "
+     "Icarust rebuild"),
+    ("Index resident set at minimizer window 10: ~1.5 GiB",
+     "App C.1, §3.6.3",
+     "the minimizer COUNT is measured (11.67 M, results/key-entropy.csv) and the resident "
+     "set is read from a surviving /usr/bin/time -v in results/comparison-raw/, which is a "
+     "window-10 run of an older binary. A current window-10 daemon run would settle it"),
+    ("Bare-metal deadline-miss rate against the 1.56 ms bound",
+     "§3.8, §5.9, §8.4",
+     "requires hardware this work does not have: isolated cores, tickless operation, "
+     "interrupt affinity moved off the measured cores, fixed governor. Every latency "
+     "figure in the thesis is scoped to a hypervisor because of this"),
+    ("Per-event agreement across the full dwell sweep and across seeds",
+     "§6.10, §7.9",
+     "agreement is measured at two dwell levels with one seed and 200 reads (§7.4.4-5). "
+     "The tooling exists; extending it to six levels in triplicate is a few hours of "
+     "compute, not a missing capability"),
+    ("Real instrument data for any measurement in this thesis",
+     "§6.10, §7.9, §8.4",
+     "all signal is simulated, from two generators. Needs a sequencing run"),
 ]
 for claim, where, needs in OUTSTANDING:
     print(f"\n  {claim}")

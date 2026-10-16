@@ -19,3 +19,4 @@ results file; do not edit a figure by hand.
 | `fig7-3-model-vs-measured` | `results/agreement-summary.csv` | Measured key match probability against the a^E prediction, sized by indel rate. |
 | `fig7-4-per-read-distributions` | `results/agreement-{our_detect,our_fixed,rh}_std*.csv` | Empirical CDFs of per-read agreement and indel fraction for four cells. |
 | `fig7-5-geometry-x-chaining` | `results/geometry-x-chaining.csv` | Voting against chaining across key geometries; the decision rule moves little. |
+| `fig7-6-key-entropy` | `results/key-entropy.csv` | Realised entropy and occurrence-cap survival by geometry, at both reference sizes. |
