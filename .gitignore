@@ -20,7 +20,11 @@ perf.data.old
 build/_*.sh
 build/_*.py
 
-# LaTeX build products; manuscript.pdf is committed deliberately, the rest is not.
+# The distributable source archive, rebuilt from committed files by
+# scripts/make_paper_zip.py. Committing it would duplicate the whole paper directory.
+paper/dist/
+
+# LaTeX build products; the two manuscript PDFs are committed deliberately, the rest is not.
 paper/*.aux
 paper/*.log
 paper/*.out

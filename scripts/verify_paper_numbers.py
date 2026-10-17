@@ -7,7 +7,8 @@ expected string from the data file and asserts that string appears in the manusc
 corrected measurement therefore fails this check until the paper is updated, which is the
 property that keeps a standalone paper from drifting away from the repository it cites.
 
-Both the Markdown and the LaTeX manuscript are checked, so the two cannot disagree either.
+Both the Markdown and both LaTeX manuscripts (acmart and IEEE) are checked, so no two of
+them can disagree either.
 
     python scripts/verify_paper_numbers.py
 """
@@ -34,7 +35,9 @@ def r(value, places=1) -> str:
 
 REPO = Path(__file__).resolve().parent.parent
 RESULTS = REPO / "results"
-PAPERS = [REPO / "paper" / "manuscript.md", REPO / "paper" / "manuscript.tex"]
+PAPERS = [REPO / "paper" / "manuscript.md",
+          REPO / "paper" / "manuscript.tex",
+          REPO / "paper" / "manuscript-ieee.tex"]
 
 OK: list[str] = []
 BAD: list[tuple[str, str, str]] = []

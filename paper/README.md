@@ -7,8 +7,10 @@ the same discipline.
 |---|---|
 | `manuscript.md` | the paper in Markdown, readable without a TeX installation |
 | `manuscript.tex` | the same paper for `acmart` (sigconf, `nonacm`) |
-| `manuscript.pdf` | built output, 10 pages |
+| `manuscript-ieee.tex` | the same paper for `IEEEtran` (`conference`), generated from the above |
+| `manuscript.pdf`, `manuscript-ieee.pdf` | built output, 10 pages each |
 | `figures/` | the paper's figures, generated without figure-level titles |
+| `BUNDLE.md` | the README that ships inside the distributable source archive |
 
 ## Building
 
@@ -16,8 +18,43 @@ the same discipline.
 cd paper && latexmk -pdf manuscript.tex
 ```
 
+```bash
+cd paper && latexmk -pdf manuscript-ieee.tex
+```
+
 Two `pdflatex` passes suffice if `latexmk` is unavailable; the bibliography is a
-`thebibliography` environment, so no BibTeX run is needed.
+`thebibliography` environment, so no BibTeX run is needed. Built with TeX Live 2026; both
+`acmart` and `IEEEtran` are in the standard distribution.
+
+## The IEEE version
+
+```bash
+python scripts/make_ieee_manuscript.py
+```
+
+`manuscript-ieee.tex` is *generated* from `manuscript.tex`, not maintained beside it, so the
+two cannot drift in prose or in numbers. The generator rewrites the preamble, the title block
+and the bibliography wholesale, and makes exactly four kinds of change to the body: `\S\ref`
+becomes `Section~\ref`, two `\paragraph` run-in headings become the `\textbf` form used
+elsewhere in the paper, table bodies drop from `\small` to `\footnotesize` or `\scriptsize`
+for the narrower column, and Figure 1's node spacing tightens by 2 mm. That last one is
+measured rather than guessed: the acmart picture is 252.42 pt wide against an IEEE column of
+252.0 pt, so it overflows by 0.42 pt.
+
+Edit the prose in `manuscript.tex` and regenerate. The generator fails loudly rather than
+silently skipping if any of the structures it expects has moved.
+
+## A distributable archive
+
+```bash
+python scripts/make_paper_zip.py
+```
+
+Writes `paper/dist/microsecond-readuntil-paper-latex.zip`: both manuscripts, the Markdown,
+both built PDFs and the figures, flat at the archive root so `\graphicspath{{figures/}}`
+resolves without editing and Overleaf can take the archive as given. The script only copies
+files, so the archive cannot contain a number the gate below has not checked. The archive is
+not committed; it is rebuilt from committed files on demand.
 
 ## Figures
 
@@ -51,10 +88,10 @@ This checks the paper rather than the thesis, and does it in the opposite direct
 `verify_thesis_numbers.py`: instead of transcribing claims by hand, it builds the expected
 string from the data file under `results/` and asserts that string appears in the manuscript.
 A corrected measurement therefore fails the check until the paper is updated, which is what
-stops a standalone paper drifting away from the repository it cites. Both the Markdown and the
-LaTeX are checked, so the two cannot disagree with each other either.
+stops a standalone paper drifting away from the repository it cites. The Markdown and both
+LaTeX manuscripts are checked, so no two of them can disagree with each other either.
 
-At the committed state it reports 96 assertions matched across the two formats.
+At the committed state it reports 144 assertions matched across the three formats.
 
 ## Relationship to the thesis
 
