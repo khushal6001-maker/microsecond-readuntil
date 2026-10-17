@@ -47,11 +47,14 @@ rather than applied by hand, so what was removed is auditable; the script exits 
 any target string has moved. Measured at `0.86\textwidth` in a 516 pt text block, the six
 data figures occupy 1328 pt of full-width band before captions — 2.2 of the 10 pages — which
 is why four of them, the four that plot a table already present or draw a displayed equation,
-are the first thing to go. The other cuts are the scaffolding around §VIII and §IX and twenty
-words of abstract.
+are the first thing to go. The other cuts are the scaffolding around §VIII and §IX, and an
+abstract rewritten from 389 words to IEEE's 250 in a single paragraph.
 
-**No number is cut.** `verify_paper_numbers.py` holds the IEEE file to the same 144
-assertions as the other two, so a cut that dropped a measurement fails the gate.
+**No measurement is cut.** `verify_paper_numbers.py` holds the IEEE file to the same 144
+assertions as the other two, so a cut that dropped one fails the gate. The abstract gets a
+second guard, because it is rewritten rather than edited: the generator compares the numeric
+tokens of the short abstract against the full one and refuses to write a file that introduces
+a numeral the full-length abstract did not have.
 
 Edit the prose in `manuscript.tex` and regenerate. The generator fails loudly rather than
 silently skipping if any of the structures it expects has moved.

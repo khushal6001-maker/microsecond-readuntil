@@ -48,10 +48,18 @@ Content differences, all in the IEEE version, all listed as data in the generato
 | four data figures dropped | three plotted a table that is still present; one drew a surface that is given as a displayed equation |
 | Figure 3 drawn at `0.70\textwidth` | at `0.86` an IEEE text block scales it *up* 11% past its natural width |
 | §VIII and §IX rewritten shorter | the two discursive sections; every number in them is carried over |
-| abstract trimmed, 389 → 369 words | scaffolding only |
+| abstract cut, 389 → 250 words | IEEE's guidance, and one paragraph rather than two |
 
-**No number was cut.** `scripts/verify_paper_numbers.py` holds all three manuscripts to the
-same 144 assertions, so a cut that lost a measurement would fail the gate rather than ship.
+The abstract no longer quotes the peak resident set, the index size, the offered chunk rate,
+the run count or the 46-fold key-match decomposition; §IV and §VI still do. The one phrasing
+that leaves the IEEE paper entirely is the rounded "63.9 M minimizers", which the body gives
+exactly as 63,981,218.
+
+**No measurement was cut.** `scripts/verify_paper_numbers.py` holds all three manuscripts to
+the same 144 assertions, so a cut that lost one would fail the gate rather than ship. The
+generator additionally refuses to write a short abstract containing any numeral the
+full-length abstract did not have, since a retyped abstract is where a digit gets quietly
+changed.
 
 ## Before submitting
 
@@ -59,9 +67,8 @@ same 144 assertions, so a cut that lost a measurement would fail the gate rather
   block sits directly below it in `manuscript-ieee.tex` if the submission is joint.
 - **Title length.** The title runs to four lines in IEEE format. It is accurate, and no
   shorter form was substituted without asking.
-- **Abstract length.** 369 words against IEEE guidance of nearer 250. The remainder is
-  numeric content rather than scaffolding: trimming it further means dropping a measurement
-  from the abstract, which is an editorial decision rather than a formatting one.
+- **Abstract length.** 250 words, one paragraph, which is IEEE's guidance. Cutting below that
+  means dropping a further measurement, not scaffolding.
 - **Page count.** 8 pages including references, which is the common conference cap. If a
   venue allows 10, use `manuscript-acmart.tex` as the content source — it has the four extra
   figures and the full-length §VIII and §IX.

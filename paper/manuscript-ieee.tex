@@ -56,33 +56,25 @@ khushal6002@gmail.com}
 \maketitle
 
 \begin{abstract}
-Oxford Nanopore adaptive sampling (``Read Until'') requires a client to decide, within a
-physical deadline, whether to eject a molecule still transiting the pore. We make two
-contributions. First, the decision budget is not the obstacle: a single-process C++20
-data plane with single-copy ingestion, zero-copy propagation, lock-free single-producer
-single-consumer rings and a reference-counting arena protocol reaches a median per-chunk
-decision latency of 124.8 µs [115.6--132.3] against a derived service bound of 1.56 ms, at
-3.70 GiB peak resident set over a 64 Mb reference index of 63.9 M minimizers, sustaining
-604--645 chunk/s with zero drops across nine 40 s runs. For calibration, the bare orchestration
-layer of a basecalling client (readfish with a no-operation caller) costs 124.3 µs per
-read-chunk on the same rig---indistinguishable from our \emph{complete} signal-space decision.
-Second, we locate the real limit. We frame Read Until as a soft-real-time
-\emph{loss system}, in which a mean comfortably inside budget is consistent with an arbitrary
-deadline-miss rate, and we report a distribution against a derived budget rather than a mean.
-Our pipeline resolves 17.6\% [16.6--18.8] of reads at a zero-false-positive threshold where
-RawHash2 resolves 91.8\% [91.2--92.4] on identical input. We account for this gap without
-appeal to the decision rule. We proposed a seed-survival law $P(\mathrm{key}) = a^{E}$ in the
-per-event bucket agreement $a$ and key length $E$, argued it was a lower bound, and then
-\emph{refuted our own bound}: once event retention is data-dependent the governing form is
-$P(\mathrm{key}) \approx (1-g)^{E} a^{E}$, where $g$ is the rate at which the two event
-sequences fail to correspond at all. Under one estimator on identical input at
-realistic motor-dwell dispersion, RawHash2 achieves $a = 0.911$, $g = 0.092$ at $E = 8$,
-giving $P(\mathrm{key}) = 0.254$ and 467 anchors per read, against our $a = 0.783$,
-$g = 0.196$ at $E = 12$, giving 0.0055 and 14.9 anchors. The 46-fold key-match difference
-decomposes into $9.3\times$ from encoding and segmentation and $4.9\times$ from key length; anchor supply
-differs 31-fold. Three measured root causes follow: asymmetric event retention between
-reference and query encoders, a quantiser that spends too little alphabet on agreement, and
-recoverable loss inside the chainer.
+Oxford Nanopore adaptive sampling (``Read Until'') requires a client to
+decide, within a physical deadline, whether to eject a molecule still transiting the pore.
+First, the decision budget is not the obstacle: a single-process C++20 data plane with
+single-copy ingestion, zero-copy propagation and a lock-free, reference-counting arena
+protocol reaches a median per-chunk decision latency of 124.8 µs [115.6--132.3] against a
+derived service bound of 1.56 ms, with no drops at genome scale. A basecalling client's bare
+orchestration (readfish with a no-operation caller) costs 124.3 µs per read-chunk on the same
+rig---as much as our \emph{complete} signal-space decision. Read Until is a soft-real-time
+\emph{loss system}: a mean inside budget is consistent with an arbitrary deadline-miss rate.
+Second, we locate the real limit. Our pipeline resolves 17.6\% [16.6--18.8] of reads at a
+zero-false-positive threshold where RawHash2 resolves 91.8\% [91.2--92.4] on identical
+input. We proposed a seed-survival law
+$P(\mathrm{key}) = a^{E}$ in per-event bucket agreement $a$ and key length $E$, argued it was
+a lower bound, and then \emph{refuted our own bound}: once event retention is data-dependent
+the form is $P(\mathrm{key}) \approx (1-g)^{E} a^{E}$, where $g$ is the correspondence-failure
+rate. Under one estimator, RawHash2 achieves $a = 0.911$, $g = 0.092$ and
+467 anchors per read at $E = 8$, against our 0.783, 0.196 and 14.9 at $E = 12$. Three
+measured root causes follow: asymmetric event retention between the two encoders, a quantiser
+that buys too little agreement, and recoverable chainer loss.
 \end{abstract}
 
 \begin{IEEEkeywords}

@@ -234,29 +234,39 @@ PROSE_CUTS = [
      "(Table~" + BS + "ref{tab:entropy}," + NL + "Figure~" + BS + "ref{fig:entropy})",
      "(Table~" + BS + "ref{tab:entropy})"),
 
-    # -- the abstract, trimmed of scaffolding but of no numeral ----------------------
-    ("abstract: first contribution",
-     "We make two" + NL + "contributions. First, we show the decision budget is not the"
-     " obstacle: a single-process C++20",
-     "We make two" + NL + "contributions. First, the decision budget is not the obstacle: a"
-     " single-process C++20"),
-    ("abstract: second contribution",
-     "Second, we show where the real limit lies. We frame Read Until as a soft-real-time",
-     "Second, we locate the real limit. We frame Read Until as a soft-real-time"),
-    ("abstract: measured under",
-     "sequences fail to correspond at all. Measured under one estimator on identical input"
-     " at" + NL + "realistic motor-dwell dispersion, RawHash2",
-     "sequences fail to correspond at all. Under one estimator on identical input at"
-     + NL + "realistic motor-dwell dispersion, RawHash2"),
-    ("abstract: root causes",
-     "We identify three root causes---asymmetric event retention between reference" + NL
-     + "and query encoders, a quantiser that spends too little alphabet on agreement, and"
-     " recoverable" + NL + "loss inside the chainer---and argue that $a$ and $g$ should be"
-     " measured and reported before any" + NL + "decision rule is proposed.",
-     "Three measured root causes follow: asymmetric event retention between" + NL
-     + "reference and query encoders, a quantiser that spends too little alphabet on"
-     " agreement, and" + NL + "recoverable loss inside the chainer."),
 ]
+
+# ---------------------------------------------------------------------------------------
+# The abstract, cut to IEEE's guidance of about 250 words from the acmart version's 389.
+# Scaffolding alone does not get there -- most of that abstract is numerals -- so this one
+# also drops the resident set, the index size, the offered chunk rate, the run count and the
+# 46-fold key-match decomposition. All five are reported in the body, which is what the
+# number gate checks, so nothing numeric leaves the paper.
+#
+# Every numeric token here is checked against the full abstract before the file is written,
+# because an abstract retyped shorter is exactly where a digit gets quietly changed.
+#
+# One paragraph, which is what IEEE asks for; the acmart version's break after the first
+# contribution is closed up here.
+SHORT_ABSTRACT = r"""Oxford Nanopore adaptive sampling (``Read Until'') requires a client to
+decide, within a physical deadline, whether to eject a molecule still transiting the pore.
+First, the decision budget is not the obstacle: a single-process C++20 data plane with
+single-copy ingestion, zero-copy propagation and a lock-free, reference-counting arena
+protocol reaches a median per-chunk decision latency of 124.8 µs [115.6--132.3] against a
+derived service bound of 1.56 ms, with no drops at genome scale. A basecalling client's bare
+orchestration (readfish with a no-operation caller) costs 124.3 µs per read-chunk on the same
+rig---as much as our \emph{complete} signal-space decision. Read Until is a soft-real-time
+\emph{loss system}: a mean inside budget is consistent with an arbitrary deadline-miss rate.
+Second, we locate the real limit. Our pipeline resolves 17.6\% [16.6--18.8] of reads at a
+zero-false-positive threshold where RawHash2 resolves 91.8\% [91.2--92.4] on identical
+input. We proposed a seed-survival law
+$P(\mathrm{key}) = a^{E}$ in per-event bucket agreement $a$ and key length $E$, argued it was
+a lower bound, and then \emph{refuted our own bound}: once event retention is data-dependent
+the form is $P(\mathrm{key}) \approx (1-g)^{E} a^{E}$, where $g$ is the correspondence-failure
+rate. Under one estimator, RawHash2 achieves $a = 0.911$, $g = 0.092$ and
+467 anchors per read at $E = 8$, against our 0.783, 0.196 and 14.9 at $E = 12$. Three
+measured root causes follow: asymmetric event retention between the two encoders, a quantiser
+that buys too little agreement, and recoverable chainer loss."""
 
 # Two discursive sections are replaced wholesale rather than edited phrase by phrase. Each
 # entry gives the heading to match, the heading that follows it, and the replacement body.
@@ -383,13 +393,21 @@ def main() -> int:
         body = body.replace(old, "[width=" + frac + BS + "textwidth]{" + name + "}")
 
     for label, old, new in PROSE_CUTS:
-        if old in body:
-            body = body.replace(old, new, 1)
-        elif old in abstract:
-            abstract = abstract.replace(old, new, 1)
-        else:
+        if old not in body:
             print("prose cut " + repr(label) + " did not match", file=sys.stderr)
             return 1
+        body = body.replace(old, new, 1)
+
+    # ---- the shortened abstract, with no numeral the full one did not have ------------
+    def numerals(t: str) -> set:
+        return set(re.findall(r"\d+(?:[.,]\d+)*", t))
+
+    invented = numerals(SHORT_ABSTRACT) - numerals(abstract)
+    if invented:
+        print("short abstract introduces numerals absent from the full one: "
+              + ", ".join(sorted(invented)), file=sys.stderr)
+        return 1
+    abstract = SHORT_ABSTRACT
 
     for heading, next_heading, replacement in SECTION_REWRITES:
         start = BS + "section{" + heading + "}"
