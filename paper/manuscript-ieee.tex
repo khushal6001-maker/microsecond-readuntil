@@ -27,6 +27,11 @@
 \graphicspath{{figures/}}
 \renewcommand{\arraystretch}{1.15}
 
+% Long unbreakable technical tokens -- script paths, chains of \times in maths -- can leave
+% a line with nowhere to break. Letting TeX stretch the interword space on such a line keeps
+% them out of the margin without touching a word of the text.
+\emergencystretch=1.5em
+
 \begin{document}
 
 %% The title is long for a conference paper. It is left unbroken so that IEEEtran wraps it
@@ -53,7 +58,7 @@ khushal6002@gmail.com}
 \begin{abstract}
 Oxford Nanopore adaptive sampling (``Read Until'') requires a client to decide, within a
 physical deadline, whether to eject a molecule still transiting the pore. We make two
-contributions. First, we show the decision budget is not the obstacle: a single-process C++20
+contributions. First, the decision budget is not the obstacle: a single-process C++20
 data plane with single-copy ingestion, zero-copy propagation, lock-free single-producer
 single-consumer rings and a reference-counting arena protocol reaches a median per-chunk
 decision latency of 124.8 µs [115.6--132.3] against a derived service bound of 1.56 ms, at
@@ -61,7 +66,7 @@ decision latency of 124.8 µs [115.6--132.3] against a derived service bound of 
 604--645 chunk/s with zero drops across nine 40 s runs. For calibration, the bare orchestration
 layer of a basecalling client (readfish with a no-operation caller) costs 124.3 µs per
 read-chunk on the same rig---indistinguishable from our \emph{complete} signal-space decision.
-Second, we show where the real limit lies. We frame Read Until as a soft-real-time
+Second, we locate the real limit. We frame Read Until as a soft-real-time
 \emph{loss system}, in which a mean comfortably inside budget is consistent with an arbitrary
 deadline-miss rate, and we report a distribution against a derived budget rather than a mean.
 Our pipeline resolves 17.6\% [16.6--18.8] of reads at a zero-false-positive threshold where
@@ -70,15 +75,14 @@ appeal to the decision rule. We proposed a seed-survival law $P(\mathrm{key}) = 
 per-event bucket agreement $a$ and key length $E$, argued it was a lower bound, and then
 \emph{refuted our own bound}: once event retention is data-dependent the governing form is
 $P(\mathrm{key}) \approx (1-g)^{E} a^{E}$, where $g$ is the rate at which the two event
-sequences fail to correspond at all. Measured under one estimator on identical input at
+sequences fail to correspond at all. Under one estimator on identical input at
 realistic motor-dwell dispersion, RawHash2 achieves $a = 0.911$, $g = 0.092$ at $E = 8$,
 giving $P(\mathrm{key}) = 0.254$ and 467 anchors per read, against our $a = 0.783$,
 $g = 0.196$ at $E = 12$, giving 0.0055 and 14.9 anchors. The 46-fold key-match difference
 decomposes into $9.3\times$ from encoding and segmentation and $4.9\times$ from key length; anchor supply
-differs 31-fold. We identify three root causes---asymmetric event retention between reference
-and query encoders, a quantiser that spends too little alphabet on agreement, and recoverable
-loss inside the chainer---and argue that $a$ and $g$ should be measured and reported before any
-decision rule is proposed.
+differs 31-fold. Three measured root causes follow: asymmetric event retention between
+reference and query encoders, a quantiser that spends too little alphabet on agreement, and
+recoverable loss inside the chainer.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -155,7 +159,7 @@ structures.
 
 \textbf{Basecalling clients.} readfish~\cite{readfish} and similar clients basecall each chunk
 and map the resulting sequence. This is accurate and reuses mature tooling, but places a neural
-network and a sequence aligner inside the decision loop.
+network and a sequence aligner~\cite{minimap2} inside the decision loop.
 
 \textbf{Signal-space mappers} avoid basecalling by encoding the reference into expected signal
 under a pore model and matching quantised query events directly. UNCALLED~\cite{uncalled} uses
@@ -307,7 +311,8 @@ performance. Every run reported here carries the development-only label.
 
 \textbf{Host.} Intel Core i5-1135G7, 4 physical cores / 8 logical, under WSL2.
 \textbf{Regimes.} R1: a 37 kb reference under constant dwell. R3: a 64 Mb human chr20 reference
-under variable dwell at the frozen configuration---4 bits $\times$ 12 events, minimizer window
+under variable dwell at the frozen configuration---4 bits $\times$ 12 events,
+minimizer~\cite{minimizers} window
 1, detected-event segmentation, two shards, pinned.
 
 \subsection{Placement and thread count}
@@ -480,7 +485,7 @@ anchor-history, $L = 128$   & 19.6 & 19.4 & 18.0 & \textbf{19.0} [18.0--19.6] \\
 \end{tabular}
 \end{table}
 
-Table~\ref{tab:rules} and Figure~\ref{fig:rules} give six rules in triplicate.
+Table~\ref{tab:rules} gives six rules in triplicate.
 
 \textbf{The $\beta = 0$ control is the informative row.} With gap tolerance removed, chaining is
 \emph{worse} than the vote table---9.1\% against 14.1\%---as expected when it tracks 24
@@ -500,14 +505,6 @@ five rows of the same table.
 
 Even at its best, the decision rule moves accuracy by tens of percent where the gap to be closed
 is a factor of five. The deficiency is not here.
-
-\begin{figure*}[t]
-\centering
-\includegraphics[width=0.86\textwidth]{fig4-1-decision-rules.pdf}
-\caption{Decision rules with their across-seed ranges. Adjacent rules overlap, so a single run
-cannot separate them.}
-\label{fig:rules}
-\end{figure*}
 
 \section{A seed-survival law}
 \label{sec:law}
@@ -536,20 +533,11 @@ constant, $g$ is small and $a^{E}$ behaves as the lower bound derived above---me
 and $5.1\times$ below the direct count in the two such configurations. Where segmentation is
 data-dependent or dwell varies, $g$ rises to 0.09--0.21 and $a^{E}$ becomes an
 \textbf{over-estimate}, by between $1.9\times$ and $14\times$ across the remaining cells
-(Figure~\ref{fig:modelmeas}). Figure~\ref{fig:surface} shows the $a^{E}$ surface over the
-$(a, E)$ plane with both systems' measured operating points.
+(Figure~\ref{fig:modelmeas}).
 
 The qualitative content survives---yield falls geometrically in $E$, with a base that is a
 measurable property of the quantiser---but the use of $a^{E}$ as a one-sided bound is restricted
 to the exact-correspondence case.
-
-\begin{figure*}[t]
-\centering
-\includegraphics[width=0.86\textwidth]{fig7-1-ae-surface.pdf}
-\caption{Modelled key-match probability over the $(a, E)$ plane, with each system's measured
-operating point. Measured $P$ sits below $a^{E}$ in both cases.}
-\label{fig:surface}
-\end{figure*}
 
 \subsection{An estimator-symmetric instrument}
 
@@ -603,7 +591,7 @@ RawHash2  & 0.44 & 0.911 & 0.092 & 8  & 0.254  & 467 \\
 \textbf{The gap is large and it is before seeding.} At CV 0.44, measured key-match probability
 differs by a factor of \textbf{46} (0.254 against 0.0055) and anchor supply by a factor of
 \textbf{31} (467 against 14.9 per read, the two ratios differing because the systems retain
-different numbers of events per read; Table~\ref{tab:agree}, Figure~\ref{fig:agree}). A 31-fold
+different numbers of events per read; Table~\ref{tab:agree}). A 31-fold
 difference in anchor supply accounts for 91.8\% against 17.6\% without any appeal to the
 decision rule.
 
@@ -621,14 +609,7 @@ moves; correspondence is.
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.86\textwidth]{fig7-2-agreement-comparison.pdf}
-\caption{Both systems under one estimator on identical input.}
-\label{fig:agree}
-\end{figure*}
-
-\begin{figure*}[t]
-\centering
-\includegraphics[width=0.86\textwidth]{fig7-3-model-vs-measured.pdf}
+\includegraphics[width=0.70\textwidth]{fig7-3-model-vs-measured.pdf}
 \caption{Measured key-match probability against the $a^{E}$ prediction, with marker area scaled
 by the correspondence-failure rate $g$. $a^{E}$ is a lower bound only where correspondence is
 exact.}
@@ -701,8 +682,7 @@ $4 \times 12$ & 48 & 14,908,778 & 23.8 & 24.2 & 93.5\% \\
 \end{table}
 
 \textbf{Specificity is also scale-dependent.} A 39-bit key realises 22.3 bits, a shortfall of
-16.7; the frozen 48-bit key realises 23.8, a shortfall of 24.2 (Table~\ref{tab:entropy},
-Figure~\ref{fig:entropy}). \textbf{The shortfall grows faster than the nominal width}: doubling
+16.7; the frozen 48-bit key realises 23.8, a shortfall of 24.2 (Table~\ref{tab:entropy}). \textbf{The shortfall grows faster than the nominal width}: doubling
 nominal key space from 24 to 48 bits buys 7.3 bits of realised entropy.
 
 Short keys saturate the occurrence cap, and worse on larger references. A $3 \times 8$ geometry
@@ -711,13 +691,6 @@ on the 64 Mb one, 99.3\% truncated. Short keys degrade faster than the reference
 geometry chosen on a small reference does not transfer to a large one. This is why raising
 anchor yield by shortening keys fails: realised entropy collapses before the yield becomes
 useful.
-
-\begin{figure*}[t]
-\centering
-\includegraphics[width=0.86\textwidth]{fig7-6-key-entropy.pdf}
-\caption{Realised entropy and cap survival by geometry, at both reference sizes.}
-\label{fig:entropy}
-\end{figure*}
 
 \subsection{Recoverable loss inside the chainer}
 
@@ -737,60 +710,48 @@ gap dominates recovering a factor of under four. But the decision stage is no lo
 and because the anchors are known to exist, this is a diagnostic rather than a search.
 
 \section{Discussion}
-
 \textbf{Measure $a$ and $g$ before proposing a decision rule.} Both are a single pass over
-paired reference and query events, with no training and no search, and together they establish
-whether \emph{any} decision rule can succeed before one is designed. A reported decision rule
-unaccompanied by reported agreement and correspondence figures cannot be assessed by a reader.
+paired reference and query events, with no training and no search, and together they
+establish whether \emph{any} decision rule can succeed before one is designed. A reported
+decision rule unaccompanied by reported agreement and correspondence figures cannot be
+assessed by a reader. \textbf{Optimise key-match probability, not agreement alone}:
+correspondence failure enters with the same exponent as disagreement, and our indel rate is
+0.170 with no timing noise present. The currency available to buy both is alphabet, which
+RawHash2 and Sigmoni spend and we hoard.
 
-\textbf{Optimise key-match probability, not agreement alone.} Correspondence failure enters with
-the same exponent as disagreement, and our indel rate is 0.170 with no timing noise present. The
-currency available to buy both is alphabet, which RawHash2 and Sigmoni spend and we hoard.
-
-\textbf{Report distributions against derived budgets.} Under a deadline, a mean inside the budget
-is consistent with any miss rate. We report nine runs with full ranges and name the one that
-crosses, which is a weaker-sounding but more useful statement than a single comfortable mean.
-
-\textbf{Run the external baseline first, not last.} Every intervention we made on the decision
-stage was measured against our own earlier numbers, which rose and fell credibly and gave no
-indication that the ceiling lay elsewhere. One run of a published tool on identical input would
-have established within a day that the gap was a factor of five and not a tuning problem. In a
-pipeline whose stages are ordered, an internal improvement series measures progress against the
-wrong denominator until an external reference fixes the scale.
+\textbf{Report distributions against derived budgets}, because under a deadline a mean inside
+the budget is consistent with any miss rate; we report nine runs with full ranges and name
+the one that crosses. And \textbf{run the external baseline first, not last}. Every
+intervention we made on the decision stage was measured against our own earlier numbers,
+which rose and fell credibly and gave no indication that the ceiling lay elsewhere. One run
+of a published tool on identical input would have established within a day that the gap was a
+factor of five and not a tuning problem. In a pipeline whose stages are ordered, an internal
+improvement series measures progress against the wrong denominator until an external
+reference fixes the scale.
 
 \section{Limitations and threats to validity}
 \label{sec:limits}
 
 \textbf{Every latency figure was taken under a hypervisor.} WSL2 can deschedule a vCPU
 mid-decision, indistinguishable in the data from a slow decision. We treat p50 and p90 as
-properties of the implementation and p99 and above as upper bounds contaminated by the platform.
-The 2.0--59.4 ms spread of observed maxima, uncorrelated with p99, is the direct evidence. A
-deadline-miss rate against the 1.56 ms bound requires bare metal with isolated cores, tickless
-operation, interrupt affinity moved off the measured cores and a fixed governor; we did not have
-it, and no claim here depends on the tail.
+properties of the implementation and p99 and above as upper bounds contaminated by the
+platform; the 2.0--59.4 ms spread of observed maxima, uncorrelated with p99, is the direct
+evidence. A deadline-miss rate against the 1.56 ms bound requires bare metal with isolated
+cores, tickless operation, interrupt affinity moved off the measured cores and a fixed
+governor. We did not have it, and no claim here depends on the tail.
 
-\textbf{All signal is simulated}, from two generators whose detector calibrations do not transfer
-to each other by a factor of thirty. There is no basis for assuming either transfers to a
-physical device.
-
-\textbf{Agreement is measured at two dwell levels, one seed, 200 reads per cell}, where accuracy
-is swept at six levels in triplicate. The claim that RawHash2's agreement is dwell-invariant
-rests on two points.
-
-\textbf{The alignment-based agreement figures are upper bounds}, computed under the
-correspondence that maximises matches. Indel fractions of 0.055--0.208 mean the alignments are
-near-diagonal, so the estimator is not manufacturing matches through heavy gapping, but the bound
-is one-sided and the comparison is only as fair as the two systems' indel fractions are similar.
-They are not identical, and the asymmetry favours RawHash2.
-
-\textbf{The symmetric-retention explanation is not isolated.} It is visible in RawHash2's source
-and consistent with every measurement, but the decisive ablation---applying our detector to our
-own reference encoding and re-measuring---was not made.
-
-\textbf{Single reference, single organism.} All figures derive from human chr20.
-
-\textbf{Related-work provenance.} RawHash2, Squigulator, readfish and Icarust were built and run
-here; claims about UNCALLED, Sigmap, RawAlign and Sigmoni rest on their publications and
+\textbf{All signal is simulated}, from two generators whose detector calibrations do not
+transfer to each other by a factor of thirty, and every figure derives from a single
+reference, human chr20. Agreement is measured at two dwell levels, one seed, 200 reads per
+cell, where accuracy is swept at six levels in triplicate, so the claim that RawHash2's
+agreement is dwell-invariant rests on two points. The alignment-based agreement figures are
+upper bounds, computed under the correspondence that maximises matches; indel fractions of
+0.055--0.208 mean the alignments are near-diagonal, so the estimator is not manufacturing
+matches through heavy gapping, but the bound is one-sided and the asymmetry favours RawHash2.
+The symmetric-retention explanation is visible in RawHash2's source and consistent with every
+measurement, but the decisive ablation---applying our detector to our own reference encoding
+and re-measuring---was not made. RawHash2, Squigulator, readfish and Icarust were built and
+run here; claims about UNCALLED, Sigmap, RawAlign and Sigmoni rest on their publications and
 repositories rather than on execution.
 
 \section{Conclusion}

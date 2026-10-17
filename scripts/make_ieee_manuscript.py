@@ -2,11 +2,20 @@
 """Derive paper/manuscript-ieee.tex from paper/manuscript.tex.
 
 The IEEE conference version differs from the acmart version in class, topmatter, table
-geometry and reference style -- not in a single word of prose and not in a single digit. It
-is generated rather than retyped so that the body text is carried across verbatim and
-scripts/verify_paper_numbers.py checks the same fragments in both files.
+geometry, reference style and LENGTH. It is generated rather than retyped so that the prose
+it keeps is carried across verbatim and scripts/verify_paper_numbers.py checks the same
+fragments in both files.
 
-Only four kinds of substitution touch the body:
+LENGTH. Many conferences cap a submission at 8 pages including references, and the acmart
+version runs to 10. The cuts are listed as data in DROP_FIGURES and PROSE_CUTS below rather
+than applied by hand, so what was removed is auditable and the script fails loudly if a
+target string has moved. Nothing numeric is cut: every figure the number gate builds from
+results/ must still appear, in all three manuscripts, or the gate fails. What goes is four
+data figures -- three of which plotted a table that is still present, and one of which
+illustrated a formula that is given in display maths -- and the scaffolding around two
+discursive sections. The ACM version remains the full-length one.
+
+Four kinds of formatting substitution also touch the body:
 
   * acmart section references (\\S\\ref) become IEEE ones (Section~\\ref),
   * two \\paragraph run-in headings become the \\textbf form used everywhere else in the
@@ -66,6 +75,11 @@ PREAMBLE = r"""%% Microseconds Are Not the Problem -- IEEE conference version.
 \urlstyle{same}
 \graphicspath{{figures/}}
 \renewcommand{\arraystretch}{1.15}
+
+% Long unbreakable technical tokens -- script paths, chains of \times in maths -- can leave
+% a line with nowhere to break. Letting TeX stretch the interword space on such a line keeps
+% them out of the margin without touching a word of the text.
+\emergencystretch=1.5em
 
 \begin{document}
 """
@@ -175,6 +189,128 @@ NARROW = {"tab:agree", "tab:entropy", "tab:rules", "tab:costs"}
 # in the module docstring: the acmart geometry is 0.42 pt too wide.
 ARENA_SPACING = [("right=14mm of", "right=12mm of")]
 
+# ---------------------------------------------------------------------------------------
+# Cuts to reach 8 pages. Measured at 0.86\textwidth in a 516 pt text block, the six data
+# figures occupy 1328 pt of full-width band before captions -- 2.2 of the 10 pages. The
+# four dropped here are the four that carry no evidence of their own:
+#
+#   fig4-1   plots the six rows of Table V                         250 pt
+#   fig7-1   draws the a^E surface, which is a displayed equation  292 pt
+#   fig7-2   plots the two system rows of Table VI                 139 pt
+#   fig7-6   plots the five geometry rows of Table VII             152 pt
+#
+# The two kept are the two whose content is not in any table: the R3 latency distribution,
+# which is the loss-system argument, and measured-against-modelled key-match probability,
+# which is the evidence for the refutation in Section VI.
+DROP_FIGURES = {
+    "fig4-1-decision-rules.pdf",
+    "fig7-1-ae-surface.pdf",
+    "fig7-2-agreement-comparison.pdf",
+    "fig7-6-key-entropy.pdf",
+}
+
+# The acmart version draws every figure at 0.86\textwidth, which in a 516 pt IEEE text block
+# scales this one UP by 11% past its natural 399 pt width. Taken to 0.70 it sits at 90% of
+# natural -- slightly smaller than designed rather than slightly larger -- and the 64 pt of
+# band that buys is what pulls the last four references back onto page 8.
+FIGURE_WIDTHS = {"fig7-3-model-vs-measured.pdf": "0.70"}
+
+# Prose edits, in order. Each is (label, exact old text, new text); the script stops if any
+# old text is not found verbatim, so a reworded source cannot be silently half-converted.
+PROSE_CUTS = [
+    # -- references to figures that are no longer here -------------------------------
+    ("ref to fig:rules",
+     "Table~" + BS + "ref{tab:rules} and Figure~" + BS + "ref{fig:rules} give six rules in"
+     " triplicate.",
+     "Table~" + BS + "ref{tab:rules} gives six rules in triplicate."),
+    ("ref to fig:surface",
+     " Figure~" + BS + "ref{fig:surface} shows the $a^{E}$ surface over the" + NL
+     + "$(a, E)$ plane with both systems' measured operating points.",
+     ""),
+    ("ref to fig:agree",
+     "Table~" + BS + "ref{tab:agree}, Figure~" + BS + "ref{fig:agree})",
+     "Table~" + BS + "ref{tab:agree})"),
+    ("ref to fig:entropy",
+     "(Table~" + BS + "ref{tab:entropy}," + NL + "Figure~" + BS + "ref{fig:entropy})",
+     "(Table~" + BS + "ref{tab:entropy})"),
+
+    # -- the abstract, trimmed of scaffolding but of no numeral ----------------------
+    ("abstract: first contribution",
+     "We make two" + NL + "contributions. First, we show the decision budget is not the"
+     " obstacle: a single-process C++20",
+     "We make two" + NL + "contributions. First, the decision budget is not the obstacle: a"
+     " single-process C++20"),
+    ("abstract: second contribution",
+     "Second, we show where the real limit lies. We frame Read Until as a soft-real-time",
+     "Second, we locate the real limit. We frame Read Until as a soft-real-time"),
+    ("abstract: measured under",
+     "sequences fail to correspond at all. Measured under one estimator on identical input"
+     " at" + NL + "realistic motor-dwell dispersion, RawHash2",
+     "sequences fail to correspond at all. Under one estimator on identical input at"
+     + NL + "realistic motor-dwell dispersion, RawHash2"),
+    ("abstract: root causes",
+     "We identify three root causes---asymmetric event retention between reference" + NL
+     + "and query encoders, a quantiser that spends too little alphabet on agreement, and"
+     " recoverable" + NL + "loss inside the chainer---and argue that $a$ and $g$ should be"
+     " measured and reported before any" + NL + "decision rule is proposed.",
+     "Three measured root causes follow: asymmetric event retention between" + NL
+     + "reference and query encoders, a quantiser that spends too little alphabet on"
+     " agreement, and" + NL + "recoverable loss inside the chainer."),
+]
+
+# Two discursive sections are replaced wholesale rather than edited phrase by phrase. Each
+# entry gives the heading to match, the heading that follows it, and the replacement body.
+# Every number in the original body is carried into the replacement; the gate checks it.
+SECTION_REWRITES = [
+    ("Discussion", "Limitations and threats to validity", r"""
+\textbf{Measure $a$ and $g$ before proposing a decision rule.} Both are a single pass over
+paired reference and query events, with no training and no search, and together they
+establish whether \emph{any} decision rule can succeed before one is designed. A reported
+decision rule unaccompanied by reported agreement and correspondence figures cannot be
+assessed by a reader. \textbf{Optimise key-match probability, not agreement alone}:
+correspondence failure enters with the same exponent as disagreement, and our indel rate is
+0.170 with no timing noise present. The currency available to buy both is alphabet, which
+RawHash2 and Sigmoni spend and we hoard.
+
+\textbf{Report distributions against derived budgets}, because under a deadline a mean inside
+the budget is consistent with any miss rate; we report nine runs with full ranges and name
+the one that crosses. And \textbf{run the external baseline first, not last}. Every
+intervention we made on the decision stage was measured against our own earlier numbers,
+which rose and fell credibly and gave no indication that the ceiling lay elsewhere. One run
+of a published tool on identical input would have established within a day that the gap was a
+factor of five and not a tuning problem. In a pipeline whose stages are ordered, an internal
+improvement series measures progress against the wrong denominator until an external
+reference fixes the scale.
+
+"""),
+    ("Limitations and threats to validity", "Conclusion", r"""
+\label{sec:limits}
+
+\textbf{Every latency figure was taken under a hypervisor.} WSL2 can deschedule a vCPU
+mid-decision, indistinguishable in the data from a slow decision. We treat p50 and p90 as
+properties of the implementation and p99 and above as upper bounds contaminated by the
+platform; the 2.0--59.4 ms spread of observed maxima, uncorrelated with p99, is the direct
+evidence. A deadline-miss rate against the 1.56 ms bound requires bare metal with isolated
+cores, tickless operation, interrupt affinity moved off the measured cores and a fixed
+governor. We did not have it, and no claim here depends on the tail.
+
+\textbf{All signal is simulated}, from two generators whose detector calibrations do not
+transfer to each other by a factor of thirty, and every figure derives from a single
+reference, human chr20. Agreement is measured at two dwell levels, one seed, 200 reads per
+cell, where accuracy is swept at six levels in triplicate, so the claim that RawHash2's
+agreement is dwell-invariant rests on two points. The alignment-based agreement figures are
+upper bounds, computed under the correspondence that maximises matches; indel fractions of
+0.055--0.208 mean the alignments are near-diagonal, so the estimator is not manufacturing
+matches through heavy gapping, but the bound is one-sided and the asymmetry favours RawHash2.
+The symmetric-retention explanation is visible in RawHash2's source and consistent with every
+measurement, but the decisive ablation---applying our detector to our own reference encoding
+and re-measuring---was not made. RawHash2, Squigulator, readfish and Icarust were built and
+run here; claims about UNCALLED, Sigmap, RawAlign and Sigmoni rest on their publications and
+repositories rather than on execution.
+
+"""),
+]
+
 
 def main() -> int:
     src = SRC.read_text(encoding="utf-8")
@@ -222,6 +358,55 @@ def main() -> int:
             return 1
         tight = tight.replace(old, new)
     body = body.replace(arena.group(0), tight)
+
+    # ---- cuts to 8 pages --------------------------------------------------------------
+    def drop_figure(m: re.Match) -> str:
+        inc = re.search(r"\\includegraphics\[[^]]*\]\{([^}]*)\}", m.group(0))
+        if inc and inc.group(1) in DROP_FIGURES:
+            return ""
+        return m.group(0)
+
+    before = body
+    body = re.sub(r"\\begin\{figure\*\}.*?\\end\{figure\*\}\n*", drop_figure, body, flags=re.S)
+    dropped = len(re.findall(r"\\begin\{figure\*\}", before)) \
+        - len(re.findall(r"\\begin\{figure\*\}", body))
+    if dropped != len(DROP_FIGURES):
+        print("dropped " + str(dropped) + " figures, expected " + str(len(DROP_FIGURES)),
+              file=sys.stderr)
+        return 1
+
+    for name, frac in FIGURE_WIDTHS.items():
+        old = "[width=0.86" + BS + "textwidth]{" + name + "}"
+        if old not in body:
+            print("figure width target " + repr(name) + " not found", file=sys.stderr)
+            return 1
+        body = body.replace(old, "[width=" + frac + BS + "textwidth]{" + name + "}")
+
+    for label, old, new in PROSE_CUTS:
+        if old in body:
+            body = body.replace(old, new, 1)
+        elif old in abstract:
+            abstract = abstract.replace(old, new, 1)
+        else:
+            print("prose cut " + repr(label) + " did not match", file=sys.stderr)
+            return 1
+
+    for heading, next_heading, replacement in SECTION_REWRITES:
+        start = BS + "section{" + heading + "}"
+        stop = BS + "section{" + next_heading + "}"
+        if start not in body or stop not in body:
+            print("section rewrite " + repr(heading) + " did not match", file=sys.stderr)
+            return 1
+        i, j = body.index(start), body.index(stop)
+        body = body[:i] + start + replacement + body[j:]
+
+    # Nothing may reference a float that the cuts removed.
+    labels = set(re.findall(r"\\label\{(fig:[^}]*)\}", body))
+    refs = set(re.findall(r"\\ref\{(fig:[^}]*)\}", body))
+    if refs - labels:
+        print("dangling figure references: " + ", ".join(sorted(refs - labels)),
+              file=sys.stderr)
+        return 1
 
     out = (PREAMBLE + TOPMATTER
            + BS + "begin{abstract}" + NL + abstract + NL + BS + "end{abstract}" + NL + NL

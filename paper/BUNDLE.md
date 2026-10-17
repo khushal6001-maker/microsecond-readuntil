@@ -5,11 +5,11 @@ archive; no external style files are required beyond what TeX Live and Overleaf 
 
 | file | what it is |
 |---|---|
-| `manuscript-ieee.tex` | **main document** — IEEE conference format (`IEEEtran`, `[conference]`) |
-| `manuscript-acmart.tex` | the same paper in ACM format (`acmart`, `sigconf`, `nonacm`) |
-| `manuscript.md` | the same paper in Markdown, readable without a TeX installation |
-| `manuscript-ieee.pdf`, `manuscript-acmart.pdf` | built output, 10 pages each |
-| `figures/` | the seven figures; the six data figures are PDFs, Figure 1 is drawn in TikZ inside the `.tex` |
+| `manuscript-ieee.tex` | **main document** — IEEE conference format (`IEEEtran`, `[conference]`), 8 pages |
+| `manuscript-acmart.tex` | the full-length paper in ACM format (`acmart`, `sigconf`, `nonacm`), 10 pages |
+| `manuscript.md` | the full-length paper in Markdown, readable without a TeX installation |
+| `manuscript-ieee.pdf`, `manuscript-acmart.pdf` | built output |
+| `figures/` | the six data figures as PDFs; the IEEE version uses two of them, the ACM version all six, and Figure 1 is drawn in TikZ inside each `.tex` |
 
 ## Building
 
@@ -31,15 +31,27 @@ Upload the archive with **New Project → Upload Project**. Overleaf should sele
 
 ## Which format to submit
 
-The two `.tex` files contain the same prose and the same numbers. They differ in document
-class, title block, reference style and table sizing, and in two small geometric details:
-Figure 1's node spacing drops by 2 mm, because the ACM geometry measures 252.4 pt against an
-IEEE column of 252.0 pt and overflows it by a hair; and the section cross-references read
-"Section IV" rather than "§4".
+**`manuscript-ieee.tex` is the 8-page submission version.** It is generated from
+`manuscript-acmart.tex` by `scripts/make_ieee_manuscript.py` in the repository, which also
+applies the cuts that take it from 10 pages to 8. Edit the prose in the ACM file and
+regenerate, or edit the IEEE file directly and stop regenerating it — but not both.
 
-`manuscript-ieee.tex` is generated from `manuscript-acmart.tex` by
-`scripts/make_ieee_manuscript.py` in the repository. Edit the prose in the ACM file and
-regenerate, or edit the IEEE file directly and stop regenerating it — but do not do both.
+Formatting differences: document class, title block, reference style, table sizing, and two
+geometric details — Figure 1's node spacing drops by 2 mm, because the ACM geometry measures
+252.4 pt against an IEEE column of 252.0 pt and overflows it by a hair, and the section
+cross-references read "Section IV" rather than "§4".
+
+Content differences, all in the IEEE version, all listed as data in the generator:
+
+| what | why |
+|---|---|
+| four data figures dropped | three plotted a table that is still present; one drew a surface that is given as a displayed equation |
+| Figure 3 drawn at `0.70\textwidth` | at `0.86` an IEEE text block scales it *up* 11% past its natural width |
+| §VIII and §IX rewritten shorter | the two discursive sections; every number in them is carried over |
+| abstract trimmed, 389 → 369 words | scaffolding only |
+
+**No number was cut.** `scripts/verify_paper_numbers.py` holds all three manuscripts to the
+same 144 assertions, so a cut that lost a measurement would fail the gate rather than ship.
 
 ## Before submitting
 
@@ -47,11 +59,12 @@ regenerate, or edit the IEEE file directly and stop regenerating it — but do n
   block sits directly below it in `manuscript-ieee.tex` if the submission is joint.
 - **Title length.** The title runs to four lines in IEEE format. It is accurate, and no
   shorter form was substituted without asking.
-- **Abstract length.** 389 words. IEEE guidance for conference papers is nearer 250. It is
-  left full-length because every figure in it is one the number gate checks; cutting it is a
-  one-paragraph edit and breaks nothing.
-- **Page count.** 10 pages. Many conferences cap at 8 including references. §VIII
-  (Discussion) and §IX (Limitations) are the compressible sections.
+- **Abstract length.** 369 words against IEEE guidance of nearer 250. The remainder is
+  numeric content rather than scaffolding: trimming it further means dropping a measurement
+  from the abstract, which is an editorial decision rather than a formatting one.
+- **Page count.** 8 pages including references, which is the common conference cap. If a
+  venue allows 10, use `manuscript-acmart.tex` as the content source — it has the four extra
+  figures and the full-length §VIII and §IX.
 - **Anonymisation.** Neither file is anonymised. For a double-blind venue, replace the author
   block, and note that §X and the reproducibility paragraph name the repository commit.
 

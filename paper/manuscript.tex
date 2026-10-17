@@ -15,6 +15,12 @@
 \usetikzlibrary{arrows.meta, positioning, shapes.geometric}
 \usepackage{amsmath}
 
+% Three paragraphs carrying long unbreakable technical tokens -- a script path, a chain of
+% \times in maths, a hyphenated compound -- overflowed the column by 3.6, 10.8 and 15.1 pt.
+% Letting TeX stretch the interword space on an otherwise unbreakable line fixes all three
+% without touching a word of the text.
+\emergencystretch=1.5em
+
 \settopmatter{printacmref=false}
 \renewcommand\footnotetextcopyrightpermission[1]{}
 \graphicspath{{figures/}}
@@ -135,7 +141,7 @@ structures.
 
 \textbf{Basecalling clients.} readfish~\cite{readfish} and similar clients basecall each chunk
 and map the resulting sequence. This is accurate and reuses mature tooling, but places a neural
-network and a sequence aligner inside the decision loop.
+network and a sequence aligner~\cite{minimap2} inside the decision loop.
 
 \textbf{Signal-space mappers} avoid basecalling by encoding the reference into expected signal
 under a pore model and matching quantised query events directly. UNCALLED~\cite{uncalled} uses
@@ -287,7 +293,8 @@ performance. Every run reported here carries the development-only label.
 
 \textbf{Host.} Intel Core i5-1135G7, 4 physical cores / 8 logical, under WSL2.
 \textbf{Regimes.} R1: a 37 kb reference under constant dwell. R3: a 64 Mb human chr20 reference
-under variable dwell at the frozen configuration---4 bits $\times$ 12 events, minimizer window
+under variable dwell at the frozen configuration---4 bits $\times$ 12 events,
+minimizer~\cite{minimizers} window
 1, detected-event segmentation, two shards, pinned.
 
 \subsection{Placement and thread count}
