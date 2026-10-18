@@ -42,10 +42,10 @@ physical deadline, whether to eject a molecule still transiting the pore. We mak
 contributions. First, we show the decision budget is not the obstacle: a single-process C++20
 data plane with single-copy ingestion, zero-copy propagation, lock-free single-producer
 single-consumer rings and a reference-counting arena protocol reaches a median per-chunk
-decision latency of 124.8 µs [115.6--132.3] against a derived service bound of 1.56 ms, at
+decision latency of 124.8 \textmu{}s [115.6--132.3] against a derived service bound of 1.56 ms, at
 3.70 GiB peak resident set over a 64 Mb reference index of 63.9 M minimizers, sustaining
 604--645 chunk/s with zero drops across nine 40 s runs. For calibration, the bare orchestration
-layer of a basecalling client (readfish with a no-operation caller) costs 124.3 µs per
+layer of a basecalling client (readfish with a no-operation caller) costs 124.3 \textmu{}s per
 read-chunk on the same rig---indistinguishable from our \emph{complete} signal-space decision.
 Second, we show where the real limit lies. We frame Read Until as a soft-real-time
 \emph{loss system}, in which a mean comfortably inside budget is consistent with an arbitrary
@@ -99,7 +99,7 @@ queueing work and discarding it. Queueing converts decisions that would have bee
 decisions that arrive too late, so dropping is correct rather than merely pragmatic. The
 consequence for evaluation is sharp and, we argue, under-appreciated: \textbf{a mean
 comfortably inside the budget is consistent with an arbitrary deadline-miss rate.} A system
-reporting ``mean 124 µs against a 1.56 ms budget'' has said nothing about whether it meets its
+reporting ``mean 124 \textmu{}s against a 1.56 ms budget'' has said nothing about whether it meets its
 deadline.
 
 Existing Read Until work does report latency, in two forms: signal consumed before a decision
@@ -279,10 +279,10 @@ error at 0.1\%. The recorder reports its own backend on every line, so a degrade
 cannot be mistaken for a measurement.
 
 This instrumentation is a correction. An earlier power-of-two histogram reported four 99th
-percentiles of 111.93, 112.12, 223.66 and 447.59 µs across four runs. At the host's calibrated
+percentiles of 111.93, 112.12, 223.66 and 447.59 \textmu{}s across four runs. At the host's calibrated
 invariant TSC frequency of 2418.7 MHz the only values representable in that range are 54.19,
-108.38, 216.76 and 433.53 µs. Every reported value was a bucket boundary; two runs ``agreeing''
-at 112 µs agreed only that the true value lay in [54.19, 108.38]. The general form is worth
+108.38, 216.76 and 433.53 \textmu{}s. Every reported value was a bucket boundary; two runs ``agreeing''
+at 112 \textmu{}s agreed only that the true value lay in [54.19, 108.38]. The general form is worth
 stating: \emph{any} instrument whose quantisation is coarse relative to the between-run
 variance will report stable values and thereby invite an inference of stability.
 
@@ -300,7 +300,7 @@ minimizer~\cite{minimizers} window
 \subsection{Placement and thread count}
 
 \begin{table}[t]
-\caption{Regime R1, 37 kb reference, four repetitions per cell. Median across runs, µs.}
+\caption{Regime R1, 37 kb reference, four repetitions per cell. Median across runs, \textmu{}s.}
 \label{tab:r1}
 \small
 \begin{tabular}{lrrrr}
@@ -319,8 +319,8 @@ unpinned, 4 shards & 18.4 & 31.6 & 83.8 & 386.7 \\
 every percentile (Table~\ref{tab:r1}). Six data-plane threads do not fit four physical cores.
 
 \textbf{Pinning does not reduce the median; it makes the tail reproducible.} The 99th percentile
-across four repetitions is 46.99, 48.32, 49.97, 50.88 µs pinned---a spread of 8\%---against
-44.86, 45.52, 55.45, 104.45 µs unpinned, a spread of 133\%. The defensible claim about
+across four repetitions is 46.99, 48.32, 49.97, 50.88 \textmu{}s pinned---a spread of 8\%---against
+44.86, 45.52, 55.45, 104.45 \textmu{}s unpinned, a spread of 133\%. The defensible claim about
 processor affinity is about variance, not location.
 
 \subsection{Genome scale: regime R3}
@@ -330,7 +330,7 @@ reference bases, geometry $4 \times 12 = 48$-bit keys, window 1, 63,981,218 mini
 32,888,127 distinct keys, 512.0 MiB table + 204.3 MiB positions.
 
 \begin{table}[t]
-\caption{Regime R3, nine runs. Median across runs, with observed range, µs.}
+\caption{Regime R3, nine runs. Median across runs, with observed range, \textmu{}s.}
 \label{tab:r3}
 \small
 \begin{tabular}{lr}
@@ -357,13 +357,13 @@ per-chunk latency, not an independent measurement.
 
 \textbf{The tail is where the loss-system framing earns its place.} Eight of the nine runs sit
 strictly inside the budget through the 99.9th percentile, at 1.04--1.40 ms. The ninth does not:
-one run reports p99 $=$ 1969.3 µs and p99.9 $=$ 3284.0 µs, and is also the worst of the nine at
+one run reports p99 $=$ 1969.3 \textmu{}s and p99.9 $=$ 3284.0 \textmu{}s, and is also the worst of the nine at
 p90 and at the mean (Figure~\ref{fig:r3}).
 
 We do not read this as a deadline miss. Across the nine runs the observed \emph{maximum} spans
 2.0 ms to 59.4 ms---two orders of magnitude in a quantity the software should not vary in---and,
 tellingly, the run with the largest maximum is \textbf{not} the run with the worst p99; its p99
-is 630 µs. Maximum and p99 are not correlated here, which is the signature of externally
+is 630 \textmu{}s. Maximum and p99 are not correlated here, which is the signature of externally
 injected stalls rather than of slow decisions. On a hypervisor without core isolation, this
 measurement cannot establish that the system meets its deadline, and cannot establish that it
 misses it. Stating that honestly is part of the contribution.
@@ -387,16 +387,16 @@ out; processor and memory figures are from \texttt{/usr/bin/time -v}.}
 \toprule
 system & mode & per chunk & CPU & peak RSS \\
 \midrule
-readfish  & no-op caller      & 124.3 µs & 15.6\%  & 86.0 MiB \\
-readfish  & caller + mapper   & 66.2 µs  & 25.3\%  & 663.4 MiB \\
-this work & frozen, 64 Mb     & 124.8 µs & 181.5--202.3\% & 3786 MiB \\
+readfish  & no-op caller      & 124.3 \textmu{}s & 15.6\%  & 86.0 MiB \\
+readfish  & caller + mapper   & 66.2 \textmu{}s  & 25.3\%  & 663.4 MiB \\
+this work & frozen, 64 Mb     & 124.8 \textmu{}s & 181.5--202.3\% & 3786 MiB \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \textbf{The architectural point.} readfish with a no-operation caller performs no basecalling
-and no mapping; 124.3 µs is its orchestration alone, a lower bound on its cost. Our
-\emph{complete} signal-space decision over a 64 Mb index costs 124.8 µs. The orchestration layer
+and no mapping; 124.3 \textmu{}s is its orchestration alone, a lower bound on its cost. Our
+\emph{complete} signal-space decision over a 64 Mb index costs 124.8 \textmu{}s. The orchestration layer
 of a basecalling client is already as expensive as an entire signal-space decision. This does
 not establish superiority---a production readfish does work this configuration omits---but it
 does establish that the decision budget is not what stands between signal-space matching and
@@ -776,9 +776,9 @@ repositories rather than on execution.
 \section{Conclusion}
 
 We set out to determine whether the adaptive-sampling decision can be made in microseconds. It
-can: a median of 124.8 µs at genome scale against a 1.56 ms physical budget, with bounded
+can: a median of 124.8 \textmu{}s at genome scale against a 1.56 ms physical budget, with bounded
 per-channel state, no allocation on the decision path, and no drops at the offered rate---while
-the orchestration layer alone of a standard basecalling client costs 124.3 µs per read-chunk
+the orchestration layer alone of a standard basecalling client costs 124.3 \textmu{}s per read-chunk
 before any decision is made. The decision budget is not the obstacle to signal-space adaptive
 sampling.
 

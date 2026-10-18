@@ -65,11 +65,18 @@ silently skipping if any of the structures it expects has moved.
 python scripts/make_paper_zip.py
 ```
 
-Writes `paper/dist/microsecond-readuntil-paper-latex.zip`: both manuscripts, the Markdown,
-both built PDFs and the figures, flat at the archive root so `\graphicspath{{figures/}}`
-resolves without editing and Overleaf can take the archive as given. The script only copies
-files, so the archive cannot contain a number the gate below has not checked. The archive is
-not committed; it is rebuilt from committed files on demand.
+Writes `paper/dist/microsecond-readuntil-paper-latex.zip`: the IEEE manuscript and `figures/`
+at the archive root, the Markdown beside them, and the 10-page ACM variant in
+`acm-10-page/` with its own copy of the figures. Exactly one `.tex` sits at the root, so a
+submission system choosing a main document by itself cannot choose wrong, and
+`\graphicspath{{figures/}}` resolves with nothing edited.
+
+Both `.tex` files are pure ASCII and declare `inputenc`, so neither depends on the compiler's
+default input encoding — TeX Live has defaulted to UTF-8 only since 2018, and a bundle that
+relies on that default builds locally and fails on an older submission system.
+
+The script only copies files, so the archive cannot contain a number the gate below has not
+checked. The archive is not committed; it is rebuilt from committed files on demand.
 
 ## Figures
 

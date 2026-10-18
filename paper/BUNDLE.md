@@ -6,10 +6,13 @@ archive; no external style files are required beyond what TeX Live and Overleaf 
 | file | what it is |
 |---|---|
 | `manuscript-ieee.tex` | **main document** — IEEE conference format (`IEEEtran`, `[conference]`), 8 pages |
-| `manuscript-acmart.tex` | the full-length paper in ACM format (`acmart`, `sigconf`, `nonacm`), 10 pages |
+| `manuscript-ieee.pdf` | built output |
+| `figures/` | the six data figures as PDFs; the IEEE version uses two of them, and Figure 1 is drawn in TikZ inside the `.tex` |
 | `manuscript.md` | the full-length paper in Markdown, readable without a TeX installation |
-| `manuscript-ieee.pdf`, `manuscript-acmart.pdf` | built output |
-| `figures/` | the six data figures as PDFs; the IEEE version uses two of them, the ACM version all six, and Figure 1 is drawn in TikZ inside each `.tex` |
+| `acm-10-page/` | the full-length paper in ACM format (`acmart`, `sigconf`, `nonacm`), with its own copy of the figures so it compiles in place |
+
+There is deliberately **one `.tex` at the archive root**, so that a submission system picking
+a main document for itself cannot pick wrong.
 
 ## Building
 
@@ -21,13 +24,21 @@ Two `pdflatex` passes suffice if `latexmk` is unavailable — the second resolve
 cross-references. The bibliography is a `thebibliography` environment, so there is no BibTeX
 or Biber run and no `.bib` file to carry.
 
-Built with TeX Live 2026. `IEEEtran` and `acmart` are both in the standard distribution.
+Both `.tex` files are **pure ASCII** and declare `inputenc`, so neither depends on the
+compiler's default input encoding. Built and checked with TeX Live 2026; `IEEEtran` and
+`acmart` are both in the standard distribution, and nothing here needs a package a submission
+system would not already have.
 
 ## On Overleaf
 
-Upload the archive with **New Project → Upload Project**. Overleaf should select
-`manuscript-ieee.tex` as the main document; if it picks the ACM file instead, set it with
-**Menu → Main document**. Nothing else needs configuring — the paths are flat and relative.
+Upload the archive itself — do not unzip it first — with **New Project → Upload Project**.
+`manuscript-ieee.tex` is the only `.tex` at the root, so it is selected automatically; if
+Overleaf ever disagrees, set it under **Menu → Main document**. Nothing else needs
+configuring, and if Overleaf keeps the enclosing folder rather than flattening it, that is
+fine: every path in the `.tex` is relative to the `.tex`.
+
+To build the 10-page version instead, set the main document to
+`acm-10-page/manuscript-acmart.tex`.
 
 ## Which format to submit
 

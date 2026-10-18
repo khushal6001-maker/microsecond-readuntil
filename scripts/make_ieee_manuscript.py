@@ -63,6 +63,14 @@ PREAMBLE = r"""%% Microseconds Are Not the Problem -- IEEE conference version.
 \documentclass[conference]{IEEEtran}
 \IEEEoverridecommandlockouts
 
+%% inputenc and fontenc are declared rather than assumed. TeX Live has read .tex files as
+%% UTF-8 by default since 2018, so omitting them builds locally and fails on a submission
+%% system pinned to an older distribution. The source is also pure ASCII -- the micro sign
+%% is \textmu{} -- so neither line is load-bearing; both are here so that the file does not
+%% depend on the compiler's default encoding at all.
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+
 \usepackage{cite}
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
@@ -252,9 +260,9 @@ SHORT_ABSTRACT = r"""Oxford Nanopore adaptive sampling (``Read Until'') requires
 decide, within a physical deadline, whether to eject a molecule still transiting the pore.
 First, the decision budget is not the obstacle: a single-process C++20 data plane with
 single-copy ingestion, zero-copy propagation and a lock-free, reference-counting arena
-protocol reaches a median per-chunk decision latency of 124.8 µs [115.6--132.3] against a
+protocol reaches a median per-chunk decision latency of 124.8 \textmu{}s [115.6--132.3] against a
 derived service bound of 1.56 ms, with no drops at genome scale. A basecalling client's bare
-orchestration (readfish with a no-operation caller) costs 124.3 µs per read-chunk on the same
+orchestration (readfish with a no-operation caller) costs 124.3 \textmu{}s per read-chunk on the same
 rig---as much as our \emph{complete} signal-space decision. Read Until is a soft-real-time
 \emph{loss system}: a mean inside budget is consistent with an arbitrary deadline-miss rate.
 Second, we locate the real limit. Our pipeline resolves 17.6\% [16.6--18.8] of reads at a
