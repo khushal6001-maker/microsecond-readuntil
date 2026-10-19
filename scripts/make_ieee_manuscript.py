@@ -288,7 +288,7 @@ decision rule unaccompanied by reported agreement and correspondence figures can
 assessed by a reader. \textbf{Optimise key-match probability, not agreement alone}:
 correspondence failure enters with the same exponent as disagreement, and our indel rate is
 0.170 with no timing noise present. The currency available to buy both is alphabet, which
-RawHash2 and Sigmoni spend and we hoard.
+RawHash2 and Sigmoni spend on agreement and we spend on specificity.
 
 \textbf{Report distributions against derived budgets}, because under a deadline a mean inside
 the budget is consistent with any miss rate; we report nine runs with full ranges and name
@@ -317,9 +317,10 @@ transfer to each other by a factor of thirty, and every figure derives from a si
 reference, human chr20. Agreement is measured at two dwell levels, one seed, 200 reads per
 cell, where accuracy is swept at six levels in triplicate, so the claim that RawHash2's
 agreement is dwell-invariant rests on two points. The alignment-based agreement figures are
-upper bounds, computed under the correspondence that maximises matches; indel fractions of
+upper bounds, computed under the correspondence that maximises matches. Indel fractions of
 0.055--0.208 mean the alignments are near-diagonal, so the estimator is not manufacturing
-matches through heavy gapping, but the bound is one-sided and the asymmetry favours RawHash2.
+matches through heavy gapping. The bound is nonetheless one-sided, and the asymmetry favours
+RawHash2.
 The symmetric-retention explanation is visible in RawHash2's source and consistent with every
 measurement, but the decisive ablation---applying our detector to our own reference encoding
 and re-measuring---was not made. RawHash2, Squigulator, readfish and Icarust were built and
