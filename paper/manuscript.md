@@ -37,22 +37,27 @@ structures, raw signal mapping, quantisation
 
 ## 1 Introduction
 
-Nanopore sequencing reads a molecule as it translocates a pore, emitting an ionic current
-trace in real time. Because the molecule is still in the pore while data arrives, the
-instrument exposes an interface — Read Until — that lets a client request ejection of a
-molecule it does not want, freeing the channel for another. The economic case is direct:
-on-target yield rises without changing library preparation.
+**The instrument, and the opportunity.** Nanopore sequencing reads a molecule as it
+translocates a pore, emitting an ionic current trace in real time. Because the molecule is
+still in the pore while data arrives, the instrument exposes an interface — Read Until — that
+lets a client request ejection of a molecule it does not want, freeing the channel for
+another. The economic case is direct: on-target yield rises without changing library
+preparation.
 
-The interface imposes a deadline that is physical rather than conventional. Signal arrives in
-chunks at a fixed cadence, and a chunk describes bases that have *already* passed through the
-pore. A decision delivered after the molecule has finished translocating has no value at all;
-it does not merely arrive late. With `C` active channels delivering a chunk every `T_c`
-seconds, and a tolerance of `W` chunks before the decision is worthless, the admissible mean
-service time per decision is
+**The deadline is physical, not conventional.** Signal arrives in chunks at a fixed cadence,
+and a chunk describes bases that have *already* passed through the pore. A decision delivered
+after the molecule has finished translocating has no value at all; it does not merely arrive
+late.
+
+**The budget follows from the instrument, not from a design choice.** Three quantities fix
+it: the number of active channels `C`, the interval `T_c` at which each delivers a chunk, and
+the tolerance `W`, in chunks, that may elapse before a decision is worthless. A client must
+reach a decision in a mean service time of
 
 &nbsp;&nbsp;&nbsp;&nbsp;`S < W · T_c / C`
 
-which at `W` = 2, `C` = 512 and `T_c` = 0.4 s gives **1.5625 ms**, hereafter 1.56 ms.
+which at `W` = 2, `C` = 512 and `T_c` = 0.4 s gives **1.5625 ms**, hereafter 1.56 ms. Nothing
+in that derivation is ours to tune.
 
 Two framings follow, and the paper is organised around them.
 
