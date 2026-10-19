@@ -110,7 +110,8 @@ which constrains client-side data structures.
 sequence. This is accurate and reuses mature tooling, but places a neural network and a
 sequence aligner inside the decision loop.
 
-**Signal-space mappers** avoid basecalling by encoding the reference into expected signal under
+**Signal-space mappers.** These avoid basecalling by encoding the reference into expected
+signal under
 a pore model and matching quantised query events directly. UNCALLED uses an FM-index over
 events; Sigmap and RawHash use seed-and-chain over quantised event k-mers; RawHash2 adds an
 adaptive quantiser; RawAlign adds alignment to seeding; Sigmoni classifies with an r-index over
@@ -120,9 +121,9 @@ methods — t-test changepoint detection, basecaller move tables, and a learned 
 adopt that decomposition, splitting matching into quantisation, seeding and chaining, because
 our argument needs that granularity.
 
-**The pipeline is ordered, and earlier stages bound later ones.** Reference encoding →
-segmentation → quantisation → seeding → chaining. No chaining strategy can recover evidence
-that quantisation destroyed. This observation is the spine of §5–§7.
+**Stage ordering.** The pipeline runs reference encoding → segmentation → quantisation →
+seeding → chaining, and each stage bounds those after it: no chaining strategy can recover
+evidence that quantisation destroyed. This observation underpins §5–§7.
 
 **Streaming decision structures.** Misra–Gries and Space-Saving maintain approximate frequent
 items in bounded space. We use a set-associative variant (§3.5) whose update cost is O(ways)
@@ -139,11 +140,13 @@ k-mer, so it produces the CV = 0 case exactly; we patched it to draw lognormal d
 
 ### 3.1 Design constraints
 
-Four constraints shape the design. The decision path must not allocate, because an allocator
-excursion is unbounded. It must not take a lock, because a blocked worker holds a deadline it
-cannot meet. State must be O(channels) with compile-time per-channel constants, because read
-length is set by library preparation and is not observable in advance. And backpressure must
-discard rather than queue, for the loss-system reason of §1.
+Four constraints shape the design, each with its reason:
+
+1. *No allocation on the decision path*, because an allocator excursion is unbounded.
+2. *No locks*, because a blocked worker holds a deadline it cannot meet.
+3. *State O(channels), with compile-time per-channel constants*, because read length is set by
+   library preparation and is not observable in advance.
+4. *Backpressure discards rather than queues*, for the loss-system reason of §1.
 
 ### 3.2 Single-copy ingestion, zero-copy propagation
 
@@ -206,7 +209,7 @@ times the channel count; nothing depends on read length or elapsed run time.
 
 Threads are placed from the kernel's SMT sibling sets, read from
 `/sys/devices/system/cpu/cpu*/topology/thread_siblings_list`, rather than from processor-index
-arithmetic. This is not fussiness: our measurement host enumerates siblings adjacently
+arithmetic. The distinction is not cosmetic: our measurement host enumerates siblings adjacently
 (`0-1 2-3 4-5 6-7`), so an earlier rule that gave each role "the next logical processor" placed
 the reader and writer on *the same physical core* while two whole cores sat idle. The
 relationship is not portable, and a placement derived from identifiers is correct on some
@@ -505,7 +508,7 @@ to the query**, retaining 73.4% on each side. Both sides therefore agree on how 
 given span contains, by construction.
 
 Our pipeline does not. The reference encoder emits one event per k-mer unconditionally; the
-query detector emits approximately 0.78. The consequence is measurable and damning: our indel
+query detector emits approximately 0.78. The consequence is measurable: our indel
 rate is **0.170 at zero dwell dispersion**, where there is no timing noise to blame. An indel
 rate that high with no noise present is a structural mismatch between two encoders, not a
 property of the signal. Because correspondence failure enters `P(key)` with the same exponent as
@@ -514,7 +517,7 @@ disagreement, it costs as much.
 This is the first thing to fix, and it is a change to the indexing path rather than a research
 question.
 
-### 7.2 Quantisation: a ≈2.5-bit sweet spot, and scale-dependent truncation
+### 7.2 Quantisation: a ≈2.5-bit operating point, and scale-dependent truncation
 
 RawHash2's nominal four bits admit sixteen buckets. Its realised symbol distribution over chr20
 occupies six of them — 7.7, 21.1, 9.7, 27.6, 24.0 and 8.8 per cent, plus a 0.9 per cent outlier
@@ -522,7 +525,7 @@ bucket — for a realised entropy of approximately **2.46 bits per event**. Its 
 deliberately non-uniform: fine resolution inside a central band, coarse outside, so events near
 the distribution's mode are resolved and the tails collapsed.
 
-A third system points the same way, which matters because two points could be coincidence.
+A third system points the same way, which matters because two instances alone would be weak evidence.
 Sigmoni, which classifies rather than maps and shares none of our decision machinery, quantises
 into an alphabet of **six** symbols by default — 2.58 bits — on the stated grounds that it
 balances robustness to noise against specificity in exact matching. Two independent systems
@@ -668,8 +671,8 @@ correspondence our pipeline achieves, no decision rule placed after quantisation
 what segmentation and quantisation discard — which is why six attempts to place one moved
 accuracy by at most 35% relative against a gap of a factor of five.
 
-That is a negative result about this system and a positive one about where to look. We state it
-without apology: a system that fails for a reason that is measured, modelled, and shown to
+That is a negative result about this system and a positive one about where to look. We state
+it plainly: a system that fails for a reason that is measured, modelled, and shown to
 account for the failure of six attempts to fix it is of more use to the next designer than one
 that works for reasons its author cannot name.
 

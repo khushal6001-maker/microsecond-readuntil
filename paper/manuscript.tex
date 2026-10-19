@@ -148,8 +148,8 @@ structures.
 and map the resulting sequence. This is accurate and reuses mature tooling, but places a neural
 network and a sequence aligner~\cite{minimap2} inside the decision loop.
 
-\textbf{Signal-space mappers} avoid basecalling by encoding the reference into expected signal
-under a pore model and matching quantised query events directly. UNCALLED~\cite{uncalled} uses
+\textbf{Signal-space mappers.} These avoid basecalling by encoding the reference into expected
+signal under a pore model and matching quantised query events directly. UNCALLED~\cite{uncalled} uses
 an FM-index over events; Sigmap~\cite{sigmap} and RawHash~\cite{rawhash} use seed-and-chain
 over quantised event $k$-mers; RawHash2~\cite{rawhash2} adds an adaptive quantiser;
 RawAlign~\cite{rawalign} adds alignment to seeding; Sigmoni~\cite{sigmoni} classifies with an
@@ -159,10 +159,10 @@ and matching, and evaluates three segmentation methods---t-test changepoint dete
 basecaller move tables, and a learned segmenter. We adopt that decomposition, splitting
 matching into quantisation, seeding and chaining, because our argument needs that granularity.
 
-\textbf{The pipeline is ordered, and earlier stages bound later ones.} Reference encoding
-$\rightarrow$ segmentation $\rightarrow$ quantisation $\rightarrow$ seeding $\rightarrow$
-chaining. No chaining strategy can recover evidence that quantisation destroyed. This
-observation is the spine of \S\ref{sec:gap}--\S\ref{sec:causes}.
+\textbf{Stage ordering.} The pipeline runs reference encoding $\rightarrow$ segmentation
+$\rightarrow$ quantisation $\rightarrow$ seeding $\rightarrow$ chaining, and each stage bounds
+those after it: no chaining strategy can recover evidence that quantisation destroyed. This
+observation underpins \S\ref{sec:gap}--\S\ref{sec:causes}.
 
 \textbf{Streaming decision structures.} Misra--Gries~\cite{misragries} and
 Space-Saving~\cite{spacesaving} maintain approximate frequent items in bounded space. We use a
@@ -179,11 +179,15 @@ $k$-mer, so it produces the CV $= 0$ case exactly; we patched it to draw lognorm
 
 \subsection{Design constraints}
 
-Four constraints shape the design. The decision path must not allocate, because an allocator
-excursion is unbounded. It must not take a lock, because a blocked worker holds a deadline it
-cannot meet. State must be $O(\text{channels})$ with compile-time per-channel constants,
-because read length is set by library preparation and is not observable in advance. And
-backpressure must discard rather than queue, for the loss-system reason of \S1.
+Four constraints shape the design, each with its reason:
+
+\begin{enumerate}
+\item \emph{No allocation on the decision path}, because an allocator excursion is unbounded.
+\item \emph{No locks}, because a blocked worker holds a deadline it cannot meet.
+\item \emph{State $O(\text{channels})$, with compile-time per-channel constants}, because read
+length is set by library preparation and is not observable in advance.
+\item \emph{Backpressure discards rather than queues}, for the loss-system reason of \S1.
+\end{enumerate}
 
 \subsection{Single-copy ingestion, zero-copy propagation}
 
@@ -266,7 +270,7 @@ or elapsed run time.
 \subsection{Thread topology}
 
 Threads are placed from the kernel's SMT sibling sets rather than from processor-index
-arithmetic. This is not fussiness: our measurement host enumerates siblings adjacently
+arithmetic. The distinction is not cosmetic: our measurement host enumerates siblings adjacently
 (\texttt{0-1 2-3 4-5 6-7}), so an earlier rule that gave each role ``the next logical
 processor'' placed the reader and writer on \emph{the same physical core} while two whole cores
 sat idle. The relationship is not portable. At two shards the data plane is four threads
@@ -598,7 +602,8 @@ pipeline, measured $P(\mathrm{key})$ at $E = 8$ rather than 12 is 0.0274 against
 factor of \textbf{4.9}. The remaining factor of \textbf{9.3}---0.254 against 0.0274 at the same
 key length---is attributable to the encoding and segmentation themselves
 ($4.9 \times 9.3 = 45.8$, recovering the 46-fold total). Shortening keys is both the smaller
-lever and, as \S\ref{sec:causes} shows, the one that pays for itself in lost specificity.
+lever and, as \S\ref{sec:causes} shows, the one whose gain is paid for in
+lost specificity.
 
 \textbf{RawHash2's agreement is dwell-invariant where ours is not.} 0.913 $\rightarrow$ 0.911
 across CV 0 to 0.44, against 0.797 $\rightarrow$ 0.783 for ours, while our key-match probability
@@ -632,21 +637,22 @@ reference encoding and to the query}, retaining 73.4\% on each side. Both sides 
 on how many events a given span contains, by construction.
 
 Our pipeline does not. The reference encoder emits one event per $k$-mer unconditionally; the
-query detector emits approximately 0.78. The consequence is measurable and damning: our indel
+query detector emits approximately 0.78. The consequence is measurable: our indel
 rate is \textbf{0.170 at zero dwell dispersion}, where there is no timing noise to blame. An
 indel rate that high with no noise present is a structural mismatch between two encoders, not a
 property of the signal. Because correspondence failure enters $P(\mathrm{key})$ with the same
 exponent as disagreement, it costs as much. This is the first thing to fix, and it is a change
 to the indexing path rather than a research question.
 
-\subsection{A ${\approx}2.5$-bit quantisation sweet spot}
+\subsection{A ${\approx}2.5$-bit quantisation operating point}
 
 RawHash2's nominal four bits admit sixteen buckets. Its realised symbol distribution over chr20
 occupies six of them---7.7, 21.1, 9.7, 27.6, 24.0 and 8.8 per cent, plus a 0.9 per cent outlier
 bucket---for a realised entropy of approximately \textbf{2.46 bits per event}. Its quantiser is
 deliberately non-uniform: fine resolution inside a central band, coarse outside.
 
-A third system points the same way, which matters because two points could be coincidence.
+A third system points the same way, which matters because two instances alone would be
+weak evidence.
 Sigmoni~\cite{sigmoni}, which classifies rather than maps and shares none of our decision
 machinery, quantises into an alphabet of \textbf{six} symbols by default---2.58 bits---on the
 stated grounds that it balances robustness to noise against specificity in exact matching. Two
@@ -795,8 +801,8 @@ achieves, no decision rule placed after quantisation can recover what segmentati
 quantisation discard---which is why six attempts to place one moved accuracy by at most 35\%
 relative against a gap of a factor of five.
 
-That is a negative result about this system and a positive one about where to look. We state it
-without apology: a system that fails for a reason that is measured, modelled, and shown to
+That is a negative result about this system and a positive one about where to look. We
+state it plainly: a system that fails for a reason that is measured, modelled, and shown to
 account for the failure of six attempts to fix it is of more use to the next designer than one
 that works for reasons its author cannot name.
 
