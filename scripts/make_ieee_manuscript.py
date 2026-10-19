@@ -288,7 +288,7 @@ decision rule unaccompanied by reported agreement and correspondence figures can
 assessed by a reader. \textbf{Optimise key-match probability, not agreement alone}:
 correspondence failure enters with the same exponent as disagreement, and our indel rate is
 0.170 with no timing noise present. The currency available to buy both is alphabet, which
-RawHash2 and Sigmoni spend on agreement and we spend on specificity.
+RawHash2 and Sigmoni spend and we hoard.
 
 \textbf{Report distributions against derived budgets}, because under a deadline a mean inside
 the budget is consistent with any miss rate; we report nine runs with full ranges and name
