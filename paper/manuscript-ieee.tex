@@ -92,7 +92,8 @@ raw signal mapping, quantisation
 
 \section{Introduction}
 
-\textbf{The instrument, and the opportunity.} Nanopore sequencing reads a molecule as it
+\textbf{Read Until exists because the molecule is still in the pore.} Nanopore
+sequencing reads a molecule as it
 translocates a pore, emitting an ionic current trace in real time. Because the molecule is
 still in the pore while data arrives, the instrument exposes an interface---Read Until---that
 lets a client request ejection of a molecule it does not want, freeing the channel for
@@ -120,7 +121,7 @@ This makes the \emph{distribution} of decision latency, not its mean, the quanti
 \textbf{A loss system, not a delay system.} Under saturation a client must choose between
 queueing work and discarding it. Queueing converts decisions that would have been useful into
 decisions that arrive too late, so dropping is correct rather than merely pragmatic. The
-consequence for evaluation is sharp and, we argue, under-appreciated: \textbf{a mean
+consequence for evaluation is sharp: \textbf{a mean
 comfortably inside the budget is consistent with an arbitrary deadline-miss rate.} A system
 reporting ``mean 124 \textmu{}s against a 1.56 ms budget'' has said nothing about whether it meets its
 deadline.
@@ -271,8 +272,8 @@ are separately cacheline-aligned. Shard rings hold 2048 descriptors; action ring
 four shards the rings total under 0.75 MB, negligible beside the index.
 
 Chunks are sharded by \texttt{channel \& mask}, so all per-channel state is reached by exactly
-one thread \textbf{by construction}. This is what makes the lock-free claim cheap: there is no
-shared mutable per-channel state to protect. Backpressure is drop-never-block, with the
+one thread \textbf{by construction}. The lock-free property therefore costs nothing to
+maintain: there is no shared mutable per-channel state to protect. Backpressure is drop-never-block, with the
 invariant $\textit{offered} = \textit{pushed} + \textit{dropped}$ maintained by counters.
 
 \subsection{Bounded per-channel state}
@@ -384,18 +385,18 @@ At the median this is a utilisation of \textbf{0.080} against the 1.56 ms bound.
 completes its decisions in \textbf{1.25 ms}---a derivation, ten chunks times the measured median
 per-chunk latency, not an independent measurement.
 
-\textbf{The tail is where the loss-system framing earns its place.} Eight of the nine runs sit
+\textbf{The tail is where the loss-system framing matters.} Eight of the nine runs sit
 strictly inside the budget through the 99.9th percentile, at 1.04--1.40 ms. The ninth does not:
 one run reports p99 $=$ 1969.3 \textmu{}s and p99.9 $=$ 3284.0 \textmu{}s, and is also the worst of the nine at
 p90 and at the mean (Figure~\ref{fig:r3}).
 
 We do not read this as a deadline miss. Across the nine runs the observed \emph{maximum} spans
-2.0 ms to 59.4 ms---two orders of magnitude in a quantity the software should not vary in---and,
-tellingly, the run with the largest maximum is \textbf{not} the run with the worst p99; its p99
+2.0 ms to 59.4 ms---two orders of magnitude in a quantity the software should not vary
+in---and the run with the largest maximum is \textbf{not} the run with the worst p99; its p99
 is 630 \textmu{}s. Maximum and p99 are not correlated here, which is the signature of externally
 injected stalls rather than of slow decisions. On a hypervisor without core isolation, this
-measurement cannot establish that the system meets its deadline, and cannot establish that it
-misses it. Stating that honestly is part of the contribution.
+measurement cannot establish that the system meets its deadline, and cannot establish that
+it misses it.
 
 \begin{figure*}[t]
 \centering
@@ -507,8 +508,8 @@ we tried exceeded that.
 \textbf{Single rules vary by up to 3.8 points across seeds}---the control spans 7.0 to
 10.8---comparable to the gaps \emph{between} rules, and the ranges of adjacent rules overlap. Any
 comparison between configurations differing by less than roughly four points requires
-replication. We learned this the expensive way: an earlier single-run table reported that
-increasing look-back from 48 to 128 did not help. It does, by 1.4 points of mean and positively
+replication. An earlier single-run table of ours reported that increasing look-back from 48
+to 128 did not help. It does, by 1.4 points of mean and positively
 in every seed; the single run that supported the old claim was a different seed from the other
 five rows of the same table.
 
@@ -664,7 +665,8 @@ and agrees less. \textbf{The design axis is per-event entropy against per-event 
 the two systems sit at opposite ends of it.} A key of 8 events at 2.46 bits carries about 19.7
 bits of nominal specificity; one of 12 events at nearly 4 realised bits carries about 48. The
 system with the \emph{less} specific key is five times more accurate, because specificity it
-does not need costs it nothing and agreement it does need costs us everything.
+does not need costs it nothing, and the agreement it does need is exactly what our encoding
+fails to supply.
 
 \textbf{Differencing is not the answer, and the reason is instructive.} Encoding successive
 level \emph{differences} cancels the shared per-read normalisation shift. Measured in triplicate
@@ -717,8 +719,9 @@ occurrence cap discarding anchors before chaining, the 24-slot greedy chainer th
 chaining band of 12 against a measured indel rate of 0.196. We have not isolated which.
 
 This qualifies, but does not overturn, the location of the deficiency. Closing a 31-fold supply
-gap dominates recovering a factor of under four. But the decision stage is no longer blameless,
-and because the anchors are known to exist, this is a diagnostic rather than a search.
+gap dominates recovering a factor of under four. But a measurable part of the loss does lie
+in the decision stage, and because the anchors are known to exist, this is a diagnostic
+rather than a search.
 
 \section{Discussion}
 \textbf{Measure $a$ and $g$ before proposing a decision rule.} Both are a single pass over
@@ -728,7 +731,7 @@ decision rule unaccompanied by reported agreement and correspondence figures can
 assessed by a reader. \textbf{Optimise key-match probability, not agreement alone}:
 correspondence failure enters with the same exponent as disagreement, and our indel rate is
 0.170 with no timing noise present. The currency available to buy both is alphabet, which
-RawHash2 and Sigmoni spend and we hoard.
+RawHash2 and Sigmoni spend on agreement and we spend on specificity.
 
 \textbf{Report distributions against derived budgets}, because under a deadline a mean inside
 the budget is consistent with any miss rate; we report nine runs with full ranges and name
@@ -784,8 +787,8 @@ relative against a gap of a factor of five.
 
 That is a negative result about this system and a positive one about where to look. We
 state it plainly: a system that fails for a reason that is measured, modelled, and shown to
-account for the failure of six attempts to fix it is of more use to the next designer than one
-that works for reasons its author cannot name.
+account for the failure of six attempts to fix it is more useful to a subsequent designer
+than one that works for unexamined reasons.
 
 \section*{Reproducibility}
 

@@ -37,7 +37,7 @@ structures, raw signal mapping, quantisation
 
 ## 1 Introduction
 
-**The instrument, and the opportunity.** Nanopore sequencing reads a molecule as it
+**Read Until exists because the molecule is still in the pore.** Nanopore sequencing reads a molecule as it
 translocates a pore, emitting an ionic current trace in real time. Because the molecule is
 still in the pore while data arrives, the instrument exposes an interface — Read Until — that
 lets a client request ejection of a molecule it does not want, freeing the channel for
@@ -67,7 +67,7 @@ makes the *distribution* of decision latency, not its mean, the quantity of inte
 **A loss system, not a delay system.** Under saturation a client must choose between queueing
 work and discarding it. Queueing converts decisions that would have been useful into decisions
 that arrive too late, so dropping is correct rather than merely pragmatic. The consequence for
-evaluation is sharp and, we argue, under-appreciated: **a mean comfortably inside the budget is
+evaluation is sharp: **a mean comfortably inside the budget is
 consistent with an arbitrary deadline-miss rate.** A system reporting "mean 124 µs against a
 1.56 ms budget" has said nothing about whether it meets its deadline.
 
@@ -188,7 +188,7 @@ separately cacheline-aligned. Shard rings hold 2048 `ChunkRef` (114,688 B); acti
 index.
 
 Chunks are sharded by `channel & mask`, so all per-channel state is reached by exactly one
-thread **by construction**. This is what makes the lock-free claim cheap: there is no shared
+thread **by construction**. The lock-free property therefore costs nothing to maintain: there is no shared
 mutable per-channel state to protect.
 
 Backpressure is drop-never-block, with the invariant `offered = pushed + dropped` maintained by
@@ -293,19 +293,19 @@ At the median this is a utilisation of **0.080** against the 1.56 ms bound. A 10
 completes its decisions in **1.25 ms** — a derivation, ten chunks times the measured median
 per-chunk latency, not an independent measurement.
 
-**The tail is where the loss-system framing earns its place.** Eight of the nine runs sit
+**The tail is where the loss-system framing matters.** Eight of the nine runs sit
 strictly inside the budget through the 99.9th percentile, at 1.04–1.40 ms. The ninth does not:
 one run reports p99 = 1969.3 µs and p99.9 = 3284.0 µs, and is also the worst of the nine at p90
 and at the mean. Figure 5.4 shows it separated from the other eight.
 
 We do not read this as a deadline miss. Across the nine runs the observed *maximum* spans
 2.0 ms to 59.4 ms — two orders of magnitude in a quantity the software should not vary in at
-all — and, tellingly, the run with the largest maximum (59.4 ms) is **not** the run with the
+all — and the run with the largest maximum (59.4 ms) is **not** the run with the
 worst p99; its p99 is 630 µs. Maximum and p99 are not correlated here, which is the signature of
 externally injected stalls rather than of slow decisions. On a hypervisor without core
 isolation, this measurement cannot establish that the system meets its deadline, and it cannot
-establish that it misses it. That is precisely the claim §1 says the field does not currently
-make, and stating it honestly is part of the contribution.
+establish that it misses it. That is precisely the claim §1 says the field does not
+currently make.
 
 ### 4.4 Comparison with existing clients
 
@@ -392,8 +392,8 @@ exceeded that.
 **Single rules vary by up to 3.8 points across seeds** — the control spans 7.0 to 10.8 — which
 is comparable to the gaps *between* rules, and the ranges of adjacent rules overlap. Any
 comparison between configurations differing by less than roughly four points requires
-replication to mean anything. We learned this the expensive way: an earlier single-run table
-reported that increasing look-back from 48 to 128 did not help. It does, by 1.4 points of mean
+replication to mean anything. An earlier single-run table of ours reported that increasing
+look-back from 48 to 128 did not help. It does, by 1.4 points of mean
 and positively in every seed; the single run that supported the old claim was a different seed
 from the other five rows of the same table.
 
@@ -537,7 +537,7 @@ and agrees less. **The design axis is per-event entropy against per-event agreem
 systems sit at opposite ends of it.** A key of 8 events at 2.46 bits carries about 19.7 bits of
 nominal specificity; one of 12 events at nearly 4 realised bits carries about 48. The system
 with the *less* specific key is five times more accurate, because specificity it does not need
-costs it nothing and agreement it does need costs us everything.
+costs it nothing and agreement it does need is exactly what our encoding fails to supply.
 
 **Differencing is not the answer, and the reason is instructive.** Encoding successive level
 *differences* rather than absolute levels cancels the shared per-read normalisation shift that
@@ -586,7 +586,7 @@ the occurrence cap discarding anchors before chaining, the 24-slot greedy chaine
 a chaining band of 12 against a measured indel rate of 0.196. We have not isolated which.
 
 This qualifies, but does not overturn, the location of the deficiency. Closing a 31-fold supply
-gap dominates recovering a factor of under four. But the decision stage is no longer blameless,
+gap dominates recovering a factor of under four. But a measurable part of the loss does lie in the decision stage,
 and because the anchors are known to exist, this is a diagnostic rather than a search — the
 cheapest remaining experiment in the pipeline.
 
@@ -603,7 +603,7 @@ been needed.
 
 **Optimise key-match probability, not agreement alone.** Correspondence failure enters with the
 same exponent as disagreement, and our indel rate is 0.170 with no timing noise present. The
-currency available to buy both is alphabet, which RawHash2 and Sigmoni spend and we hoard.
+currency available to buy both is alphabet, which RawHash2 and Sigmoni spend on agreement and we spend on specificity.
 
 **Report distributions against derived budgets.** Under a deadline, a mean inside the budget is
 consistent with any miss rate. We report nine runs with full ranges and name the one that
@@ -646,9 +646,10 @@ identical, and the asymmetry favours RawHash2.
 consistent with every measurement, but the decisive ablation — applying our detector to our own
 reference encoding and re-measuring — is a change to the indexing path and was not made.
 
-**Single reference, single organism.** All figures derive from human chr20 at 20 Mb or 64 Mb.
+**Every figure derives from one reference and one organism**, human chr20, at 20 Mb or
+64 Mb.
 
-**Related-work provenance.** RawHash2, Squigulator, readfish and Icarust were built and run
+**Four of the systems discussed were not run here.** RawHash2, Squigulator, readfish and Icarust were built and run
 here; claims about UNCALLED, Sigmap, RawAlign and Sigmoni rest on their publications and
 repositories rather than on execution, and are marked as such in the text where load-bearing.
 
@@ -673,8 +674,8 @@ accuracy by at most 35% relative against a gap of a factor of five.
 
 That is a negative result about this system and a positive one about where to look. We state
 it plainly: a system that fails for a reason that is measured, modelled, and shown to
-account for the failure of six attempts to fix it is of more use to the next designer than one
-that works for reasons its author cannot name.
+account for the failure of six attempts to fix it is more useful to a subsequent designer than one
+that works for unexamined reasons.
 
 ---
 
