@@ -92,26 +92,20 @@ raw signal mapping, quantisation
 
 \section{Introduction}
 
-\textbf{Read Until exists because the molecule is still in the pore.} Nanopore
-sequencing reads a molecule as it
-translocates a pore, emitting an ionic current trace in real time. Because the molecule is
-still in the pore while data arrives, the instrument exposes an interface---Read Until---that
-lets a client request ejection of a molecule it does not want, freeing the channel for
-another. The economic case is direct: on-target yield rises without changing library
-preparation.
+Nanopore sequencing reads a molecule as it translocates a pore, emitting an ionic current trace
+in real time. Because the molecule is still in the pore while data arrives, the instrument
+exposes an interface---Read Until---that lets a client request ejection of a molecule it does
+not want, freeing the channel for another. The economic case is direct: on-target yield rises
+without changing library preparation.
 
-\textbf{The deadline is physical, not conventional.} Signal arrives in chunks at a fixed
-cadence, and a chunk describes bases that have \emph{already} passed through the pore. A
-decision delivered after the molecule has finished translocating has no value at all; it does
-not merely arrive late.
-
-\textbf{The budget follows from the instrument, not from a design choice.} Three quantities
-fix it: the number of active channels $C$, the interval $T_c$ at which each delivers a chunk,
-and the tolerance $W$, in chunks, that may elapse before a decision is worthless. A client
-must reach a decision in a mean service time of
+The interface imposes a deadline that is physical rather than conventional. Signal arrives in
+chunks at a fixed cadence, and a chunk describes bases that have \emph{already} passed through
+the pore. A decision delivered after the molecule has finished translocating has no value at
+all; it does not merely arrive late. With $C$ active channels delivering a chunk every $T_c$
+seconds, and a tolerance of $W$ chunks before the decision is worthless, the admissible mean
+service time per decision is
 \[ S < \frac{W \cdot T_c}{C} \]
-which at $W = 2$, $C = 512$ and $T_c = 0.4$ s gives 1.5625 ms, hereafter 1.56 ms. Nothing in
-that derivation is ours to tune.
+which at $W = 2$, $C = 512$ and $T_c = 0.4$ s gives 1.5625 ms, hereafter 1.56 ms.
 
 Two framings follow, and the paper is organised around them.
 
@@ -121,7 +115,7 @@ This makes the \emph{distribution} of decision latency, not its mean, the quanti
 \textbf{A loss system, not a delay system.} Under saturation a client must choose between
 queueing work and discarding it. Queueing converts decisions that would have been useful into
 decisions that arrive too late, so dropping is correct rather than merely pragmatic. The
-consequence for evaluation is sharp: \textbf{a mean
+consequence for evaluation is sharp and, we argue, under-appreciated: \textbf{a mean
 comfortably inside the budget is consistent with an arbitrary deadline-miss rate.} A system
 reporting ``mean 124 \textmu{}s against a 1.56 ms budget'' has said nothing about whether it meets its
 deadline.
@@ -167,8 +161,8 @@ structures.
 and map the resulting sequence. This is accurate and reuses mature tooling, but places a neural
 network and a sequence aligner~\cite{minimap2} inside the decision loop.
 
-\textbf{Signal-space mappers.} These avoid basecalling by encoding the reference into expected
-signal under a pore model and matching quantised query events directly. UNCALLED~\cite{uncalled} uses
+\textbf{Signal-space mappers} avoid basecalling by encoding the reference into expected signal
+under a pore model and matching quantised query events directly. UNCALLED~\cite{uncalled} uses
 an FM-index over events; Sigmap~\cite{sigmap} and RawHash~\cite{rawhash} use seed-and-chain
 over quantised event $k$-mers; RawHash2~\cite{rawhash2} adds an adaptive quantiser;
 RawAlign~\cite{rawalign} adds alignment to seeding; Sigmoni~\cite{sigmoni} classifies with an
@@ -178,10 +172,10 @@ and matching, and evaluates three segmentation methods---t-test changepoint dete
 basecaller move tables, and a learned segmenter. We adopt that decomposition, splitting
 matching into quantisation, seeding and chaining, because our argument needs that granularity.
 
-\textbf{Stage ordering.} The pipeline runs reference encoding $\rightarrow$ segmentation
-$\rightarrow$ quantisation $\rightarrow$ seeding $\rightarrow$ chaining, and each stage bounds
-those after it: no chaining strategy can recover evidence that quantisation destroyed. This
-observation underpins Sections~\ref{sec:gap}--\ref{sec:causes}.
+\textbf{The pipeline is ordered, and earlier stages bound later ones.} Reference encoding
+$\rightarrow$ segmentation $\rightarrow$ quantisation $\rightarrow$ seeding $\rightarrow$
+chaining. No chaining strategy can recover evidence that quantisation destroyed. This
+observation is the spine of Sections~\ref{sec:gap}--\ref{sec:causes}.
 
 \textbf{Streaming decision structures.} Misra--Gries~\cite{misragries} and
 Space-Saving~\cite{spacesaving} maintain approximate frequent items in bounded space. We use a
@@ -198,15 +192,11 @@ $k$-mer, so it produces the CV $= 0$ case exactly; we patched it to draw lognorm
 
 \subsection{Design constraints}
 
-Four constraints shape the design, each with its reason:
-
-\begin{enumerate}
-\item \emph{No allocation on the decision path}, because an allocator excursion is unbounded.
-\item \emph{No locks}, because a blocked worker holds a deadline it cannot meet.
-\item \emph{State $O(\text{channels})$, with compile-time per-channel constants}, because read
-length is set by library preparation and is not observable in advance.
-\item \emph{Backpressure discards rather than queues}, for the loss-system reason of Section~I.
-\end{enumerate}
+Four constraints shape the design. The decision path must not allocate, because an allocator
+excursion is unbounded. It must not take a lock, because a blocked worker holds a deadline it
+cannot meet. State must be $O(\text{channels})$ with compile-time per-channel constants,
+because read length is set by library preparation and is not observable in advance. And
+backpressure must discard rather than queue, for the loss-system reason of Section~I.
 
 \subsection{Single-copy ingestion, zero-copy propagation}
 
@@ -272,24 +262,24 @@ are separately cacheline-aligned. Shard rings hold 2048 descriptors; action ring
 four shards the rings total under 0.75 MB, negligible beside the index.
 
 Chunks are sharded by \texttt{channel \& mask}, so all per-channel state is reached by exactly
-one thread \textbf{by construction}. The lock-free property therefore costs nothing to
-maintain: there is no shared mutable per-channel state to protect. Backpressure is drop-never-block, with the
+one thread \textbf{by construction}. This is what makes the lock-free claim cheap: there is no
+shared mutable per-channel state to protect. Backpressure is drop-never-block, with the
 invariant $\textit{offered} = \textit{pushed} + \textit{dropped}$ maintained by counters.
 
 \subsection{Bounded per-channel state}
 
 The decision structure dominates per-channel state. The set-associative vote table is
-$64 \times 4 \times 12$ B $=$ 3,072 B per channel, or 1.57 MB at 512 channels and 8.22 MB at
-2675. Its update cost is $O(4)$, where a classical Misra--Gries table of the same counter count
-would pay $O(256)$ on the decision path, and its expected retention threshold is $m/320$ against
-$m/257$. The anchor-history chainer is $1024 \times 14$ B $=$ 14,336 B per channel.
+$64 \times 4 \times 12$ B $=$ 3,072 B per channel (1.57 MB at 512 channels, 8.22 MB at 2675);
+its update cost is $O(4)$ rather than the $O(256)$ a classical Misra--Gries table of the same
+counter count would pay on the decision path, and its expected retention threshold is $m/320$
+against $m/257$. The anchor-history chainer is $1024 \times 14$ B $=$ 14,336 B per channel.
 Every figure is a compile-time constant times the channel count; nothing depends on read length
 or elapsed run time.
 
 \subsection{Thread topology}
 
 Threads are placed from the kernel's SMT sibling sets rather than from processor-index
-arithmetic. The distinction is not cosmetic: our measurement host enumerates siblings adjacently
+arithmetic. This is not fussiness: our measurement host enumerates siblings adjacently
 (\texttt{0-1 2-3 4-5 6-7}), so an earlier rule that gave each role ``the next logical
 processor'' placed the reader and writer on \emph{the same physical core} while two whole cores
 sat idle. The relationship is not portable. At two shards the data plane is four threads
@@ -314,10 +304,10 @@ at 112 \textmu{}s agreed only that the true value lay in [54.19, 108.38]. The ge
 stating: \emph{any} instrument whose quantisation is coarse relative to the between-run
 variance will report stable values and thereby invite an inference of stability.
 
-The harness records, for every run, the virtualisation status, SMT topology, TSC flags,
-clocksource, kernel command line, governor, turbo state, free storage and load average. It
-refuses to label a run publishable unless virtualisation is absent, cores are isolated and the
-governor is set to performance. Every run reported here carries the development-only label.
+The harness records per run the virtualisation status, SMT topology, TSC flags, clocksource,
+kernel command line, governor, turbo state, free storage and load average, and refuses to label
+a run publishable unless virtualisation is absent, cores are isolated and the governor is set to
+performance. Every run reported here carries the development-only label.
 
 \textbf{Host.} Intel Core i5-1135G7, 4 physical cores / 8 logical, under WSL2.
 \textbf{Regimes.} R1: a 37 kb reference under constant dwell. R3: a 64 Mb human chr20 reference
@@ -385,18 +375,18 @@ At the median this is a utilisation of \textbf{0.080} against the 1.56 ms bound.
 completes its decisions in \textbf{1.25 ms}---a derivation, ten chunks times the measured median
 per-chunk latency, not an independent measurement.
 
-\textbf{The tail is where the loss-system framing matters.} Eight of the nine runs sit
+\textbf{The tail is where the loss-system framing earns its place.} Eight of the nine runs sit
 strictly inside the budget through the 99.9th percentile, at 1.04--1.40 ms. The ninth does not:
 one run reports p99 $=$ 1969.3 \textmu{}s and p99.9 $=$ 3284.0 \textmu{}s, and is also the worst of the nine at
 p90 and at the mean (Figure~\ref{fig:r3}).
 
 We do not read this as a deadline miss. Across the nine runs the observed \emph{maximum} spans
-2.0 ms to 59.4 ms, two orders of magnitude in a quantity the software should not vary in. The
-run with the largest maximum is \textbf{not} the run with the worst p99: its p99 is
-630 \textmu{}s. Maximum and p99 are not correlated here, which is the signature of externally
+2.0 ms to 59.4 ms---two orders of magnitude in a quantity the software should not vary in---and,
+tellingly, the run with the largest maximum is \textbf{not} the run with the worst p99; its p99
+is 630 \textmu{}s. Maximum and p99 are not correlated here, which is the signature of externally
 injected stalls rather than of slow decisions. On a hypervisor without core isolation, this
-measurement cannot establish that the system meets its deadline, and cannot establish that
-it misses it.
+measurement cannot establish that the system meets its deadline, and cannot establish that it
+misses it. Stating that honestly is part of the contribution.
 
 \begin{figure*}[t]
 \centering
@@ -508,8 +498,8 @@ we tried exceeded that.
 \textbf{Single rules vary by up to 3.8 points across seeds}---the control spans 7.0 to
 10.8---comparable to the gaps \emph{between} rules, and the ranges of adjacent rules overlap. Any
 comparison between configurations differing by less than roughly four points requires
-replication. An earlier single-run table of ours reported that increasing look-back from 48
-to 128 did not help. It does, by 1.4 points of mean and positively
+replication. We learned this the expensive way: an earlier single-run table reported that
+increasing look-back from 48 to 128 did not help. It does, by 1.4 points of mean and positively
 in every seed; the single run that supported the old claim was a different seed from the other
 five rows of the same table.
 
@@ -561,11 +551,10 @@ off, so we added a four-line \texttt{--out-quantize-ref} exposing the same facil
 reference side, and fixed a record-separator defect that makes the stock multi-read output
 unparseable.
 
-The scorer aligns the two symbol streams semi-globally: the query is aligned in full, end gaps
-on the reference are free, and the scores are match $+1$, mismatch $-1$, gap $-1$. From that
-alignment it reports four quantities -- $a$ under the maximising alignment, $a$ under the single
-best constant offset, the indel fraction, and the fraction of positions beginning a gap-free
-all-matching run of $E$ columns, read directly from the alignment path.
+The scorer aligns the two symbol streams semi-globally---query aligned in full, free end gaps on
+the reference, match $+1$, mismatch $-1$, gap $-1$---and reports $a$ under the maximising
+alignment, $a$ under the single best constant offset, the indel fraction, and, directly from the
+alignment path, the fraction of positions beginning a gap-free all-matching run of $E$ columns.
 That last quantity is $P(\mathrm{key})$ \textbf{measured rather than modelled}, which removes
 the independence assumption entirely.
 
@@ -601,8 +590,8 @@ RawHash2  & 0.44 & 0.911 & 0.092 & 8  & 0.254  & 467 \\
 
 \textbf{The gap is large and it is before seeding.} At CV 0.44, measured key-match probability
 differs by a factor of \textbf{46} (0.254 against 0.0055) and anchor supply by a factor of
-\textbf{31} (467 against 14.9 per read); the two ratios differ because the systems retain
-different numbers of events per read (Table~\ref{tab:agree}). A 31-fold
+\textbf{31} (467 against 14.9 per read, the two ratios differing because the systems retain
+different numbers of events per read; Table~\ref{tab:agree}). A 31-fold
 difference in anchor supply accounts for 91.8\% against 17.6\% without any appeal to the
 decision rule.
 
@@ -611,8 +600,7 @@ pipeline, measured $P(\mathrm{key})$ at $E = 8$ rather than 12 is 0.0274 against
 factor of \textbf{4.9}. The remaining factor of \textbf{9.3}---0.254 against 0.0274 at the same
 key length---is attributable to the encoding and segmentation themselves
 ($4.9 \times 9.3 = 45.8$, recovering the 46-fold total). Shortening keys is both the smaller
-lever and, as Section~\ref{sec:causes} shows, the one whose gain is paid for in
-lost specificity.
+lever and, as Section~\ref{sec:causes} shows, the one that pays for itself in lost specificity.
 
 \textbf{RawHash2's agreement is dwell-invariant where ours is not.} 0.913 $\rightarrow$ 0.911
 across CV 0 to 0.44, against 0.797 $\rightarrow$ 0.783 for ours, while our key-match probability
@@ -639,22 +627,21 @@ reference encoding and to the query}, retaining 73.4\% on each side. Both sides 
 on how many events a given span contains, by construction.
 
 Our pipeline does not. The reference encoder emits one event per $k$-mer unconditionally; the
-query detector emits approximately 0.78. The consequence is measurable: our indel
+query detector emits approximately 0.78. The consequence is measurable and damning: our indel
 rate is \textbf{0.170 at zero dwell dispersion}, where there is no timing noise to blame. An
 indel rate that high with no noise present is a structural mismatch between two encoders, not a
 property of the signal. Because correspondence failure enters $P(\mathrm{key})$ with the same
 exponent as disagreement, it costs as much. This is the first thing to fix, and it is a change
 to the indexing path rather than a research question.
 
-\subsection{A ${\approx}2.5$-bit quantisation operating point}
+\subsection{A ${\approx}2.5$-bit quantisation sweet spot}
 
 RawHash2's nominal four bits admit sixteen buckets. Its realised symbol distribution over chr20
 occupies six of them---7.7, 21.1, 9.7, 27.6, 24.0 and 8.8 per cent, plus a 0.9 per cent outlier
 bucket---for a realised entropy of approximately \textbf{2.46 bits per event}. Its quantiser is
 deliberately non-uniform: fine resolution inside a central band, coarse outside.
 
-A third system points the same way, which matters because two instances alone would be
-weak evidence.
+A third system points the same way, which matters because two points could be coincidence.
 Sigmoni~\cite{sigmoni}, which classifies rather than maps and shares none of our decision
 machinery, quantises into an alphabet of \textbf{six} symbols by default---2.58 bits---on the
 stated grounds that it balances robustness to noise against specificity in exact matching. Two
@@ -666,8 +653,7 @@ and agrees less. \textbf{The design axis is per-event entropy against per-event 
 the two systems sit at opposite ends of it.} A key of 8 events at 2.46 bits carries about 19.7
 bits of nominal specificity; one of 12 events at nearly 4 realised bits carries about 48. The
 system with the \emph{less} specific key is five times more accurate, because specificity it
-does not need costs it nothing, and the agreement it does need is exactly what our encoding
-fails to supply.
+does not need costs it nothing and agreement it does need costs us everything.
 
 \textbf{Differencing is not the answer, and the reason is instructive.} Encoding successive
 level \emph{differences} cancels the shared per-read normalisation shift. Measured in triplicate
@@ -720,9 +706,8 @@ occurrence cap discarding anchors before chaining, the 24-slot greedy chainer th
 chaining band of 12 against a measured indel rate of 0.196. We have not isolated which.
 
 This qualifies, but does not overturn, the location of the deficiency. Closing a 31-fold supply
-gap dominates recovering a factor of under four. But a measurable part of the loss does lie
-in the decision stage, and because the anchors are known to exist, this is a diagnostic
-rather than a search.
+gap dominates recovering a factor of under four. But the decision stage is no longer blameless,
+and because the anchors are known to exist, this is a diagnostic rather than a search.
 
 \section{Discussion}
 \textbf{Measure $a$ and $g$ before proposing a decision rule.} Both are a single pass over
@@ -732,7 +717,7 @@ decision rule unaccompanied by reported agreement and correspondence figures can
 assessed by a reader. \textbf{Optimise key-match probability, not agreement alone}:
 correspondence failure enters with the same exponent as disagreement, and our indel rate is
 0.170 with no timing noise present. The currency available to buy both is alphabet, which
-RawHash2 and Sigmoni spend on agreement and we spend on specificity.
+RawHash2 and Sigmoni spend and we hoard.
 
 \textbf{Report distributions against derived budgets}, because under a deadline a mean inside
 the budget is consistent with any miss rate; we report nine runs with full ranges and name
@@ -760,10 +745,9 @@ transfer to each other by a factor of thirty, and every figure derives from a si
 reference, human chr20. Agreement is measured at two dwell levels, one seed, 200 reads per
 cell, where accuracy is swept at six levels in triplicate, so the claim that RawHash2's
 agreement is dwell-invariant rests on two points. The alignment-based agreement figures are
-upper bounds, computed under the correspondence that maximises matches. Indel fractions of
+upper bounds, computed under the correspondence that maximises matches; indel fractions of
 0.055--0.208 mean the alignments are near-diagonal, so the estimator is not manufacturing
-matches through heavy gapping. The bound is nonetheless one-sided, and the asymmetry favours
-RawHash2.
+matches through heavy gapping, but the bound is one-sided and the asymmetry favours RawHash2.
 The symmetric-retention explanation is visible in RawHash2's source and consistent with every
 measurement, but the decisive ablation---applying our detector to our own reference encoding
 and re-measuring---was not made. RawHash2, Squigulator, readfish and Icarust were built and
@@ -774,9 +758,9 @@ repositories rather than on execution.
 
 We set out to determine whether the adaptive-sampling decision can be made in microseconds. It
 can: a median of 124.8 \textmu{}s at genome scale against a 1.56 ms physical budget, with bounded
-per-channel state, no allocation on the decision path, and no drops at the offered rate. For
-comparison, the orchestration layer alone of a standard basecalling client costs
-124.3 \textmu{}s per read-chunk, before any decision is made. The decision budget is not the obstacle to signal-space adaptive
+per-channel state, no allocation on the decision path, and no drops at the offered rate---while
+the orchestration layer alone of a standard basecalling client costs 124.3 \textmu{}s per read-chunk
+before any decision is made. The decision budget is not the obstacle to signal-space adaptive
 sampling.
 
 The question we answer better than the one we asked is why that is insufficient. Quantised-event
@@ -787,18 +771,18 @@ achieves, no decision rule placed after quantisation can recover what segmentati
 quantisation discard---which is why six attempts to place one moved accuracy by at most 35\%
 relative against a gap of a factor of five.
 
-That is a negative result about this system and a positive one about where to look. We
-state it plainly: a system that fails for a reason that is measured, modelled, and shown to
-account for the failure of six attempts to fix it is more useful to a subsequent designer
-than one that works for unexamined reasons.
+That is a negative result about this system and a positive one about where to look. We state it
+without apology: a system that fails for a reason that is measured, modelled, and shown to
+account for the failure of six attempts to fix it is of more use to the next designer than one
+that works for reasons its author cannot name.
 
 \section*{Reproducibility}
 
 All code, data and scripts are in the accompanying repository at commit \texttt{eb0ea28}.
 \texttt{scripts/verify\_thesis\_numbers.py} recomputes every number from files under
-\texttt{results/}. Where a figure describes code that no longer exists, it checks that figure
-against the commit message which recorded it instead. The script exits non-zero on any
-disagreement, and reports 143 claims agreeing and none disagreeing. \texttt{scripts/verify\_paper\_numbers.py} performs the same check
+\texttt{results/}, or, for figures describing code that no longer exists, checks them against the
+commit message that recorded them; it exits non-zero on any disagreement, and reports 143 claims
+agreeing and none disagreeing. \texttt{scripts/verify\_paper\_numbers.py} performs the same check
 against this manuscript. \texttt{scripts/generate\_thesis\_figures.py} regenerates every data
 figure from \texttt{results/} and nothing else, byte-stably. Five claims are not settled by any
 committed file and are documented as scope boundaries: a bare-metal deadline-miss rate, real

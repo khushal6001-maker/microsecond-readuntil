@@ -37,27 +37,22 @@ structures, raw signal mapping, quantisation
 
 ## 1 Introduction
 
-**Read Until exists because the molecule is still in the pore.** Nanopore sequencing reads a molecule as it
-translocates a pore, emitting an ionic current trace in real time. Because the molecule is
-still in the pore while data arrives, the instrument exposes an interface — Read Until — that
-lets a client request ejection of a molecule it does not want, freeing the channel for
-another. The economic case is direct: on-target yield rises without changing library
-preparation.
+Nanopore sequencing reads a molecule as it translocates a pore, emitting an ionic current
+trace in real time. Because the molecule is still in the pore while data arrives, the
+instrument exposes an interface — Read Until — that lets a client request ejection of a
+molecule it does not want, freeing the channel for another. The economic case is direct:
+on-target yield rises without changing library preparation.
 
-**The deadline is physical, not conventional.** Signal arrives in chunks at a fixed cadence,
-and a chunk describes bases that have *already* passed through the pore. A decision delivered
-after the molecule has finished translocating has no value at all; it does not merely arrive
-late.
-
-**The budget follows from the instrument, not from a design choice.** Three quantities fix
-it: the number of active channels `C`, the interval `T_c` at which each delivers a chunk, and
-the tolerance `W`, in chunks, that may elapse before a decision is worthless. A client must
-reach a decision in a mean service time of
+The interface imposes a deadline that is physical rather than conventional. Signal arrives in
+chunks at a fixed cadence, and a chunk describes bases that have *already* passed through the
+pore. A decision delivered after the molecule has finished translocating has no value at all;
+it does not merely arrive late. With `C` active channels delivering a chunk every `T_c`
+seconds, and a tolerance of `W` chunks before the decision is worthless, the admissible mean
+service time per decision is
 
 &nbsp;&nbsp;&nbsp;&nbsp;`S < W · T_c / C`
 
-which at `W` = 2, `C` = 512 and `T_c` = 0.4 s gives **1.5625 ms**, hereafter 1.56 ms. Nothing
-in that derivation is ours to tune.
+which at `W` = 2, `C` = 512 and `T_c` = 0.4 s gives **1.5625 ms**, hereafter 1.56 ms.
 
 Two framings follow, and the paper is organised around them.
 
@@ -67,7 +62,7 @@ makes the *distribution* of decision latency, not its mean, the quantity of inte
 **A loss system, not a delay system.** Under saturation a client must choose between queueing
 work and discarding it. Queueing converts decisions that would have been useful into decisions
 that arrive too late, so dropping is correct rather than merely pragmatic. The consequence for
-evaluation is sharp: **a mean comfortably inside the budget is
+evaluation is sharp and, we argue, under-appreciated: **a mean comfortably inside the budget is
 consistent with an arbitrary deadline-miss rate.** A system reporting "mean 124 µs against a
 1.56 ms budget" has said nothing about whether it meets its deadline.
 
@@ -110,8 +105,7 @@ which constrains client-side data structures.
 sequence. This is accurate and reuses mature tooling, but places a neural network and a
 sequence aligner inside the decision loop.
 
-**Signal-space mappers.** These avoid basecalling by encoding the reference into expected
-signal under
+**Signal-space mappers** avoid basecalling by encoding the reference into expected signal under
 a pore model and matching quantised query events directly. UNCALLED uses an FM-index over
 events; Sigmap and RawHash use seed-and-chain over quantised event k-mers; RawHash2 adds an
 adaptive quantiser; RawAlign adds alignment to seeding; Sigmoni classifies with an r-index over
@@ -121,9 +115,9 @@ methods — t-test changepoint detection, basecaller move tables, and a learned 
 adopt that decomposition, splitting matching into quantisation, seeding and chaining, because
 our argument needs that granularity.
 
-**Stage ordering.** The pipeline runs reference encoding → segmentation → quantisation →
-seeding → chaining, and each stage bounds those after it: no chaining strategy can recover
-evidence that quantisation destroyed. This observation underpins §5–§7.
+**The pipeline is ordered, and earlier stages bound later ones.** Reference encoding →
+segmentation → quantisation → seeding → chaining. No chaining strategy can recover evidence
+that quantisation destroyed. This observation is the spine of §5–§7.
 
 **Streaming decision structures.** Misra–Gries and Space-Saving maintain approximate frequent
 items in bounded space. We use a set-associative variant (§3.5) whose update cost is O(ways)
@@ -140,13 +134,11 @@ k-mer, so it produces the CV = 0 case exactly; we patched it to draw lognormal d
 
 ### 3.1 Design constraints
 
-Four constraints shape the design, each with its reason:
-
-1. *No allocation on the decision path*, because an allocator excursion is unbounded.
-2. *No locks*, because a blocked worker holds a deadline it cannot meet.
-3. *State O(channels), with compile-time per-channel constants*, because read length is set by
-   library preparation and is not observable in advance.
-4. *Backpressure discards rather than queues*, for the loss-system reason of §1.
+Four constraints shape the design. The decision path must not allocate, because an allocator
+excursion is unbounded. It must not take a lock, because a blocked worker holds a deadline it
+cannot meet. State must be O(channels) with compile-time per-channel constants, because read
+length is set by library preparation and is not observable in advance. And backpressure must
+discard rather than queue, for the loss-system reason of §1.
 
 ### 3.2 Single-copy ingestion, zero-copy propagation
 
@@ -188,7 +180,7 @@ separately cacheline-aligned. Shard rings hold 2048 `ChunkRef` (114,688 B); acti
 index.
 
 Chunks are sharded by `channel & mask`, so all per-channel state is reached by exactly one
-thread **by construction**. The lock-free property therefore costs nothing to maintain: there is no shared
+thread **by construction**. This is what makes the lock-free claim cheap: there is no shared
 mutable per-channel state to protect.
 
 Backpressure is drop-never-block, with the invariant `offered = pushed + dropped` maintained by
@@ -209,7 +201,7 @@ times the channel count; nothing depends on read length or elapsed run time.
 
 Threads are placed from the kernel's SMT sibling sets, read from
 `/sys/devices/system/cpu/cpu*/topology/thread_siblings_list`, rather than from processor-index
-arithmetic. The distinction is not cosmetic: our measurement host enumerates siblings adjacently
+arithmetic. This is not fussiness: our measurement host enumerates siblings adjacently
 (`0-1 2-3 4-5 6-7`), so an earlier rule that gave each role "the next logical processor" placed
 the reader and writer on *the same physical core* while two whole cores sat idle. The
 relationship is not portable, and a placement derived from identifiers is correct on some
@@ -293,19 +285,19 @@ At the median this is a utilisation of **0.080** against the 1.56 ms bound. A 10
 completes its decisions in **1.25 ms** — a derivation, ten chunks times the measured median
 per-chunk latency, not an independent measurement.
 
-**The tail is where the loss-system framing matters.** Eight of the nine runs sit
+**The tail is where the loss-system framing earns its place.** Eight of the nine runs sit
 strictly inside the budget through the 99.9th percentile, at 1.04–1.40 ms. The ninth does not:
 one run reports p99 = 1969.3 µs and p99.9 = 3284.0 µs, and is also the worst of the nine at p90
 and at the mean. Figure 5.4 shows it separated from the other eight.
 
 We do not read this as a deadline miss. Across the nine runs the observed *maximum* spans
 2.0 ms to 59.4 ms — two orders of magnitude in a quantity the software should not vary in at
-all — and the run with the largest maximum (59.4 ms) is **not** the run with the
+all — and, tellingly, the run with the largest maximum (59.4 ms) is **not** the run with the
 worst p99; its p99 is 630 µs. Maximum and p99 are not correlated here, which is the signature of
 externally injected stalls rather than of slow decisions. On a hypervisor without core
 isolation, this measurement cannot establish that the system meets its deadline, and it cannot
-establish that it misses it. That is precisely the claim §1 says the field does not
-currently make.
+establish that it misses it. That is precisely the claim §1 says the field does not currently
+make, and stating it honestly is part of the contribution.
 
 ### 4.4 Comparison with existing clients
 
@@ -392,8 +384,8 @@ exceeded that.
 **Single rules vary by up to 3.8 points across seeds** — the control spans 7.0 to 10.8 — which
 is comparable to the gaps *between* rules, and the ranges of adjacent rules overlap. Any
 comparison between configurations differing by less than roughly four points requires
-replication to mean anything. An earlier single-run table of ours reported that increasing
-look-back from 48 to 128 did not help. It does, by 1.4 points of mean
+replication to mean anything. We learned this the expensive way: an earlier single-run table
+reported that increasing look-back from 48 to 128 did not help. It does, by 1.4 points of mean
 and positively in every seed; the single run that supported the old claim was a different seed
 from the other five rows of the same table.
 
@@ -508,7 +500,7 @@ to the query**, retaining 73.4% on each side. Both sides therefore agree on how 
 given span contains, by construction.
 
 Our pipeline does not. The reference encoder emits one event per k-mer unconditionally; the
-query detector emits approximately 0.78. The consequence is measurable: our indel
+query detector emits approximately 0.78. The consequence is measurable and damning: our indel
 rate is **0.170 at zero dwell dispersion**, where there is no timing noise to blame. An indel
 rate that high with no noise present is a structural mismatch between two encoders, not a
 property of the signal. Because correspondence failure enters `P(key)` with the same exponent as
@@ -517,7 +509,7 @@ disagreement, it costs as much.
 This is the first thing to fix, and it is a change to the indexing path rather than a research
 question.
 
-### 7.2 Quantisation: a ≈2.5-bit operating point, and scale-dependent truncation
+### 7.2 Quantisation: a ≈2.5-bit sweet spot, and scale-dependent truncation
 
 RawHash2's nominal four bits admit sixteen buckets. Its realised symbol distribution over chr20
 occupies six of them — 7.7, 21.1, 9.7, 27.6, 24.0 and 8.8 per cent, plus a 0.9 per cent outlier
@@ -525,7 +517,7 @@ bucket — for a realised entropy of approximately **2.46 bits per event**. Its 
 deliberately non-uniform: fine resolution inside a central band, coarse outside, so events near
 the distribution's mode are resolved and the tails collapsed.
 
-A third system points the same way, which matters because two instances alone would be weak evidence.
+A third system points the same way, which matters because two points could be coincidence.
 Sigmoni, which classifies rather than maps and shares none of our decision machinery, quantises
 into an alphabet of **six** symbols by default — 2.58 bits — on the stated grounds that it
 balances robustness to noise against specificity in exact matching. Two independent systems
@@ -537,7 +529,7 @@ and agrees less. **The design axis is per-event entropy against per-event agreem
 systems sit at opposite ends of it.** A key of 8 events at 2.46 bits carries about 19.7 bits of
 nominal specificity; one of 12 events at nearly 4 realised bits carries about 48. The system
 with the *less* specific key is five times more accurate, because specificity it does not need
-costs it nothing and agreement it does need is exactly what our encoding fails to supply.
+costs it nothing and agreement it does need costs us everything.
 
 **Differencing is not the answer, and the reason is instructive.** Encoding successive level
 *differences* rather than absolute levels cancels the shared per-read normalisation shift that
@@ -586,7 +578,7 @@ the occurrence cap discarding anchors before chaining, the 24-slot greedy chaine
 a chaining band of 12 against a measured indel rate of 0.196. We have not isolated which.
 
 This qualifies, but does not overturn, the location of the deficiency. Closing a 31-fold supply
-gap dominates recovering a factor of under four. But a measurable part of the loss does lie in the decision stage,
+gap dominates recovering a factor of under four. But the decision stage is no longer blameless,
 and because the anchors are known to exist, this is a diagnostic rather than a search — the
 cheapest remaining experiment in the pipeline.
 
@@ -603,7 +595,7 @@ been needed.
 
 **Optimise key-match probability, not agreement alone.** Correspondence failure enters with the
 same exponent as disagreement, and our indel rate is 0.170 with no timing noise present. The
-currency available to buy both is alphabet, which RawHash2 and Sigmoni spend on agreement and we spend on specificity.
+currency available to buy both is alphabet, which RawHash2 and Sigmoni spend and we hoard.
 
 **Report distributions against derived budgets.** Under a deadline, a mean inside the budget is
 consistent with any miss rate. We report nine runs with full ranges and name the one that
@@ -646,10 +638,9 @@ identical, and the asymmetry favours RawHash2.
 consistent with every measurement, but the decisive ablation — applying our detector to our own
 reference encoding and re-measuring — is a change to the indexing path and was not made.
 
-**Every figure derives from one reference and one organism**, human chr20, at 20 Mb or
-64 Mb.
+**Single reference, single organism.** All figures derive from human chr20 at 20 Mb or 64 Mb.
 
-**Four of the systems discussed were not run here.** RawHash2, Squigulator, readfish and Icarust were built and run
+**Related-work provenance.** RawHash2, Squigulator, readfish and Icarust were built and run
 here; claims about UNCALLED, Sigmap, RawAlign and Sigmoni rest on their publications and
 repositories rather than on execution, and are marked as such in the text where load-bearing.
 
@@ -672,10 +663,10 @@ correspondence our pipeline achieves, no decision rule placed after quantisation
 what segmentation and quantisation discard — which is why six attempts to place one moved
 accuracy by at most 35% relative against a gap of a factor of five.
 
-That is a negative result about this system and a positive one about where to look. We state
-it plainly: a system that fails for a reason that is measured, modelled, and shown to
-account for the failure of six attempts to fix it is more useful to a subsequent designer than one
-that works for unexamined reasons.
+That is a negative result about this system and a positive one about where to look. We state it
+without apology: a system that fails for a reason that is measured, modelled, and shown to
+account for the failure of six attempts to fix it is of more use to the next designer than one
+that works for reasons its author cannot name.
 
 ---
 
