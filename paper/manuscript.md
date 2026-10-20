@@ -494,14 +494,14 @@ range because `g` rises from 0.170 to 0.196. Agreement is not what moves; corres
 
 ### 7.1 Asymmetric event retention
 
-RawHash2 applies its event-merging rule — drop any event whose level differs from the last
-retained event by less than `--sig-diff` = 0.35 — **symmetrically to the reference encoding and
-to the query**, retaining 73.4% on each side. Both sides therefore agree on how many events a
-given span contains, by construction.
+RawHash2 uses an event-merging rule: any event whose level differs from the last retained
+event by less than `--sig-diff` = 0.35 is dropped. It applies this rule **symmetrically to the
+reference encoding and to the query**, and keeps 73.4% of events on each side. As a result,
+the two sides always agree on how many events a given span contains.
 
-Our pipeline does not. The reference encoder emits one event per k-mer unconditionally; the
-query detector emits approximately 0.78. The consequence is measurable and damning: our indel
-rate is **0.170 at zero dwell dispersion**, where there is no timing noise to blame. An indel
+Our pipeline does not have this property. The reference encoder always emits one event per
+k-mer, whereas the query detector emits about 0.78. The effect is measurable and serious: at
+zero dwell dispersion, with no timing noise to blame, our indel rate is **0.170**. An indel
 rate that high with no noise present is a structural mismatch between two encoders, not a
 property of the signal. Because correspondence failure enters `P(key)` with the same exponent as
 disagreement, it costs as much.
