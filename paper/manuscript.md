@@ -594,11 +594,11 @@ them at the start rather than near the end, four of the corrections in this work
 been needed.
 
 **Optimise key-match probability, not agreement alone.** Correspondence failure enters with the
-same exponent as disagreement, and our indel rate is 0.170 with no timing noise present. The
-currency available to buy both is alphabet, which RawHash2 and Sigmoni spend and we hoard.
+same exponent as disagreement, and our indel rate is 0.170 even with no timing noise present.
+The resource that can buy both is alphabet size. RawHash2 and Sigmoni trade it away; we do not.
 
-**Report distributions against derived budgets.** Under a deadline, a mean inside the budget is
-consistent with any miss rate. We report nine runs with full ranges and name the one that
+**Report distributions against derived budgets.** Under a deadline, a mean that falls inside
+the budget is consistent with any miss rate. We report nine runs with full ranges and name the one that
 crosses, which is a weaker-sounding but more useful statement than a single comfortable mean.
 
 **Run the external baseline first, not last.** Every intervention we made on the decision stage

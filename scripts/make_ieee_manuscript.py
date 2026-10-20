@@ -287,11 +287,11 @@ establish whether \emph{any} decision rule can succeed before one is designed. A
 decision rule unaccompanied by reported agreement and correspondence figures cannot be
 assessed by a reader. \textbf{Optimise key-match probability, not agreement alone}:
 correspondence failure enters with the same exponent as disagreement, and our indel rate is
-0.170 with no timing noise present. The currency available to buy both is alphabet, which
-RawHash2 and Sigmoni spend and we hoard.
+0.170 even with no timing noise present. The resource that can buy both is alphabet size.
+RawHash2 and Sigmoni trade it away; we do not.
 
-\textbf{Report distributions against derived budgets}, because under a deadline a mean inside
-the budget is consistent with any miss rate; we report nine runs with full ranges and name
+\textbf{Report distributions against derived budgets}, because under a deadline a mean that
+falls inside the budget is consistent with any miss rate; we report nine runs with full ranges and name
 the one that crosses. And \textbf{run the external baseline first, not last}. Every
 intervention we made on the decision stage was measured against our own earlier numbers,
 which rose and fell credibly and gave no indication that the ceiling lay elsewhere. One run
