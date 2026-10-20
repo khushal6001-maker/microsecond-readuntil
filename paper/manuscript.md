@@ -37,27 +37,27 @@ structures, raw signal mapping, quantisation
 
 ## 1 Introduction
 
-In nanopore sequencing, a molecule is read while it passes through a pore, and the instrument
-records the resulting ionic current in real time. Since the data arrives while the molecule is
-still inside the pore, the instrument offers an interface — Read Until — through which a
-client can ask for an unwanted molecule to be ejected, freeing the channel for another. The
-benefit is straightforward: on-target yield goes up, and library preparation stays the same.
+Nanopore sequencing reads a molecule as it translocates a pore, emitting an ionic current
+trace in real time. Because the molecule is still in the pore while data arrives, the
+instrument exposes an interface — Read Until — that lets a client request ejection of a
+molecule it does not want, freeing the channel for another. The economic case is direct:
+on-target yield rises without changing library preparation.
 
-This interface comes with a deadline, and the deadline is set by physics rather than by
-convention. Signal is delivered in chunks at a fixed rate, and each chunk describes bases that
-have *already* gone through the pore. If a decision arrives after the molecule has left the
-pore, it is not merely late. It has no value at all. Suppose `C` channels are active, each
-delivering a chunk every `T_c` seconds, and a decision becomes worthless once `W` chunks have
-passed. The mean service time we can allow per decision is then
+The interface imposes a deadline that is physical rather than conventional. Signal arrives in
+chunks at a fixed cadence, and a chunk describes bases that have *already* passed through the
+pore. A decision delivered after the molecule has finished translocating has no value at all;
+it does not merely arrive late. With `C` active channels delivering a chunk every `T_c`
+seconds, and a tolerance of `W` chunks before the decision is worthless, the admissible mean
+service time per decision is
 
 &nbsp;&nbsp;&nbsp;&nbsp;`S < W · T_c / C`
 
 which at `W` = 2, `C` = 512 and `T_c` = 0.4 s gives **1.5625 ms**, hereafter 1.56 ms.
 
-Two ways of framing the problem follow from this, and we organise the paper around them.
+Two framings follow, and the paper is organised around them.
 
-**Soft real time.** A decision does not lose value gradually. Its usefulness drops to zero at
-the deadline. What matters is therefore the *distribution* of decision latency, not its mean.
+**Soft real time.** Utility falls to zero at the deadline rather than degrading smoothly. This
+makes the *distribution* of decision latency, not its mean, the quantity of interest.
 
 **A loss system, not a delay system.** Under saturation a client must choose between queueing
 work and discarding it. Queueing converts decisions that would have been useful into decisions
@@ -494,14 +494,14 @@ range because `g` rises from 0.170 to 0.196. Agreement is not what moves; corres
 
 ### 7.1 Asymmetric event retention
 
-RawHash2 uses an event-merging rule: any event whose level differs from the last retained
-event by less than `--sig-diff` = 0.35 is dropped. It applies this rule **symmetrically to the
-reference encoding and to the query**, and keeps 73.4% of events on each side. As a result,
-the two sides always agree on how many events a given span contains.
+RawHash2 applies its event-merging rule — drop any event whose level differs from the last
+retained event by less than `--sig-diff` = 0.35 — **symmetrically to the reference encoding and
+to the query**, retaining 73.4% on each side. Both sides therefore agree on how many events a
+given span contains, by construction.
 
-Our pipeline does not have this property. The reference encoder always emits one event per
-k-mer, whereas the query detector emits about 0.78. The effect is measurable and serious: at
-zero dwell dispersion, with no timing noise to blame, our indel rate is **0.170**. An indel
+Our pipeline does not. The reference encoder emits one event per k-mer unconditionally; the
+query detector emits approximately 0.78. The consequence is measurable and damning: our indel
+rate is **0.170 at zero dwell dispersion**, where there is no timing noise to blame. An indel
 rate that high with no noise present is a structural mismatch between two encoders, not a
 property of the signal. Because correspondence failure enters `P(key)` with the same exponent as
 disagreement, it costs as much.
@@ -594,11 +594,11 @@ them at the start rather than near the end, four of the corrections in this work
 been needed.
 
 **Optimise key-match probability, not agreement alone.** Correspondence failure enters with the
-same exponent as disagreement, and our indel rate is 0.170 even with no timing noise present.
-The resource that can buy both is alphabet size. RawHash2 and Sigmoni trade it away; we do not.
+same exponent as disagreement, and our indel rate is 0.170 with no timing noise present. The
+currency available to buy both is alphabet, which RawHash2 and Sigmoni spend and we hoard.
 
-**Report distributions against derived budgets.** Under a deadline, a mean that falls inside
-the budget is consistent with any miss rate. We report nine runs with full ranges and name the one that
+**Report distributions against derived budgets.** Under a deadline, a mean inside the budget is
+consistent with any miss rate. We report nine runs with full ranges and name the one that
 crosses, which is a weaker-sounding but more useful statement than a single comfortable mean.
 
 **Run the external baseline first, not last.** Every intervention we made on the decision stage
