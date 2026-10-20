@@ -74,25 +74,26 @@ structures, raw signal mapping, quantisation}
 
 \section{Introduction}
 
-Nanopore sequencing reads a molecule as it translocates a pore, emitting an ionic current trace
-in real time. Because the molecule is still in the pore while data arrives, the instrument
-exposes an interface---Read Until---that lets a client request ejection of a molecule it does
-not want, freeing the channel for another. The economic case is direct: on-target yield rises
-without changing library preparation.
+In nanopore sequencing, a molecule is read while it passes through a pore, and the instrument
+records the resulting ionic current in real time. Since the data arrives while the molecule is
+still inside the pore, the instrument offers an interface, Read Until, through which a client
+can ask for an unwanted molecule to be ejected, freeing the channel for another. The benefit is
+straightforward: on-target yield goes up, and library preparation stays the same.
 
-The interface imposes a deadline that is physical rather than conventional. Signal arrives in
-chunks at a fixed cadence, and a chunk describes bases that have \emph{already} passed through
-the pore. A decision delivered after the molecule has finished translocating has no value at
-all; it does not merely arrive late. With $C$ active channels delivering a chunk every $T_c$
-seconds, and a tolerance of $W$ chunks before the decision is worthless, the admissible mean
-service time per decision is
+This interface comes with a deadline, and the deadline is set by physics rather than by
+convention. Signal is delivered in chunks at a fixed rate, and each chunk describes bases that
+have \emph{already} gone through the pore. If a decision arrives after the molecule has left
+the pore, it is not merely late. It has no value at all. Suppose $C$ channels are active, each
+delivering a chunk every $T_c$ seconds, and a decision becomes worthless once $W$ chunks have
+passed. The mean service time we can allow per decision is then
 \[ S < \frac{W \cdot T_c}{C} \]
 which at $W = 2$, $C = 512$ and $T_c = 0.4$ s gives 1.5625 ms, hereafter 1.56 ms.
 
-Two framings follow, and the paper is organised around them.
+Two ways of framing the problem follow from this, and we organise the paper around them.
 
-\textbf{Soft real time.} Utility falls to zero at the deadline rather than degrading smoothly.
-This makes the \emph{distribution} of decision latency, not its mean, the quantity of interest.
+\textbf{Soft real time.} A decision does not lose value gradually. Its usefulness drops to zero
+at the deadline. What matters is therefore the \emph{distribution} of decision latency, not its
+mean.
 
 \textbf{A loss system, not a delay system.} Under saturation a client must choose between
 queueing work and discarding it. Queueing converts decisions that would have been useful into
