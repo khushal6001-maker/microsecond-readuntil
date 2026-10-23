@@ -1,0 +1,80 @@
+% Supplementary Information for "Time-domain noise as an evaluation axis for raw-signal nanopore
+% mapping". Typeset from supplementary.md, which is the canonical text; the two must carry the
+% same numbers in the same order, which scripts/verify_dwell_journal_numbers.py checks.
+%
+% This file holds the values that no captured run backs. Each is marked \prov, and the script
+% allows such values here and nowhere in the main manuscript.
+%
+% Build: latexmk -pdf supplementary.tex
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{newtxtext,newtxmath}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{microtype}
+\usepackage{authblk}
+\usepackage[hidelinks]{hyperref}
+
+\setlength{\parskip}{0pt}
+\renewcommand{\Affilfont}{\small}
+\renewcommand{\thesection}{S\arabic{section}}
+\newcommand{\prov}{\textsuperscript{\dag}}
+% Repository paths in typewriter that may break at / and _, which \texttt cannot.
+\DeclareUrlCommand\file{\urlstyle{tt}}
+
+\title{\textbf{Supplementary Information}\\[6pt]
+  \large Time-domain noise as an evaluation axis for raw-signal nanopore mapping}
+\author[1,*]{Khushal Singh}
+\author[1]{Ritu Garg}
+\affil[1]{Department of Computer Engineering, National Institute of Technology Kurukshetra,
+  Kurukshetra, Haryana 136119, India}
+\affil[*]{To whom correspondence should be addressed: \texttt{khushal6002@gmail.com}}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\noindent Three observations made during this work are reported here rather than in the main text,
+because each rests in part on a measurement for which no run output was captured. Those values are
+marked with a dagger (\dag). None of them is used in any claim in the main text, and
+\file{scripts/verify_dwell_journal_numbers.py} lists each as outstanding, together with the run that
+would settle it. Section and table numbers without an S refer to the main text.
+
+\section{Live accept rates against Icarust}\label{sec:s-icarust}
+
+With the same client, reference and run length, the fixed-width arm accepted 43.5\%\prov{} of reads
+and the detected arm 9.6\%\prov{} against stock Icarust, and 0.5\%\prov{} and 9.6\%\prov{} against
+the patched simulator at CV 0.35. Taken at face value, stock Icarust reports the fixed-width arm as
+4.5-fold\prov{} better, and the patched simulator reverses the order, which is the reversal of
+Section~3.1 observed on the live interface. These are accept rates on the live loop and are not
+comparable with the offline true-positive rates (TPR) of Table~1. Re-running stock and patched
+Icarust against the client would settle them.
+
+\section{Calibration target for event detection}\label{sec:s-calibration}
+
+The calibrated detector, threshold 3.0, emits 1562 events per on-target read at CV 0.44, against an
+ideal of approximately 2000, one event per base, which is 21.9\% under-segmentation; seed 42 gives
+14.2\% TPR in the captured log. In a development run that was not captured, threshold 2.0 gave
+2017\prov{} events per read, close to the ideal, and 2.0\%\prov{} TPR, 7.1-fold\prov{} lower. An
+argument offered during development attributed the difference to frame displacement: a spurious
+boundary shifts every later key in the read. That argument does not distinguish the two error
+types, because a missed boundary removes an event and shifts every later event index by one exactly
+as a spurious boundary adds one. A sufficient explanation is simpler. The event count measures net
+error, insertions minus deletions, and is blind to errors that cancel, so a detector that emits the
+ideal number of events may still place many boundaries wrongly. The recommendation that follows
+does not depend on the uncaptured values: calibrate a detector against agreement or indel fraction
+(Section~2.6), not against its event count.
+
+\section{Calibration transfer between generators}\label{sec:s-transfer}
+
+A detector threshold calibrated against signal from a generator written for this project, applied
+unchanged to Squigulator signal, gave 0.6\%\prov{} TPR at CV~0, where the Squigulator-calibrated
+detector gives 18.4\% [17.0--19.8] (Table~1), a 30.7-fold\prov{} difference. The two generators
+differ in their amplitude-noise models, and the detector threshold is a t-statistic whose operating
+point depends on that model. Whatever the magnitude, a result obtained with event detection is
+interpretable only together with a statement of how the detector was calibrated and on what signal.
+
+\end{document}

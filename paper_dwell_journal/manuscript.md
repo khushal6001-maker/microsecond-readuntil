@@ -38,6 +38,8 @@ rises from 11.7 points at CV 0 to 19.5 at CV 0.60, and is larger at CV 0.60 in e
 Icarust simulator, and a script that recomputes every number in this article:
 https://github.com/khushal6001-maker/microsecond-readuntil, archived at **[ZENODO DOI TO BE INSERTED]**.
 
+**Supplementary information:** Supplementary data are available at *Bioinformatics* online.
+
 **Contact:** khushal6002@gmail.com
 
 ---
@@ -166,7 +168,7 @@ window 10. The *detected* arm segments with a two-window t-test changepoint dete
 samples, threshold 3.0, minimum event length 4 samples) and builds keys of 12 events at 4 bits per
 event, with minimizer window 1. Both decide after 10 chunks of 2000 samples, 0.4 s each, with signal
 scaling estimated from the first chunk, as the pipeline does in live operation. The detector
-threshold was calibrated on Squigulator signal (Section 3.5).
+threshold was calibrated on Squigulator signal (Supplementary Section S2).
 
 The reported statistic is the true-positive rate (TPR) at the lowest score threshold that admits no
 control read, that is, at zero false positives. This threshold is set by the single highest-scoring
@@ -207,8 +209,12 @@ only, with one seed.
 
 Every number in this article is recomputed from the committed result files by
 `scripts/verify_dwell_journal_numbers.py`, which uses decimal arithmetic with round-half-up, checks
-every numeral in this text and in its LaTeX source against the recomputed set, and exits non-zero
-on any disagreement. The script also lists the values in Section 3.5 that no captured run backs.
+every numeral in this text, in its LaTeX source and in the Supplementary Information against the
+recomputed set, and exits non-zero
+on any disagreement. Three observations made during development, on live accept rates against
+Icarust, on the calibration target of the event detector and on the transfer of a detector
+calibration between signal generators, rest in part on runs whose output was not captured; they are
+reported, marked, in the Supplementary Information and are used in no claim here.
 Figures are drawn by `scripts/generate_thesis_figures.py` from the same files and from nothing else.
 
 ## 3 Results
@@ -368,44 +374,6 @@ Unset or 0, the variable reproduces the stock behaviour exactly, so existing res
 An environment variable keeps the change minimal and revertible; a version offered upstream should
 read the value from the sample profile.
 
-<!-- provisional:begin -->
-### 3.5 Secondary observations not backed by a captured run †
-
-The three observations in this section were made during development. Each rests in part on a
-measurement for which no run output was captured. Those values are marked with a dagger; none of them
-is used in any claim in Sections 3.1 to 3.4 or in the Abstract, and the verification script lists each as
-outstanding.
-
-**Live accept rates against Icarust.** With the same client, reference and run length, the
-fixed-width arm accepted 43.5%† of reads and the detected arm 9.6%† against stock Icarust, and 0.5%†
-and 9.6%† against the patched simulator at CV 0.35. Taken at face value, stock Icarust reports the
-fixed-width arm as 4.5-fold† better, and the patched simulator reverses the order, which is the
-reversal of Section 3.1 observed on the live interface. These are accept rates on the live loop and
-are not comparable with the offline TPRs of Table 1. Re-running stock and patched Icarust against the
-client would settle them.
-
-**Calibration target for event detection.** The calibrated detector, threshold 3.0, emits 1562
-events per on-target read at CV 0.44, against an ideal of approximately 2000, one event per base,
-which is 21.9% under-segmentation; seed 42 gives 14.2% TPR in the captured log. In a development run
-that was not captured, threshold 2.0 gave 2017† events per read, close to the ideal, and 2.0%† TPR,
-7.1-fold† lower. An argument offered during development attributed the difference to frame
-displacement: a spurious boundary shifts every later key in the read. That argument does not
-distinguish the two error types, because a missed boundary removes an event and shifts every later
-event index by one exactly as a spurious boundary adds one. A sufficient explanation is simpler. The
-event count measures net error, insertions minus deletions, and is blind to errors that cancel, so a
-detector that emits the ideal number of events may still place many boundaries wrongly. The
-recommendation that follows does not depend on the uncaptured values: calibrate a detector against
-agreement or indel fraction (Section 2.6), not against its event count.
-
-**Calibration transfer between generators.** A detector threshold calibrated against signal from a
-generator written for this project, applied unchanged to Squigulator signal, gave 0.6%† TPR at CV 0,
-where the Squigulator-calibrated detector gives 18.4% [17.0–19.8], a 30.7-fold† difference. The two
-generators differ in their amplitude-noise models, and the detector threshold is a t-statistic whose
-operating point depends on that model. Whatever the magnitude, a result obtained with event detection
-is interpretable only together with a statement of how the detector was calibrated and on what
-signal.
-<!-- provisional:end -->
-
 ## 4 Discussion
 
 The sweep makes visible a variable that a point evaluation holds fixed at an unknown value, and in
@@ -425,7 +393,7 @@ We draw six recommendations for evaluating raw-signal methods.
 4. **Treat the sketching window as dispersion-dependent,** and measure its cost at the dispersion
    of the intended data (Section 3.3).
 5. **State the calibration target and calibration signal of any event detector,** and calibrate
-   against agreement rather than event count (Section 3.5).
+   against agreement rather than event count (Supplementary Section S2).
 6. **Test read-until clients against a simulator with a dwell model** (Section 3.4).
 
 The sweep is complementary to existing benchmarks. RawBench varies the components of the pipeline on

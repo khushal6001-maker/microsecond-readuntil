@@ -3,24 +3,26 @@
 
 verify_thesis_numbers.py checks the claims someone remembered to transcribe into it. This
 script is stricter, because a journal manuscript has no [VERIFY] markers to fall back on: it
-reads both manuscript.md and manuscript.tex and requires every numeral in either to be
-accounted for. A numeral is accepted only if it is
+reads the manuscript and its Supplementary Information, each in .md and .tex, and requires
+every numeral in all four files to be accounted for. A numeral is accepted only if it is
 
   BACKED       recomputed here from a committed file in results/, with decimal arithmetic
                and round-half-up, so 0.0915 prints as 0.092 rather than the 0.091 that a
                binary float gives;
   STRUCTURAL   a method parameter (a seed, a CV level, a read count), each of which is
                checked below against the log or file header that records it; or
-  OUTSTANDING  a value no captured run backs, allowed only inside the provisional region
-               of Section 3.5 and only when marked with a dagger.
+  OUTSTANDING  a value no captured run backs, allowed only in the Supplementary
+               Information, never in the main text, and only when marked with a dagger.
 
 On top of that, every row of Tables 1-4 is rebuilt from data and must appear verbatim in
-both files, the Abstract's headline sentences must appear verbatim in both, and the two
-files must carry the same set of data-derived numerals. A ratio written as a word
-("sevenfold") is refused, because the gate cannot check it.
+both manuscript files, the Abstract's headline sentences must appear verbatim in both, every
+replicated "mean [range]" must appear whole, and each .md/.tex pair must carry the same
+data-derived numerals in the same order. A ratio written as a word ("sevenfold") is refused,
+because the gate cannot check it.
 
     python scripts/verify_dwell_journal_numbers.py
-    python scripts/verify_dwell_journal_numbers.py --md COPY.md --tex COPY.tex   # test the gate
+    python scripts/verify_dwell_journal_numbers.py --md M.md --tex M.tex \\
+        --supp-md S.md --supp-tex S.tex                                  # test the gate on copies
 """
 
 from __future__ import annotations
@@ -46,8 +48,11 @@ PAPER = REPO / "paper_dwell_journal"
 _ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
 _ap.add_argument("--md", type=Path, default=PAPER / "manuscript.md")
 _ap.add_argument("--tex", type=Path, default=PAPER / "manuscript.tex")
+_ap.add_argument("--supp-md", type=Path, default=PAPER / "supplementary.md")
+_ap.add_argument("--supp-tex", type=Path, default=PAPER / "supplementary.tex")
 _args = _ap.parse_args()
 MD, TEX = _args.md.resolve(), _args.tex.resolve()
+SMD, STEX = _args.supp_md.resolve(), _args.supp_tex.resolve()
 
 PASS: list[tuple[str, str]] = []
 FAIL: list[tuple[str, str]] = []
@@ -97,19 +102,21 @@ def q(x: Decimal, places: str) -> str:
 
 # ---------------------------------------------------------------- the registries
 BACKED: dict[str, list[str]] = {}
-CLAIMED: list[str] = []          # hand-transcribed values that must appear in both files
+# Hand-transcribed values, each with the document pair it must appear in: "main" for the
+# manuscript, "supp" for the Supplementary Information.
+CLAIMED: list[tuple[str, str]] = []
 
 
 def backed(tok: str, why: str) -> None:
     BACKED.setdefault(tok, []).append(why)
 
 
-def claim(written: str, value: Decimal, places: str, why: str) -> None:
+def claim(written: str, value: Decimal, places: str, why: str, where: str = "main") -> None:
     """The prose says `written`; the data must say the same at that precision."""
     got = q(value, places)
     if got == written:
         backed(written, why)
-        CLAIMED.append(written)
+        CLAIMED.append((written, where))
         ok(f"{why} = {written}")
     else:
         bad(why, f"data gives {got}, prose says {written}")
@@ -339,9 +346,9 @@ m = re.search(r"events/read on (\d+) off (\d+) \(ideal ~(\d+) at (\d+) samples/b
 t = re.search(r"RESULT\s+zero-FP: >=\d+ TPR ([\d.]+)%", log)
 if m and t:
     on_ev, ideal = D(m.group(1)), D(m.group(3))
-    claim("1562", on_ev, "1", "on-target events per read, frozen detector, §3.5")
-    claim("21.9", (ideal - on_ev) / ideal * 100, "0.1", "under-segmentation (%), §3.5")
-    claim("14.2", D(t.group(1)), "0.1", "seed 42 TPR at CV 0.44, captured log, §3.5")
+    claim("1562", on_ev, "1", "on-target events per read, frozen detector, Supp. S2", "supp")
+    claim("21.9", (ideal - on_ev) / ideal * 100, "0.1", "under-segmentation (%), Supp. S2", "supp")
+    claim("14.2", D(t.group(1)), "0.1", "seed 42 TPR at CV 0.44, captured log, Supp. S2", "supp")
     if ours and not (D(ours["0.44"]["detected_lo"]) <= D(t.group(1)) <= D(ours["0.44"]["detected_hi"])):
         bad("seed 42 TPR lies within Table 1's CV 0.44 range", t.group(1))
     else:
@@ -401,8 +408,9 @@ STRUCTURAL = {
 YEARS = {"2004", "2021", "2023", "2024", "2025", "2026"}   # author-year citations, md only
 
 # ---------------------------------------------------------------- outstanding values
-# Each needs a captured run that does not exist. They are allowed only inside the
-# provisional region and only with a dagger. Where a transcription exists it is checked.
+# Each needs a captured run that does not exist. They are allowed only in the Supplementary
+# Information, never in the main text, and only with a dagger. Where a transcription exists
+# it is checked.
 OUTSTANDING: list[tuple[str, str, str]] = []
 
 
@@ -424,7 +432,7 @@ if ica:
 needs_ica = ("a re-run of stock and patched Icarust against the client; thesis Appendix F.3 "
              "item 4 records that the CSV is a transcription, not a captured run")
 for k in ("43.5%", "9.6%", "0.5%", "4.5"):
-    outstanding(k, "Icarust live accept rates, §3.5", needs_ica)
+    outstanding(k, "Icarust live accept rates, Supp. S1", needs_ica)
 needles(REPO / "docs" / "appendices-draft.md",
         ["The Icarust accept rates behind Table 6.2", "not from a captured run"],
         "thesis F.3 records the Icarust values as outstanding")
@@ -434,22 +442,22 @@ needles(APP, ["| threshold 2.0, `min_len` 4 | 2017 (ideal 2000) | 2.0% |"],
         "threshold-2.0 values as the thesis records them")
 needs_cal = "a captured run of the threshold-2.0 detector at CV 0.44"
 for k in ("2017", "2.0%"):
-    outstanding(k, "threshold-2.0 development run, §3.5", needs_cal)
+    outstanding(k, "threshold-2.0 development run, Supp. S2", needs_cal)
 if t:
     r71 = q(D(t.group(1)) / D("2.0"), "0.1")
     if r71 != "7.1":
         bad("calibration ratio", f"14.2/2.0 gives {r71}, prose says 7.1")
-outstanding("7.1", "ratio on the threshold-2.0 run, §3.5", needs_cal)
+outstanding("7.1", "ratio on the threshold-2.0 run, Supp. S2", needs_cal)
 
 needles(APP, ["it scored 0.6% TPR at dwell CV 0 on Squigulator"],
         "cross-generator value as the thesis records it")
 needs_x = "a captured run of the own-generator calibration on Squigulator signal at CV 0"
-outstanding("0.6%", "cross-generator calibration, §3.5", needs_x)
+outstanding("0.6%", "cross-generator calibration, Supp. S3", needs_x)
 if ours:
     r307 = q(D(ours["0.00"]["detected_mean"]) / D("0.6"), "0.1")
     if r307 != "30.7":
         bad("cross-generator ratio", f"18.4/0.6 gives {r307}, prose says 30.7")
-outstanding("30.7", "ratio on the cross-generator run, §3.5", needs_x)
+outstanding("30.7", "ratio on the cross-generator run, Supp. S3", needs_x)
 OUT_KEYS = {k for k, _, _ in OUTSTANDING}
 
 # ---------------------------------------------------------------- reading the manuscripts
@@ -512,15 +520,26 @@ def tex_scan(s: str) -> str:
                 r"\\begin\{tabular\}\{[^}]*\}", r"\\multicolumn\{\d+\}", r"\\cmidrule\([^)]*\)\{[^}]*\}",
                 r"\\rule\{[^}]*\}\{[^}]*\}", r"[\d.]+\\(?:line|text|column)width"):
         s = re.sub(pat, "", s)
-    return s
+    # The manuscript cites its own sections with \ref, but the supplement can only name the
+    # manuscript's sections in plain text ("Section~3.1"), so those are stripped here as in md.
+    return REFS.sub("", s)
 
 
 md_raw, tex_raw = text_of(MD), text_of(TEX)
+smd_raw, stex_raw = text_of(SMD), text_of(STEX)
+# The middle field of each segment says whether outstanding values may appear in it: nowhere in
+# the manuscript, anywhere in the Supplementary Information (still marked with a dagger).
 FILES = {
-    "manuscript.md": [(md_scan(s), p, s) for s, p in md_segments(md_raw)],
-    "manuscript.tex": [(tex_scan(s), p, s) for s, p in tex_segments(tex_raw)],
+    "manuscript.md": [(md_scan(s), False, s) for s, _ in md_segments(md_raw)],
+    "manuscript.tex": [(tex_scan(s), False, s) for s, _ in tex_segments(tex_raw)],
 }
-NORM = {name: " ".join(full for _, _, full in segs) for name, segs in FILES.items()}
+SUPP_FILES = {
+    "supplementary.md": [(md_scan(s), True, s) for s, _ in md_segments(smd_raw)],
+    "supplementary.tex": [(tex_scan(s), True, s) for s, _ in tex_segments(stex_raw)],
+}
+ALL_FILES = {**FILES, **SUPP_FILES}
+NORM = {name: " ".join(full for _, _, full in segs) for name, segs in ALL_FILES.items()}
+PAIRS = {"main": ("manuscript.md", "manuscript.tex"), "supp": ("supplementary.md", "supplementary.tex")}
 
 # ---- tables, cell by cell from data
 for label, table in (("Table 1", TABLE1), ("Table 2", TABLE2), ("Table 3", TABLE3), ("Table 4", TABLE4)):
@@ -542,6 +561,8 @@ ANCHORS = [
     "rises from 11.7 points at CV 0 to 19.5 at CV 0.60, and is larger at CV 0.60 in every seed",
     # §3.3: the two single values that are not quoted as a mean with its range.
     "the mean w = 10 cost stays between 11.2 and 12.3 points",
+    # §2.7: the one sentence that stands in the main text for the Supplementary Information.
+    "they are reported, marked, in the Supplementary Information and are used in no claim here",
 ]
 for a in ANCHORS:
     for name in FILES:
@@ -561,7 +582,7 @@ for pat, why in MR_TEXT:
 # ---- every numeral accounted for
 DATA_TOKENS: dict[str, set[str]] = {}
 DATA_SEQ: dict[str, list[str]] = {}   # data numerals in reading order, for the md/tex comparison
-for name, segs in FILES.items():
+for name, segs in ALL_FILES.items():
     seen: set[str] = set()
     order: list[str] = []
     before = len(FAIL)
@@ -575,7 +596,8 @@ for name, segs in FILES.items():
             if key in OUT_KEYS:
                 after = scan[mm.end():mm.end() + 8]
                 if not prov:
-                    bad(f"outstanding value {key} outside §3.5 in {name}", f"…{ctx}…")
+                    bad(f"outstanding value {key} in the main text ({name}); "
+                        "it belongs in the Supplementary Information", f"…{ctx}…")
                 elif not re.match(r"(?:-fold)?\s*†", after):
                     bad(f"outstanding value {key} not marked † in {name}", f"…{ctx}…")
                 seen.add(key)
@@ -596,27 +618,29 @@ for name, segs in FILES.items():
 # A set comparison alone misses a number changed to another value that is backed elsewhere: both
 # files would still hold the same set. The .tex transcribes the .md sentence for sentence, so the
 # data numerals must also appear in one identical sequence, which locates any drift exactly.
-only_md = DATA_TOKENS["manuscript.md"] - DATA_TOKENS["manuscript.tex"]
-only_tex = DATA_TOKENS["manuscript.tex"] - DATA_TOKENS["manuscript.md"]
-if only_md or only_tex:
-    bad("md and tex carry the same data-derived numerals",
-        f"only in md: {sorted(only_md)}; only in tex: {sorted(only_tex)}")
-else:
-    ok("md and tex carry the same data-derived numerals", f"{len(DATA_TOKENS['manuscript.md'])} values")
-seq_md, seq_tex = DATA_SEQ["manuscript.md"], DATA_SEQ["manuscript.tex"]
-if seq_md == seq_tex:
-    ok("md and tex carry them in the same order", f"{len(seq_md)} numerals")
-else:
-    sm = difflib.SequenceMatcher(a=seq_md, b=seq_tex, autojunk=False)
-    where = [f"md[{i1}] {seq_md[max(0, i1 - 2):i2 + 1]} vs tex[{j1}] {seq_tex[max(0, j1 - 2):j2 + 1]}"
-             for tag, i1, i2, j1, j2 in sm.get_opcodes() if tag != "equal"]
-    bad("md and tex carry them in the same order", f"{len(where)} difference(s); first: {where[:3]}")
-for c in sorted(set(CLAIMED)):
-    for name in FILES:
+for doc, (mdn, texn) in PAIRS.items():
+    label = "md and tex" if doc == "main" else "supplement md and tex"
+    only_md = DATA_TOKENS[mdn] - DATA_TOKENS[texn]
+    only_tex = DATA_TOKENS[texn] - DATA_TOKENS[mdn]
+    if only_md or only_tex:
+        bad(f"{label} carry the same data-derived numerals",
+            f"only in md: {sorted(only_md)}; only in tex: {sorted(only_tex)}")
+    else:
+        ok(f"{label} carry the same data-derived numerals", f"{len(DATA_TOKENS[mdn])} values")
+    seq_md, seq_tex = DATA_SEQ[mdn], DATA_SEQ[texn]
+    if seq_md == seq_tex:
+        ok(f"{label} carry them in the same order", f"{len(seq_md)} numerals")
+    else:
+        sm = difflib.SequenceMatcher(a=seq_md, b=seq_tex, autojunk=False)
+        where = [f"md[{i1}] {seq_md[max(0, i1 - 2):i2 + 1]} vs tex[{j1}] {seq_tex[max(0, j1 - 2):j2 + 1]}"
+                 for tag, i1, i2, j1, j2 in sm.get_opcodes() if tag != "equal"]
+        bad(f"{label} carry them in the same order", f"{len(where)} difference(s); first: {where[:3]}")
+for c, doc in sorted(set(CLAIMED)):
+    for name in PAIRS[doc]:
         if not any(t.rstrip("%") == c for t in DATA_TOKENS[name]):
             bad(f"claimed value {c} absent from {name}", "the script checks a number the text no longer uses")
 for k in sorted(OUT_KEYS):
-    for name in FILES:
+    for name in PAIRS["supp"]:
         if k not in DATA_TOKENS[name]:
             bad(f"outstanding value {k} absent from {name}", "drop it from OUTSTANDING or restore it")
 
@@ -691,6 +715,10 @@ else:
     ok("every \\cite key is in refs.bib", f"{len(cited)} cited")
 if keys - cited:
     bad("every refs.bib entry is cited", f"uncited {sorted(keys - cited)}")
+# The supplement has no bibliography of its own, so it must not cite: a \cite there would
+# print as "?" in its PDF.
+s_cited = re.findall(r"\\cite[pt]?\{([^}]*)\}", stex_raw)
+holds(not s_cited, "the Supplementary Information cites nothing it cannot resolve")
 
 # ---------------------------------------------------------------- report
 W = 66
@@ -711,7 +739,7 @@ if SKIP:
         print(f"  skip {what}: {why}")
 
 print("\n" + "=" * 78)
-print("OUTSTANDING: values in §3.5 that no captured run backs")
+print("OUTSTANDING: values in the Supplementary Information that no captured run backs")
 print("=" * 78)
 for key, why, needs in OUTSTANDING:
     print(f"\n  {key:<7} {why}")

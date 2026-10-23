@@ -49,7 +49,8 @@ cannot exercise this failure mode.
 recommendations apply directly to tools this journal has published: RawHash, RawHash2, Sigmap,
 Sigmoni and Icarust all appeared in *Bioinformatics*. Every number in the manuscript is recomputed
 from committed result files by a script released with it, and results that rest on development
-runs without captured output are confined to one marked section and used in no claim.
+runs without captured output are confined to the Supplementary Information, marked, and used in
+no claim.
 
 **Related work by the authors, and overlap.** Two pieces of our own work share data with this
 manuscript.
@@ -74,8 +75,8 @@ manuscript.
      Section 3.4.
 
    The dwell sweep itself (Tables 1, 2 and 4 and Figures 1 to 3), the ranking reversal, the
-   minimizer result, the compatibility conditions of Section 2.3 and the observations of Section
-   3.5 do not appear in the companion manuscript. If the companion manuscript is published or
+   minimizer result, the compatibility conditions of Section 2.3 and the observations in the
+   Supplementary Information do not appear in the companion manuscript. If the companion manuscript is published or
    posted while this one is under review, we will cite it and reduce Table 3 to a citation.
 
 3. *Public draft.* The code, results and a draft of this manuscript are in a public GitHub
