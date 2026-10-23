@@ -145,13 +145,6 @@ an estimator-symmetric measurement of its two parameters for both systems
 (Section~\ref{sec:causes}).
 \end{enumerate}
 
-\textbf{What this paper does not claim.} We do not claim competitive mapping accuracy; we
-report 17.6\% against 91.8\% and explain it. We do not claim a novel matching method;
-quantised-event hashing is established~\cite{rawhash,rawhash2}. Nor do we claim that our tail
-latency can be trusted. All measurements were taken under a hypervisor, and
-Section~\ref{sec:limits} sets out what can and cannot be concluded from them. All signal is
-simulated.
-
 \section{Background and related work}
 
 \textbf{The interface.} MinKNOW~\cite{minknow} provides Read Until through a bidirectional
@@ -212,18 +205,7 @@ queueing it, for the loss-system reason given in Section~\ref{sec:intro}.
 \subsection{Single-copy ingestion, zero-copy propagation}
 
 The signal is copied only once, at the transport boundary, where the protobuf runtime writes it
-into arena-backed storage. After that point, no stage copies the signal again. Workers receive a 56-byte borrowed
-descriptor holding an absolute sample index, borrowed pointers into arena-owned
-read-identifier and payload storage, the owning arena slot, a receive timestamp, and a narrow
-tail of lengths and type codes. Declared in natural reading order the structure is 72 bytes;
-field-ordered for size it is 56, and a compile-time assertion that it does not straddle a
-cacheline is what caught the difference.
-
-Two narrowings are guarded at ingest. Chunk length drops from 64 to 32 bits because a chunk is
-sub-second and $2^{32}$ samples is about twelve days at 4 kHz. The read-identifier length drops
-to 16 bits because identifiers are 36-character UUIDs. The absolute sample index is
-deliberately \emph{not} narrowed: a 72-hour run at 4 kHz already reaches ${\approx}10^9$,
-uncomfortably close to $2^{32}$.
+into arena-backed storage. After that point, no stage copies the signal again.
 
 \subsection{The arena reference-counting protocol}
 
@@ -231,37 +213,12 @@ The hazard is reset-under-dispatch: an arena slot recycled while a descriptor re
 is still in a ring. Because the memory remains mapped and arena-owned, the failure is silent
 payload corruption rather than a crash.
 
-The protocol removes it structurally (Figure~\ref{fig:arena}). \texttt{acquire()} returns a
+The protocol removes it structurally. \texttt{acquire()} returns a
 slot at refcount 1, and that initial reference is held by the \textbf{reader}, not by a
 consumer. The reader pushes descriptors to $n$ shard rings, raising the count to $1 + n$, and
 only then releases its own. The count can therefore reach zero only after every worker
 reference has been taken and dropped, and the slot cannot be reset while any dispatch is
 outstanding. No bound on how long a worker takes is required.
-
-\begin{figure}[t]
-\centering
-\begin{tikzpicture}[
-  node distance=5mm,
-  state/.style={draw, rounded corners=3pt, align=center, font=\small,
-                minimum height=8mm, inner sep=2pt, fill=blue!4},
-  free/.style={state, fill=black!4},
-  lbl/.style={font=\scriptsize, align=center}]
-\node[free] (f) {FREE\\[-1pt]\scriptsize count 0};
-\node[state, right=14mm of f] (a) {ACQUIRED\\[-1pt]\scriptsize count 1, reader};
-\node[state, right=14mm of a] (d) {DISPATCHED\\[-1pt]\scriptsize count $1{+}n$};
-\node[state, below=9mm of d] (r) {DRAINING\\[-1pt]\scriptsize count $n$};
-\draw[-{Latex[length=2mm]}] (f) -- node[lbl, above]{acquire()} node[lbl,below]{$+1$} (a);
-\draw[-{Latex[length=2mm]}] (a) -- node[lbl, above]{push to rings} node[lbl,below]{$+n$} (d);
-\draw[-{Latex[length=2mm]}] (d) -- node[lbl, right, xshift=1mm]{\parbox{20mm}{reader
-  release(), \emph{after} all $n$ exist}} (r);
-\draw[-{Latex[length=2mm]}] (r.west) -- ++(-28mm,0) node[lbl, above, midway]
-  {last worker release() $\rightarrow$ 0} |- (f.south);
-\end{tikzpicture}
-\caption{Arena slot lifetime. The reader holding the initial reference is what makes
-reset-under-dispatch unrepresentable: the count cannot reach zero while a descriptor is still
-in a ring, with no assumption about worker duration.}
-\label{fig:arena}
-\end{figure}
 
 \subsection{Lock-free handoff and sharding}
 
@@ -277,26 +234,6 @@ one thread \textbf{by construction}. This is what makes the lock-free claim chea
 shared mutable per-channel state to protect. Backpressure is drop-never-block, with the
 invariant $\textit{offered} = \textit{pushed} + \textit{dropped}$ maintained by counters.
 
-\subsection{Bounded per-channel state}
-
-The decision structure dominates per-channel state. The set-associative vote table is
-$64 \times 4 \times 12$ B $=$ 3,072 B per channel (1.57 MB at 512 channels, 8.22 MB at 2675);
-its update cost is $O(4)$ rather than the $O(256)$ a classical Misra--Gries table of the same
-counter count would pay on the decision path, and its expected retention threshold is $m/320$
-against $m/257$. The anchor-history chainer is $1024 \times 14$ B $=$ 14,336 B per channel.
-Every figure is a compile-time constant times the channel count; nothing depends on read length
-or elapsed run time.
-
-\subsection{Thread topology}
-
-Threads are placed from the kernel's SMT sibling sets rather than from processor-index
-arithmetic. There is a practical reason for this. Our measurement host numbers SMT siblings
-next to each other (\texttt{0-1 2-3 4-5 6-7}). An earlier rule that gave each role ``the next
-logical processor'' therefore put the reader and the writer on \emph{the same physical core}
-while two whole cores were left idle. This numbering is not the same across machines. With two
-shards the data plane runs four threads (reader, writer and two workers), which fits on four
-physical cores. With four shards it runs six, which does not.
-
 \section{Evaluation of the data plane}
 \label{sec:eval}
 
@@ -307,53 +244,11 @@ recorded with HdrHistogram~\cite{hdrhistogram} at three significant figures, bou
 error at 0.1\%. The recorder reports its own backend on every line, so a degraded estimate
 cannot be mistaken for a measurement.
 
-We adopted this instrumentation to correct an earlier error. An earlier power-of-two histogram reported four 99th
-percentiles of 111.93, 112.12, 223.66 and 447.59 \textmu{}s across four runs. At the host's calibrated
-invariant TSC frequency of 2418.7 MHz the only values representable in that range are 54.19,
-108.38, 216.76 and 433.53 \textmu{}s. Every reported value was a bucket boundary; two runs ``agreeing''
-at 112 \textmu{}s agreed only that the true value lay in [54.19, 108.38]. The general form is worth
-stating: \emph{any} instrument whose quantisation is coarse relative to the between-run
-variance will report stable values and thereby invite an inference of stability.
-
-The harness records per run the virtualisation status, SMT topology, TSC flags, clocksource,
-kernel command line, governor, turbo state, free storage and load average, and refuses to label
-a run publishable unless virtualisation is absent, cores are isolated and the governor is set to
-performance. Every run reported here carries the development-only label.
-
 \textbf{Host.} Intel Core i5-1135G7, 4 physical cores / 8 logical, under WSL2.
-\textbf{Regimes.} R1: a 37 kb reference under constant dwell. R3: a 64 Mb human chr20 reference
+\textbf{Regime.} R3: a 64 Mb human chr20 reference
 under variable dwell at the frozen configuration---4 bits $\times$ 12 events,
 minimizer~\cite{minimizers} window
 1, detected-event segmentation, two shards, pinned.
-
-\subsection{Placement and thread count}
-
-\begin{table}[t]
-\caption{Regime R1, 37 kb reference, four repetitions per cell. Median across runs, \textmu{}s.}
-\label{tab:r1}
-\centering
-\footnotesize
-\begin{tabular}{lrrrr}
-\toprule
-configuration & p50 & p90 & p99 & p99.9 \\
-\midrule
-pinned, 2 shards   & 16.3 & 24.7 & 49.1 & 158.0 \\
-unpinned, 2 shards & 15.8 & 25.1 & 50.5 & 165.7 \\
-pinned, 4 shards   & 18.7 & 31.1 & 70.4 & 312.7 \\
-unpinned, 4 shards & 18.4 & 31.6 & 83.8 & 386.7 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\textbf{Thread count matters more than placement.} At every percentile, both two-shard
-configurations are faster than both four-shard configurations (Table~\ref{tab:r1}). Six
-data-plane threads simply do not fit on four physical cores.
-
-\textbf{Pinning does not lower the median, but it does make the tail reproducible.} Across four
-repetitions, the 99th percentile with pinning was 46.99, 48.32, 49.97 and 50.88 \textmu{}s, a
-spread of 8\%. Without pinning it was 44.86, 45.52, 55.45 and 104.45 \textmu{}s, a spread of
-133\%. What we can fairly say about processor affinity, then, concerns variance and not
-location.
 
 \subsection{Genome scale: regime R3}
 
@@ -392,7 +287,7 @@ per-chunk latency, not an independent measurement.
 \textbf{The tail is where the loss-system framing earns its place.} Eight of the nine runs sit
 strictly inside the budget through the 99.9th percentile, at 1.04--1.40 ms. The ninth does not:
 one run reports p99 $=$ 1969.3 \textmu{}s and p99.9 $=$ 3284.0 \textmu{}s, and is also the worst of the nine at
-p90 and at the mean (Figure~\ref{fig:r3}).
+p90 and at the mean.
 
 We do not read this as a deadline miss. Across the nine runs the observed \emph{maximum} spans
 2.0 ms to 59.4 ms---two orders of magnitude in a quantity the software should not vary in---and,
@@ -401,14 +296,6 @@ is 630 \textmu{}s. Maximum and p99 are not correlated here, which is the signatu
 injected stalls rather than of slow decisions. On a hypervisor without core isolation, this
 measurement cannot establish that the system meets its deadline, and cannot establish that it
 misses it. Stating that honestly is part of the contribution.
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.86\textwidth]{fig5-4-r3-distribution.pdf}
-\caption{Regime R3 across nine runs against the 1.56 ms service bound. Eight runs lie inside
-the budget through p99.9; one crosses at p99 and p99.9.}
-\label{fig:r3}
-\end{figure}
 
 \subsection{Comparison with existing clients}
 
@@ -440,14 +327,6 @@ deployment.
 
 The cost is processor time: 181.5--202.3\% of one core against readfish's 15.6\%, because
 workers spin before yielding. We report it alongside.
-
-\textbf{Against a signal-space mapper.} RawHash2~\cite{rawhash2}, single-threaded on
-identical reads with the
-same pore model, requires 10.64 ms of processor time per read including index load, or 10.18 ms
-excluding the load a long-running daemon pays once. Our comparable figure is the derived
-1.25 ms. The ratio is $8.2\times$, and must be read with Section~\ref{sec:gap}: a latency ratio between a
-system that resolves reads and one that largely does not is a bound on data-plane cost, not a
-performance result.
 
 \section{The accuracy gap}
 \label{sec:gap}
@@ -483,26 +362,7 @@ A factor of 5.2 (Table~\ref{tab:acc}). The rest of this paper accounts for it.
 
 \subsection{Replication is not optional at this scale}
 
-\begin{table}[t]
-\caption{Decision rules at the same operating point, three seeds.}
-\label{tab:rules}
-\centering
-\scriptsize
-\begin{tabular}{lrrrr}
-\toprule
-decision rule & s42 & s43 & s44 & mean [range] \\
-\midrule
-votes (256 counters)        & 14.2 & 15.0 & 13.0 & 14.1 [13.0--15.0] \\
-greedy, $\beta = 0$ (ctrl)  & 9.6 & 10.8 & 7.0 & 9.1 [7.0--10.8] \\
-greedy, $\beta = 12$        & 17.4 & 16.6 & 15.6 & 16.5 [15.6--17.4] \\
-anchor-history, $L = 48$    & 18.8 & 17.4 & 16.6 & 17.6 [16.6--18.8] \\
-anchor-history, $L = 128$   & 19.6 & 19.4 & 18.0 & \textbf{19.0} [18.0--19.6] \\
-\quad $L = 48$, occ. filter & 17.8 & 15.8 & 15.4 & 16.3 [15.4--17.8] \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Table~\ref{tab:rules} gives six rules in triplicate.
+Six decision rules were each run in triplicate at the same operating point.
 
 \textbf{The $\beta = 0$ control is the informative row.} With gap tolerance removed, chaining is
 \emph{worse} than the vote table---9.1\% against 14.1\%---as expected when it tracks 24
@@ -579,16 +439,6 @@ offset, the indel fraction, and the fraction of positions that begin a gap-free,
 run of $E$ columns, read directly from the alignment path. This last figure is
 $P(\mathrm{key})$ \textbf{measured rather than modelled}, so the independence assumption is no
 longer needed at all.
-
-\textbf{Validation.} Under the conditions of our earlier per-event diagnostic, the independent
-instrument returns a constant-offset agreement of 0.556 against the 0.559 previously published:
-different code, same input, agreeing to 0.3 percentage points.
-
-\textbf{On the choice of estimator.} The constant-offset estimator, which our earlier work used,
-understates agreement by a factor of four once retention is data-dependent: 0.188 for our frozen
-configuration where the correspondence-aware figure is 0.783. Results obtained with it for
-detected-event configurations are withdrawn, including the claim that detection roughly halves
-agreement. It does not.
 
 \subsection{Results}
 
@@ -688,35 +538,6 @@ a key still needs $E$ agreements, while each symbol now depends on two noisy lev
 one. It targets the right quantity with the wrong mechanism. Merging, in contrast, reduces $E$
 \emph{and} increases $a$; since both appear in $(1-g)^{E} a^{E}$, it helps twice.
 
-\begin{table}[t]
-\caption{Realised key entropy and occurrence-cap survival, 20 Mb reference.}
-\label{tab:entropy}
-\centering
-\scriptsize
-\begin{tabular}{lrrrrr}
-\toprule
-geometry & nominal & distinct keys & realised & short & cap \\
-\midrule
-$3 \times 8$  & 24 & 92,482     & 16.5 & 7.5  & 2.8\%  \\
-$4 \times 8$  & 32 & 1,519,844  & 20.5 & 11.5 & 31.2\% \\
-$3 \times 13$ & 39 & 5,096,781  & 22.3 & 16.7 & 63.7\% \\
-$3 \times 14$ & 42 & 7,985,629  & 22.9 & 19.1 & 78.8\% \\
-$4 \times 12$ & 48 & 14,908,778 & 23.8 & 24.2 & 93.5\% \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\textbf{Specificity also depends on scale.} A 39-bit key realises 22.3 bits, a shortfall of 16.7;
-the frozen 48-bit key realises 23.8 bits, a shortfall of 24.2 (Table~\ref{tab:entropy}). \textbf{The shortfall therefore grows faster than the nominal key
-width}: doubling the nominal key space from 24 to 48 bits adds only 7.3 realised bits.
-
-Short keys also saturate the occurrence cap, more so on larger references. A $3 \times 8$
-geometry keeps only 2.8\% of minimizer occurrences on the 20 Mb reference (97.2\% are
-truncated), and only 0.7\% on the 64 Mb reference (99.3\% truncated). Short keys degrade faster than the reference grows, so a
-geometry chosen on a small reference does not transfer to a large one. This is why raising
-anchor yield by shortening keys fails: realised entropy collapses before the yield becomes
-useful.
-
 \subsection{Recoverable loss inside the chainer}
 
 The correspondence-aware measurement revises our frozen configuration's anchor supply from a
@@ -809,75 +630,64 @@ that works for reasons its author cannot name.
 \section*{Reproducibility}
 
 All code, data and scripts are in the accompanying repository at commit \texttt{eb0ea28}.
-\texttt{scripts/verify\_thesis\_numbers.py} recomputes every number from files under
-\texttt{results/}, or, for figures describing code that no longer exists, checks them against the
-commit message that recorded them; it exits non-zero on any disagreement, and reports 143 claims
-agreeing and none disagreeing. \texttt{scripts/verify\_paper\_numbers.py} performs the same check
-against this manuscript. \texttt{scripts/generate\_thesis\_figures.py} regenerates every data
-figure from \texttt{results/} and nothing else, byte-stably. Five claims are not settled by any
-committed file and are documented as scope boundaries: a bare-metal deadline-miss rate, real
-instrument data, agreement across the full dwell sweep and across seeds, the Icarust accept rates
-behind the simulator comparison, and the index resident set at minimizer window 10.
+\texttt{scripts/verify\_paper\_numbers.py} recomputes every number in this paper from files
+under \texttt{results/} and exits non-zero on any disagreement. Five claims are not settled by any
+committed file and are documented as scope boundaries in the repository.
 
-\begin{thebibliography}{00}
+\begin{thebibliography}{10}
 
-\bibitem{minknow} Oxford Nanopore Technologies, ``MinKNOW API.'' [Online]. Available:
+\bibitem{minknow} Oxford Nanopore Technologies: MinKNOW API,
 \url{https://github.com/nanoporetech/minknow_api}
 
-\bibitem{readfish} A. Payne, N. Holmes, T. Clarke, R. Munro, B. J. Debebe, and M. Loose,
-``Readfish enables targeted nanopore sequencing of gigabase-sized genomes,'' \emph{Nature
-Biotechnology}, 2021.
+\bibitem{readfish} Payne, A., Holmes, N., Clarke, T., Munro, R., Debebe, B.J., Loose, M.:
+Readfish enables targeted nanopore sequencing of gigabase-sized genomes. Nature Biotechnology
+(2021)
 
-\bibitem{uncalled} S. Kovaka, Y. Fan, B. Ni, W. Timp, and M. C. Schatz, ``Targeted nanopore
-sequencing by real-time mapping of raw electrical signal with UNCALLED,'' \emph{Nature
-Biotechnology}, 2021.
+\bibitem{uncalled} Kovaka, S., Fan, Y., Ni, B., Timp, W., Schatz, M.C.: Targeted nanopore
+sequencing by real-time mapping of raw electrical signal with UNCALLED. Nature Biotechnology
+(2021)
 
-\bibitem{sigmap} H. Zhang, H. Li, C. Jain, H. Cheng, K. F. Au, H. Li, and S. Aluru,
-``Real-time mapping of nanopore raw signals,'' \emph{Bioinformatics}, vol.~37,
-no.~Suppl.~1, 2021.
+\bibitem{sigmap} Zhang, H., Li, H., Jain, C., Cheng, H., Au, K.F., Li, H., Aluru, S.: Real-time
+mapping of nanopore raw signals. Bioinformatics 37(Suppl.~1) (2021)
 
-\bibitem{rawhash} C. Firtina, N. Mansouri Ghiasi, J. Lindegger, G. Singh, M. B. Cavlak,
-H. Mao, and O. Mutlu, ``RawHash: enabling fast and accurate real-time analysis of raw
-nanopore signals for large genomes,'' \emph{Bioinformatics}, vol.~39, no.~Suppl.~1, 2023.
+\bibitem{rawhash} Firtina, C., Mansouri Ghiasi, N., Lindegger, J., Singh, G., Cavlak, M.B.,
+Mao, H., Mutlu, O.: RawHash: enabling fast and accurate real-time analysis of raw nanopore
+signals for large genomes. Bioinformatics 39(Suppl.~1) (2023)
 
-\bibitem{rawhash2} C. Firtina, M. Soysal, J. Lindegger, and O. Mutlu, ``RawHash2: mapping raw
-nanopore signals using hash-based seeding and adaptive quantization,'' arXiv:2309.05771, 2023.
+\bibitem{rawhash2} Firtina, C., Soysal, M., Lindegger, J., Mutlu, O.: RawHash2: mapping raw
+nanopore signals using hash-based seeding and adaptive quantization. arXiv:2309.05771 (2023)
 
-\bibitem{rawalign} J. Lindegger, C. Firtina, N. Mansouri Ghiasi, M. Sadrosadati, M. Alser,
-and O. Mutlu, ``RawAlign: accurate, fast, and scalable raw nanopore signal mapping via
-combining seeding and alignment,'' arXiv:2310.05037, 2023.
+\bibitem{rawalign} Lindegger, J., Firtina, C., Mansouri Ghiasi, N., Sadrosadati, M., Alser,
+M., Mutlu, O.: RawAlign: accurate, fast, and scalable raw nanopore signal mapping via combining
+seeding and alignment. arXiv:2310.05037 (2023)
 
-\bibitem{sigmoni} V. Shivakumar, O. Ahmed, S. Kovaka, M. Zakeri, and B. Langmead, ``Sigmoni:
-classification of nanopore signal with a compressed pangenome index,''
-\emph{Bioinformatics}, 2024.
+\bibitem{sigmoni} Shivakumar, V., Ahmed, O., Kovaka, S., Zakeri, M., Langmead, B.: Sigmoni:
+classification of nanopore signal with a compressed pangenome index. Bioinformatics (2024)
 
-\bibitem{rawbench} M. Eris, C. Firtina, O. Mutlu \emph{et al.}, ``RawBench: a comprehensive
-benchmarking framework for raw nanopore signal analysis techniques,'' in \emph{Proc. ACM
-Conf. Bioinformatics, Computational Biology, and Health Informatics (ACM-BCB)}, 2025.
-arXiv:2510.03629.
+\bibitem{rawbench} Eris, M., Firtina, C., Mutlu, O., et al.: RawBench: a comprehensive
+benchmarking framework for raw nanopore signal analysis techniques. In: ACM-BCB (2025).
+arXiv:2510.03629
 
-\bibitem{squigulator} H. Gamaarachchi \emph{et al.}, ``Squigulator: simulation of nanopore
-sequencing signal data,'' \emph{Genome Research}, 2024.
+\bibitem{squigulator} Gamaarachchi, H., et al.: Squigulator: simulation of nanopore sequencing
+signal data. Genome Research (2024)
 
-\bibitem{icarust} R. Munro, A. Payne, and M. Loose, ``Icarust: a real-time simulator for
-nanopore adaptive sampling.'' [Online]. Available: \url{https://github.com/LooseLab/Icarust}
+\bibitem{icarust} Munro, R., Payne, A., Loose, M.: Icarust: a real-time simulator for nanopore
+adaptive sampling, \url{https://github.com/LooseLab/Icarust}
 
-\bibitem{misragries} J. Misra and D. Gries, ``Finding repeated elements,'' \emph{Science of
-Computer Programming}, vol.~2, no.~2, 1982.
+\bibitem{misragries} Misra, J., Gries, D.: Finding repeated elements. Science of Computer
+Programming 2(2) (1982)
 
-\bibitem{spacesaving} A. Metwally, D. Agrawal, and A. El Abbadi, ``Efficient computation of
-frequent and top-$k$ elements in data streams,'' in \emph{Proc. Int. Conf. Database Theory
-(ICDT)}, 2005.
+\bibitem{spacesaving} Metwally, A., Agrawal, D., El Abbadi, A.: Efficient computation of
+frequent and top-$k$ elements in data streams. In: ICDT (2005)
 
-\bibitem{minimap2} H. Li, ``Minimap2: pairwise alignment for nucleotide sequences,''
-\emph{Bioinformatics}, vol.~34, no.~18, 2018.
+\bibitem{minimap2} Li, H.: Minimap2: pairwise alignment for nucleotide sequences.
+Bioinformatics 34(18) (2018)
 
-\bibitem{hdrhistogram} G. Tene, ``HdrHistogram: a high dynamic range histogram.'' [Online].
-Available: \url{https://github.com/HdrHistogram/HdrHistogram_c}
+\bibitem{hdrhistogram} Tene, G.: HdrHistogram: a high dynamic range histogram,
+\url{https://github.com/HdrHistogram/HdrHistogram_c}
 
-\bibitem{minimizers} M. Roberts, W. Hayes, B. R. Hunt, S. M. Mount, and J. A. Yorke,
-``Reducing storage requirements for biological sequence comparison,''
-\emph{Bioinformatics}, vol.~20, no.~18, 2004.
+\bibitem{minimizers} Roberts, M., Hayes, W., Hunt, B.R., Mount, S.M., Yorke, J.A.: Reducing
+storage requirements for biological sequence comparison. Bioinformatics 20(18) (2004)
 
 \end{thebibliography}
 

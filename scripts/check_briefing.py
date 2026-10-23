@@ -49,8 +49,14 @@ def numerals(text: str) -> list[str]:
     function stripped commands together with their arguments, which silently discarded the
     very numbers it existed to check; it passed against a briefing with two digits
     deliberately altered.
+
+    A second bug, of the same kind: comments were stripped with "%.*", but LaTeX writes a
+    percent sign as "\\%", so on any line containing a percentage everything after it was
+    discarded as though it were a comment. "91.8\\% against 17.6\\%" lost its second figure.
+    Found by altering 17.6 on exactly such a line and watching the check pass. A comment is
+    a % NOT preceded by a backslash.
     """
-    t = re.sub(r"%.*", "", text)                                 # comments
+    t = re.sub(r"(?<!\\)%.*", "", text)                          # comments, not \%
     t = re.sub(r"\d+(\.\d+)?\s*(pt|cm|mm|em|ex|in)\b", " ", t)   # lengths, before anything
     t = re.sub(r"\\[a-zA-Z]+\s*(\[[^]]*\])?", " ", t)            # command names and options
     t = re.sub(r"[{}$~\\]", " ", t)                              # braces, maths, ties

@@ -40,8 +40,43 @@ PAPERS = [REPO / "paper" / "manuscript.md",
           REPO / "paper" / "manuscript-ieee.tex",
           REPO / "paper" / "manuscript-springer.tex"]
 
+# Manuscripts that are deliberate abridgements of a fully checked one. A 12-page version
+# legitimately leaves out results a full-length one states, so requiring every claim in every
+# manuscript would forbid shortening a paper at all. The rule instead is:
+#
+#   OMISSION IS ALLOWED, INVENTION IS NOT.
+#
+# An abridged manuscript may skip the claims listed under "omits", because it skips the
+# sections that state them. In exchange, every numeral it DOES contain must also appear in the
+# manuscript it abridges, which is itself held to every claim. So nothing in the short version
+# can be wrong without also being absent from a document that is checked in full.
+#
+# Each omission must also be genuinely absent. A label listed here whose figures are present
+# after all is reported as a stale omission, so this list cannot quietly outlive the cut that
+# justified it -- the same reason an unused allowlist entry is treated as a defect.
+ABRIDGED = {
+    "manuscript-springer.tex": {
+        "of": "manuscript-ieee.tex",
+        "omits": {
+            # Section 3.2 descriptor layout and 3.5 per-channel footprint
+            "ChunkRef size", "vote table footprint",
+            # Section 4.1 histogram correction, about an earlier instrument
+            "TSC artefact",
+            # Section 4.2, the 37 kb secondary regime, with its table
+            "R1 pinned-2", "R1 unpinned-4", "p99 spread claim",
+            # Section 7.2 scale-dependence of key entropy, with its table
+            "3x13 entropy and shortfall", "4x12 entropy and shortfall",
+            "3x8 truncation, both references", "3x8 distinct keys at 20 Mb",
+            "4x12 distinct keys at 20 Mb",
+            # Section 4.3 processor-time ratio against RawHash2
+            "comparison per read",
+        },
+    },
+}
+
 OK: list[str] = []
 BAD: list[tuple[str, str, str]] = []
+SKIPPED: list[str] = []
 
 
 def rows(name: str) -> list[dict]:
@@ -71,16 +106,44 @@ def norm(t: str) -> str:
 
 
 def want(label: str, *fragments: str) -> None:
-    """Assert every fragment appears, in at least one manuscript, after normalisation."""
+    """Assert every fragment appears in each manuscript, after normalisation.
+
+    For an abridged manuscript, a label it omits is not required -- but it must really be
+    absent, or the omission list has gone stale.
+    """
     for p in PAPERS:
         if not p.exists():
             continue
         body = norm(p.read_text(encoding="utf-8"))
         missing = [f for f in fragments if norm(f) not in body]
+        omitted = label in ABRIDGED.get(p.name, {}).get("omits", set())
+        if omitted:
+            if not missing:
+                BAD.append((label, p.name, "stale omission: every figure is present, so "
+                                           "remove this label from ABRIDGED"))
+            else:
+                SKIPPED.append(f"{label} [{p.name}]")
+            continue
         if missing:
             BAD.append((label, p.name, "; ".join(missing)))
         else:
             OK.append(f"{label} [{p.name}]")
+
+
+def numerals(text: str) -> set[str]:
+    """Numeric tokens of a LaTeX source, for the abridgement subset check.
+
+    Command NAMES are removed but braced arguments kept, since most figures sit inside
+    \\textbf{} or \\emph{}. Stripping commands together with their arguments discards exactly
+    the numbers this exists to check; that bug was found once already, in check_briefing.py,
+    by planting a wrong figure and watching the check pass.
+    """
+    t = re.sub(r"(?<!\\)%.*", "", text)                          # comments, not \%
+    t = re.sub(r"\d+(\.\d+)?\s*(pt|cm|mm|em|ex|in)\b", " ", t)   # lengths
+    t = re.sub(r"\\[a-zA-Z]+\s*(\[[^]]*\])?", " ", t)            # command names, options
+    t = re.sub(r"[{}$~\\]", " ", t)
+    found = set(re.findall(r"\d+(?:[.,]\d+)*", t))
+    return found | {n.replace(",", "") for n in found}
 
 
 # ------------------------------------------------------------------ regime R3
@@ -243,6 +306,22 @@ want("realised alphabet", "2.46 bits", "2.58 bits")
 want("sig-diff retention", "73.4%")
 want("difference keys", "8.3", "[3.6-11.8]")
 
+# ------------------------------------------------------------------ abridgement
+# Every numeral in an abridged manuscript must appear in the one it abridges.
+SUBSET_OK: list[str] = []
+for name, spec in ABRIDGED.items():
+    short, full = REPO / "paper" / name, REPO / "paper" / spec["of"]
+    if not (short.exists() and full.exists()):
+        continue
+    invented = sorted(numerals(short.read_text(encoding="utf-8"))
+                      - numerals(full.read_text(encoding="utf-8")),
+                      key=lambda n: (len(n), n))
+    if invented:
+        BAD.append(("abridgement subset", name,
+                    "numerals not in " + spec["of"] + ": " + ", ".join(invented)))
+    else:
+        SUBSET_OK.append(f"{name} contains no numeral absent from {spec['of']}")
+
 # ------------------------------------------------------------------ report
 print("=" * 78)
 print("PAPER NUMBER VERIFICATION")
@@ -250,6 +329,10 @@ print("=" * 78)
 present = [p.name for p in PAPERS if p.exists()]
 print(f"\nchecking: {', '.join(present) if present else 'NO MANUSCRIPT FOUND'}\n")
 print(f"ok    {len(OK)} assertions matched")
+if SKIPPED:
+    print(f"omit  {len(SKIPPED)} claims deliberately absent from an abridged manuscript")
+for line in SUBSET_OK:
+    print(f"ok    {line}")
 if BAD:
     print(f"FAIL  {len(BAD)} mismatched\n")
     for label, fname, missing in BAD:
