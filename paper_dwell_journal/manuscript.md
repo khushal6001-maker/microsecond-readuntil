@@ -29,14 +29,12 @@ belongs to the segmentation choice, not to signal-space mapping. RawHash2's mini
 carry a dwell-dependent cost: paired within seed, the accuracy penalty of window 10 against window 0
 rises from 11.7 points at CV 0 to 19.5 at CV 0.60, and is larger at CV 0.60 in every seed.
 
-<!-- ZENODO: replace both "[ZENODO DOI TO BE INSERTED]" placeholders in this file, and the
-     \zenodoslot macro in manuscript.tex, with the archive's DOI written as a URL,
-     https://doi.org/10.5281/zenodo.NNNNNNN . Do not write it as a bare "doi:10.5281/...":
-     scripts/verify_dwell_journal_numbers.py strips URLs but would read that as an
-     unregistered numeral and fail. -->
+<!-- The archive DOI is written as a URL on purpose: scripts/verify_dwell_journal_numbers.py
+     strips URLs, but would read a bare "doi:10.5281/..." as an unregistered numeral. -->
 **Availability and implementation:** Code, result files, a patch adding dwell variation to the
 Icarust simulator, and a script that recomputes every number in this article:
-https://github.com/khushal6001-maker/microsecond-readuntil, archived at **[ZENODO DOI TO BE INSERTED]**.
+https://github.com/khushal6001-maker/microsecond-readuntil, archived at
+https://doi.org/10.5281/zenodo.23604395 (release v1.0.0).
 
 **Supplementary information:** Supplementary data are available at *Bioinformatics* online.
 
@@ -456,7 +454,7 @@ None declared.
 
 All result files, raw logs, the sweep harness, the figure generator, the Icarust and RawHash2
 patches and the verification script are in the repository given under Availability and
-implementation, archived at **[ZENODO DOI TO BE INSERTED]**.
+implementation, archived at https://doi.org/10.5281/zenodo.23604395 (release v1.0.0).
 
 ## References
 

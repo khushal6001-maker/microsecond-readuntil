@@ -15,10 +15,10 @@ send the letter until each is filled or deleted.
 5. The responsibility sentence in the AI paragraph must be true when you send the letter:
    both authors should have read the whole manuscript and checked its claims.
 6. Ritu Garg's approval of the submission.
-7. Zenodo: archive the repository at the commit you submit, then put the DOI into the two
-   placeholders in manuscript.md and the \zenodoslot macro in manuscript.tex, written as a URL
-   (https://doi.org/...). Re-run scripts/verify_dwell_journal_numbers.py afterwards.
 -->
+
+Software archive (already done, nothing to fill): Zenodo release v1.0.0,
+https://doi.org/10.5281/zenodo.23604395 . Delete this line too before sending.
 
 [DATE]
 
@@ -80,8 +80,9 @@ manuscript.
    posted while this one is under review, we will cite it and reduce Table 3 to a citation.
 
 3. *Public draft.* The code, results and a draft of this manuscript are in a public GitHub
-   repository, https://github.com/khushal6001-maker/microsecond-readuntil, which is also the
-   software given in the Availability statement. [PREPRINT STATUS: e.g. "No preprint has been
+   repository, https://github.com/khushal6001-maker/microsecond-readuntil. The software given
+   in the Availability statement is that repository's release v1.0.0, archived at Zenodo as
+   https://doi.org/10.5281/zenodo.23604395. [PREPRINT STATUS: e.g. "No preprint has been
    posted on a preprint server."]
 
 **Use of AI tools.** The manuscript was prepared with the assistance of Claude (Anthropic), used
