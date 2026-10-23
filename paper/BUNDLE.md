@@ -1,4 +1,4 @@
-# Microseconds Are Not the Problem — LaTeX source bundle
+# A Lock-Free Data Plane and the Signal-to-Seed Bottleneck — LaTeX source bundle
 
 Complete, self-contained LaTeX source for the paper. Everything needed to build is in this
 archive; no external style files are required beyond what TeX Live and Overleaf already ship.

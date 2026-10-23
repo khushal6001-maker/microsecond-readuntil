@@ -1,4 +1,4 @@
-# Microseconds Are Not the Problem: A Lock-Free Soft-Real-Time Data Plane for Nanopore Adaptive Sampling, and the Signal-to-Seed Bottleneck That Bounds It
+# A Lock-Free Data Plane and the Signal-to-Seed Bottleneck in Nanopore Adaptive Sampling
 
 **Abstract**
 
