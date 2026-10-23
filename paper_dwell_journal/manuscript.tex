@@ -32,6 +32,11 @@
 \newcommand{\prov}{\textsuperscript{\dag}}
 % Repository paths in typewriter that may break at / and _, which \texttt cannot.
 \DeclareUrlCommand\file{\urlstyle{tt}}
+% ZENODO: before submission, replace the body of this macro with the archive's DOI written as
+% a URL, \url{https://doi.org/10.5281/zenodo.NNNNNNN}, and replace the two matching
+% placeholders in manuscript.md. A bare doi:10.5281/... would be read by
+% scripts/verify_dwell_journal_numbers.py as an unregistered numeral; \url{} is stripped.
+\newcommand{\zenodoslot}{\textcolor{red}{\textbf{[ZENODO DOI TO BE INSERTED]}}}
 
 \title{\textbf{Time-domain noise as an evaluation axis for raw-signal nanopore mapping}}
 \author[1,*]{Khushal Singh}
@@ -52,34 +57,28 @@
 \noindent\rule{\linewidth}{0.4pt}
 \section*{Abstract}
 
-\noindent\textbf{Motivation:} Raw-signal nanopore mappers reduce the current trace to discrete
-events before matching, so their accuracy depends on how event boundaries respond to variation in
-the time the motor protein holds each k-mer in the pore. Mappers are evaluated on real datasets,
-in which that dwell-time dispersion is fixed by the sequencing run rather than set by the
-experimenter, so the sensitivity of a mapper to it is not measured. Measuring a sensitivity
-requires moving one variable while holding the rest constant. No fixed dataset permits that; a
-signal simulator does.
+\noindent\textbf{Motivation:} Raw-signal nanopore mappers segment the current trace into events
+before matching, so their accuracy depends on how event boundaries respond to variation in the time
+the motor protein holds each k-mer. Mappers are evaluated on real datasets, in which this
+dwell-time dispersion is fixed by the run, so their sensitivity to it is not measured. Measuring it
+requires a variable that can be moved, which a signal simulator provides.
 
 \smallskip
 \noindent\textbf{Results:} We sweep the dwell-time coefficient of variation (CV) from 0 to 0.60
-in Squigulator, with a composition-matched shuffled control simulated at matching dwell and three
-generator seeds. Two segmentation configurations of one quantised-event pipeline reverse their
-order across the sweep. Fixed-width segmentation leads event detection at CV~0, 49.7\% against
-18.4\% true-positive rate at zero false positives, and trails it 10.8-fold at the simulator's
-default CV of 0.44, 1.3\% against 14.1\%; the replicate ranges do not overlap at any dispersion
-tested. An evaluation at constant dwell therefore selects the worse configuration. RawHash2 under
-the same sweep loses 3.0 points at its default setting, which bounds the reversal as a property of
-the segmentation choice and not of signal-space mapping. RawHash2's minimizer sketching does carry
-a dwell-dependent cost: the accuracy penalty of window 10 against window 0 is 12.8 points at CV~0
-and 21.0 at CV 0.60, where sketching also raises the false-mapping rate on the control from 8.4\%
-to 15.2\%. A sketching trade-off measured at one dispersion therefore does not transfer to
-another, and one measured on constant-dwell signal understates it.
+in Squigulator, with a composition-matched control and three seeds. In one quantised-event
+pipeline, fixed-width segmentation leads event detection at CV~0, 49.7\% against 18.4\%
+true-positive rate at zero false positives, and trails it 10.8-fold at the simulator's default CV
+of 0.44, 1.3\% against 14.1\%; the replicate ranges do not overlap at any dispersion tested.
+Evaluation at constant dwell therefore selects the worse configuration. RawHash2 loses 3.0 points
+at its default setting, so the reversal belongs to the segmentation choice, not to signal-space
+mapping. RawHash2's minimizer sketching does carry a dwell-dependent cost: the accuracy penalty of
+window 10 against window 0 is 12.8 points at CV~0 and 21.0 at CV 0.60, where sketching also raises
+the false-mapping rate on the control from 8.4\% to 15.2\%.
 
 \smallskip
-\noindent\textbf{Availability and implementation:} The sweep harness, every result file, the
-figure generator, a patch that adds lognormal dwell variation to the Icarust read-until simulator,
-and a script that recomputes every number in this article from the committed results are
-available at \url{https://github.com/khushal6001-maker/microsecond-readuntil}.
+\noindent\textbf{Availability and implementation:} Code, result files, a patch adding dwell
+variation to the Icarust simulator, and a script that recomputes every number in this article:
+\url{https://github.com/khushal6001-maker/microsecond-readuntil}, archived at \zenodoslot.
 
 \smallskip
 \noindent\textbf{Contact:} \texttt{khushal6002@gmail.com}
@@ -588,7 +587,7 @@ None declared.
 \section*{Data availability}
 All result files, raw logs, the sweep harness, the figure generator, the Icarust and RawHash2
 patches and the verification script are in the repository given under Availability and
-implementation.
+implementation, archived at \zenodoslot.
 
 \nolinenumbers
 \bibliographystyle{plainnat}
