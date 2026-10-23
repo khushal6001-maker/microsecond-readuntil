@@ -2,3 +2,7 @@
 
 # Shell scripts are executed inside WSL; CRLF breaks them.
 *.sh text eol=lf
+
+# Kept out of release archives, which Zenodo preserves permanently: the cover letter is an
+# unsent draft for the journal submission, not part of the software. It stays in the repository.
+paper_dwell_journal/cover_letter.md export-ignore
