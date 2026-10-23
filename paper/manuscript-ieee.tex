@@ -434,7 +434,8 @@ this work & frozen, 64 Mb     & 124.8 \textmu{}s & 181.5--202.3\% & 3786 MiB \\
 \end{tabular}
 \end{table}
 
-\textbf{The architectural point.} readfish with a no-operation caller performs no basecalling
+\textbf{The architectural point.} readfish~\cite{readfish} with a no-operation caller
+performs no basecalling
 and no mapping; 124.3 \textmu{}s is its orchestration alone, a lower bound on its cost. Our
 \emph{complete} signal-space decision over a 64 Mb index costs 124.8 \textmu{}s. The orchestration layer
 of a basecalling client is already as expensive as an entire signal-space decision. This does
@@ -445,7 +446,8 @@ deployment.
 The cost is processor time: 181.5--202.3\% of one core against readfish's 15.6\%, because
 workers spin before yielding. We report it alongside.
 
-\textbf{Against a signal-space mapper.} RawHash2, single-threaded on identical reads with the
+\textbf{Against a signal-space mapper.} RawHash2~\cite{rawhash2}, single-threaded on
+identical reads with the
 same pore model, requires 10.64 ms of processor time per read including index load, or 10.18 ms
 excluding the load a long-running daemon pays once. Our comparable figure is the derived
 1.25 ms. The ratio is $8.2\times$, and must be read with Section~\ref{sec:gap}: a latency ratio between a
@@ -457,7 +459,8 @@ performance result.
 
 \subsection{Head-to-head}
 
-Both systems were run on the same 20 Mb chr20 reference, the same Squigulator-derived R10.4
+Both systems were run on the same 20 Mb chr20 reference, the same
+Squigulator~\cite{squigulator}-derived R10.4
 9-mer pore model on both sides, the same SLOW5 files, three seeds, 500 reads per cell, at
 Squigulator's default dwell dispersion.
 
@@ -567,7 +570,8 @@ An agreement figure computed two different ways for two systems is not a compari
 therefore emit per-event quantised symbols from both systems in one format and score them with
 one program, which does not know which system produced its input.
 
-Our symbols come from the production reference-encoding and quantisation paths. RawHash2 ships
+Our symbols come from the production reference-encoding and quantisation paths.
+RawHash2~\cite{rawhash2} ships
 \texttt{--out-quantize}, which dumps query-side symbols; its reference path hardcodes the dump
 off, so we added a four-line \texttt{--out-quantize-ref} exposing the same facility on the
 reference side, and fixed a record-separator defect that makes the stock multi-read output
@@ -644,7 +648,8 @@ exact.}
 
 \subsection{Asymmetric event retention}
 
-RawHash2 merges similar events: an event is dropped if its level differs from the last retained
+RawHash2~\cite{rawhash2} merges similar events: an event is dropped if its level differs
+from the last retained
 event by less than \texttt{--sig-diff} $=$ 0.35. The same rule is applied \textbf{to both the
 reference encoding and the query}, and it keeps 73.4\% of events on each side. As a result, the
 reference and the query contain the same number of events for any given span of signal.
@@ -780,7 +785,8 @@ matches through heavy gapping, but the bound is one-sided and the asymmetry favo
 The symmetric-retention explanation is visible in RawHash2's source and consistent with every
 measurement, but the decisive ablation---applying our detector to our own reference encoding
 and re-measuring---was not made. RawHash2, Squigulator, readfish and Icarust were built and
-run here; claims about UNCALLED, Sigmap, RawAlign and Sigmoni rest on their publications and
+run here; claims about UNCALLED~\cite{uncalled}, Sigmap~\cite{sigmap},
+RawAlign~\cite{rawalign} and Sigmoni~\cite{sigmoni} rest on their publications and
 repositories rather than on execution.
 
 \section{Conclusion}
