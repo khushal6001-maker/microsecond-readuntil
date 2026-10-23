@@ -14,8 +14,8 @@ every numeral in all four files to be accounted for. A numeral is accepted only 
   OUTSTANDING  a value no captured run backs, allowed only in the Supplementary
                Information, never in the main text, and only when marked with a dagger.
 
-On top of that, every row of Tables 1-4 is rebuilt from data and must appear verbatim in
-both manuscript files, the Abstract's headline sentences must appear verbatim in both, every
+On top of that, every row of Tables 1-5 and S1-S3 is rebuilt from data and must appear verbatim
+in both files of its pair, the Abstract's headline sentences must appear verbatim in both, every
 replicated "mean [range]" must appear whole, and each .md/.tex pair must carry the same
 data-derived numerals in the same order. A ratio written as a word ("sevenfold") is refused,
 because the gate cannot check it.
@@ -201,22 +201,23 @@ def mr(values) -> str:
     return f"{q(sum(values) / len(values), '0.1')} [{q(min(values), '0.1')}–{q(max(values), '0.1')}]"
 
 
-MR_TEXT: list[tuple[str, str]] = []   # (pattern, why): each must also appear whole in both files
+MR_TEXT: list[tuple[str, str, str]] = []   # (pattern, why, doc): each must appear whole in that pair
 
 
-def claim_mr(text: str, values, why: str) -> None:
+def claim_mr(text: str, values, why: str, where: str = "main") -> None:
     """A 'mean [min–max]' quoted in the text, each of its three numbers recomputed.
 
-    The three are also required to appear together, as one phrase, in both manuscripts. The
+    The three are also required to appear together, as one phrase, in both files of the pair. The
     registry alone would accept a wrong mean that happens to equal another backed value;
     requiring the whole phrase ties the mean to its own range.
     """
     m, lo, hi = re.fullmatch(r"(\S+) \[(\S+)–(\S+)\]", text).groups()
-    claim(m, sum(values) / len(values), "0.1", f"{why}, mean")
-    claim(lo, min(values), "0.1", f"{why}, min")
-    claim(hi, max(values), "0.1", f"{why}, max")
-    # Words may sit between mean and range: "2.9 points [2.8–3.0]", "7.8 points on average [...]".
-    MR_TEXT.append((rf"(?<![\d.]){re.escape(m)}(?: [a-z ]+)? \[{re.escape(lo)}–{re.escape(hi)}\]", why))
+    claim(m, sum(values) / len(values), "0.1", f"{why}, mean", where)
+    claim(lo, min(values), "0.1", f"{why}, min", where)
+    claim(hi, max(values), "0.1", f"{why}, max", where)
+    # Words may sit between mean and range: "2.9 points [2.8–3.0]", "7.8 points on average [...]",
+    # and so may a percent sign: "80.5% [76.2–84.6]".
+    MR_TEXT.append((rf"(?<![\d.]){re.escape(m)}%?(?: [a-z ]+)? \[{re.escape(lo)}–{re.escape(hi)}\]", why, where))
 
 
 if grid:
@@ -273,6 +274,105 @@ if grid:
           "w=10 penalty ranges up to CV 0.30 overlap the CV 0 range (§3.3)")
     holds(all(fals(s, "10", cv) > fals(s, "0", cv) for s in SEEDS for cv in CVS),
           "w=10 maps more control reads than w=0 in every seed at every CV (§3.3)")
+    # Supp. S5: Table S3 is Table 5 before it is summarised, and only seed 44 rises at every step.
+    rising = lambda s, w: all(pen(s, w, b) > pen(s, w, a) for a, b in zip(CVS, CVS[1:]))
+    holds(rising("44", "5") and rising("44", "10")
+          and not any(rising(s, w) for s in ("42", "43") for w in ("5", "10")),
+          "only seed 44's default penalty rises at every step, at both windows (Supp. S5)")
+
+# ---------------------------------------------------------------- Supp. Tables S1-S2: matched points
+# scripts/rawhash_zero_fp.py thresholds RawHash2's own mapping quality in the grid's PAF output.
+# Its CSV is not trusted as written. The rows are recomputed from raw.tar.gz here, on every run,
+# and must equal it, and that recomputation must first reproduce rawhash-grid-seeds.csv cell for
+# cell, so the thresholds are applied to exactly the mappings that Table 3 scores.
+zfp_rows = rows("rawhash-grid-zero-fp.csv")
+zfp = {(r["seed"], r["w"], r["dwell_cv"]): r for r in zfp_rows}
+TABLE_S1, TABLE_S2, TABLE_S3 = [], [], []
+if zfp and grid and ours:
+    sys.path.insert(0, str(REPO / "scripts"))
+    import rawhash_zero_fp
+
+    fresh, mismatches = rawhash_zero_fp.compute()
+    holds(not mismatches, "rawhash_zero_fp.py rescores every grid cell to rawhash-grid-seeds.csv exactly")
+    claim("54", D(len(fresh) - len(mismatches)), "1", "grid cells the rescoring reproduces, Supp. S4", "supp")
+    holds([[r[h] for h in rawhash_zero_fp.HEADER] for r in zfp_rows] == fresh,
+          "rawhash-grid-zero-fp.csv equals a fresh recomputation from raw.tar.gz")
+    holds(all(r["reads"] == r["off_reads"] == "500" for r in zfp_rows),
+          "500 on-target and 500 control reads per cell, so a 1% budget is 5 reads (Supp. S4)")
+    # "set by the sixth-highest-scoring control read" needs at least six mapped control reads.
+    holds(all(fals(s, w, cv) * 5 >= 6 for (s, w, cv) in grid),
+          "at least 6 control reads are mapped in every cell (§3.2, Supp. S4)")
+
+    O0, O1 = "tpr_zero_fp", "tpr_1pct_fp"
+    z = lambda s, w, cv, col: D(zfp[(s, w, cv)][col])
+    zpen = lambda s, w, cv, col: z(s, "0", cv, col) - z(s, w, cv, col)
+    zr = lambda w, cv, col=O0: [z(s, w, cv, col) for s in SEEDS]
+    zp = lambda w, cv, col: [zpen(s, w, cv, col) for s in SEEDS]
+    for lab, col in (("Zero FP", O0), ("1% FP", O1)):
+        for cv in CVS:
+            TABLE_S1.append([lab, cv] + [mr(zr(w, cv, col)) for w in ("0", "5", "10")])
+            TABLE_S2.append([lab, cv] + [mr(zp(w, cv, col)) for w in ("5", "10")])
+    for cv in CVS:
+        TABLE_S3.append([cv] + [q(pen(s, w, cv), "0.1") for w in ("5", "10") for s in SEEDS])
+    for label, table, first in (("S1", TABLE_S1, 2), ("S2", TABLE_S2, 2), ("S3", TABLE_S3, 1)):
+        for row in table:
+            for cell in row[first:]:
+                for tok in re.findall(r"\d+\.\d", cell):
+                    backed(tok, f"Supp. Table {label}, recomputed from the grid")
+
+    # §1 and §3.2: the level at a matched operating point, and its response to dispersion.
+    claim_mr("80.5 [76.2–84.6]", zr("0", "0.44"), "RawHash2 w=0 at zero FP, CV 0.44, §1, §3.2")
+    claim("5.7", sum(zr("0", "0.44")) / 3 / D(ours["0.44"]["detected_mean"]), "0.1",
+          "RawHash2 at zero FP over the detected arm, CV 0.44 (fold), §3.2")
+    holds(min(zr("0", "0.44")) > D(ours["0.44"]["detected_hi"]),
+          "RawHash2 zero-FP range at CV 0.44 clear of the detected arm's (§3.2)")
+    every = [v for cv in CVS for v in zr("0", cv)]
+    claim("76.2", min(every), "0.1", "RawHash2 w=0 at zero FP, lowest replicate at any CV, §3.2")
+    claim("92.8", max(every), "0.1", "RawHash2 w=0 at zero FP, highest replicate at any CV, §3.2")
+    zloss = lambda col: [z(s, "0", "0.00", col) - z(s, "0", "0.60", col) for s in SEEDS]
+    claim_mr("4.3 [0.4–6.6]", zloss(O0), "RawHash2 w=0 loss over the sweep at zero FP, §3.2")
+    claim_mr("3.1 [2.6–3.6]", zloss(O1), "RawHash2 w=0 loss over the sweep at 1% FP, §3.2")
+    means0 = [sum(zr("0", cv)) for cv in CVS]
+    holds(any(b > a for a, b in zip(means0, means0[1:])) and any(b < a for a, b in zip(means0, means0[1:])),
+          "RawHash2 w=0 zero-FP mean is not monotone in CV (§3.2, Supp. S4)")
+    holds(min(zloss(O1)) <= max(loss("0")) and min(loss("0")) <= max(zloss(O1)),
+          "w=0 loss at 1% FP overlaps the loss at the default, 'close to the 2.9' (§3.2)")
+
+    # §3.3: the dispersion dependence of the sketching cost, at both matched points.
+    claim_mr("13.4 [12.8–14.6]", zp("10", "0.00", O1), "w=10 cost at 1% FP, CV 0, §3.3")
+    claim_mr("24.5 [21.4–27.0]", zp("10", "0.60", O1), "w=10 cost at 1% FP, CV 0.60, §3.3")
+    claim_mr("3.8 [3.4–4.2]", zp("5", "0.00", O1), "w=5 cost at 1% FP, CV 0, §3.3")
+    claim_mr("9.6 [8.6–10.6]", zp("5", "0.60", O1), "w=5 cost at 1% FP, CV 0.60, §3.3")
+    for w in ("5", "10"):
+        holds(max(zp(w, "0.00", O1)) < min(zp(w, "0.60", O1)),
+              f"w={w} cost at 1% FP: CV 0 and 0.60 ranges disjoint (§3.3, Supp. S4)")
+        holds(all(zpen(s, w, "0.60", O1) > zpen(s, w, "0.00", O1) for s in SEEDS),
+              f"w={w} cost at 1% FP larger at CV 0.60 in every seed (§3.3, Supp. S4)")
+    claim_mr("15.7 [13.4–19.6]", zp("10", "0.00", O0), "w=10 cost at zero FP, CV 0, §3.3")
+    claim_mr("29.5 [16.6–38.6]", zp("10", "0.60", O0), "w=10 cost at zero FP, CV 0.60, §3.3")
+    grow0 = [zpen(s, "10", "0.60", O0) - zpen(s, "10", "0.00", O0) for s in SEEDS]
+    holds(all(g > 0 for g in grow0), "w=10 cost at zero FP larger at CV 0.60 in every seed (§3.3)")
+    claim("2.4", min(grow0), "0.1", "w=10 cost growth at zero FP, smallest seed, §3.3")
+    claim("20.0", max(grow0), "0.1", "w=10 cost growth at zero FP, largest seed, §3.3")
+    holds(max(zp("10", "0.00", O0)) >= min(zp("10", "0.60", O0)),
+          "w=10 cost at zero FP: CV 0 and 0.60 ranges overlap (§3.3)")
+    grow5 = sorted(zpen(s, "5", "0.60", O0) - zpen(s, "5", "0.00", O0) for s in SEEDS)
+    holds(grow5[0] == 0 and grow5[1] > 0,
+          "w=5 cost at zero FP: one seed shows no increase, the other two do (§3.3, Supp. S4)")
+    width = lambda xs: max(xs) - min(xs)
+    holds(all(width(zp(w, cv, O0)) > max(width(p(w, cv)), width(zp(w, cv, O1)))
+              for w in ("5", "10") for cv in ("0.00", "0.60")),
+          "cost at zero FP varies more between seeds than at the default or at 1% FP (§3.3)")
+
+    # Supp. S4, the three features.
+    neg = [zpen(s, "5", "0.44", O0) for s in SEEDS if zpen(s, "5", "0.44", O0) < 0]
+    holds(len(neg) == 1, "exactly one seed's w=5 index beats w=0 at zero FP, CV 0.44 (Supp. S4)")
+    if neg:
+        claim("6.6", -neg[0], "0.1", "w=5 over w=0 at zero FP, CV 0.44, one seed, Supp. S4", "supp")
+    holds(all(zpen(s, w, cv, O1) > 0 and pen(s, w, cv) > 0 for s in SEEDS for w in ("5", "10") for cv in CVS),
+          "no seed's sketched index beats w=0 at 1% FP or at the default (Supp. S4)")
+    holds(all(sum(zp("10", cv, col)) > sum(p("10", cv)) for cv in CVS for col in (O0, O1)),
+          "w=10 costs more at both matched points than at the default, at every CV (Supp. S4)")
 
 # ---------------------------------------------------------------- RawHash2 default, three seeds
 seeds = {r["seed"]: r for r in rows("rawhash-seeds.csv")}
@@ -386,6 +486,16 @@ needles(RESULTS / "rawhash-grid-seeds.csv",
         "§2.5 three-seed grid parameters and scoring")
 holds((RESULTS / "rawhash-grid-raw" / "raw.tar.gz").exists(),
       "the grid's raw PAF and logs are committed (rawhash-grid-raw/raw.tar.gz)")
+needles(RESULTS / "rawhash-grid-zero-fp.csv",
+        ["Produced by", "scripts/rawhash_zero_fp.py from results/rawhash-grid-raw/raw.tar.gz",
+         "reproduced rawhash-grid-seeds.csv exactly", ",".join(["seed", "w", "dwell_cv", "reads"])],
+        "Supp. S4 matched-operating-point file and its provenance")
+# The threshold rules as Supp. S4 states them: the twelfth PAF column, one above the highest
+# control read, and a budget of len // 100 control reads.
+needles(REPO / "scripts" / "rawhash_zero_fp.py",
+        ["mapq = int(f[11])", "t0 = ctrl[0] + 1 if ctrl else 0", "budget = len(off) // 100",
+         "sum(q >= t for q in ctrl) <= budget", "c and q >= t0", "c and q >= t1"],
+        "Supp. S4 threshold rules as rawhash_zero_fp.py applies them")
 needles(RESULTS / "agreement-summary.csv",
         ["200 reads per cell", "--sig-diff merging", "--out-quantize-ref",
          "matches / aligned pairs under the maximising alignment",
@@ -566,6 +676,19 @@ for label, table in (("Table 1", CONFIG), ("Table 2", TABLE1), ("Table 3", TABLE
                 ok(f"{label} row {' | '.join(row[:3])}", name)
             else:
                 bad(f"{label} row in {name}", f"expected '{want}'")
+# The supplement's tables, likewise rebuilt from data and required verbatim in its two files.
+# A negative cell is typeset $-$6.6, which the .tex normalisation reads as -6.6.
+for label, table in (("Table S1", TABLE_S1), ("Table S2", TABLE_S2), ("Table S3", TABLE_S3)):
+    if not table:
+        bad(f"{label} rows", "not rebuilt: a data file is missing")
+    for row in table:
+        md_row = "| " + " | ".join(row) + " |"
+        tex_row = " & ".join(row) + r" \\"
+        for name, want in (("supplementary.md", md_row), ("supplementary.tex", tex_row)):
+            if want in NORM[name]:
+                ok(f"{label} row {' | '.join(row[:3])}", name)
+            else:
+                bad(f"{label} row in {name}", f"expected '{want}'")
 
 # ---- Abstract headline sentences, verbatim in both
 ANCHORS = [
@@ -580,17 +703,28 @@ ANCHORS = [
     "they are reported, marked, in the Supplementary Information and are used in no claim here",
     # Figure 1 is a schematic, and its caption must say so.
     "the current levels, durations and key ranks are illustrative, not data",
+    # §3.2 and §3.3 at matched operating points: the logical claims the holds() checks back.
+    "every replicate at every CV lies between 76.2% and 92.8%",
+    "at both windows the ranges are disjoint and the cost is larger at CV 0.60 in every seed",
+    "larger in every seed by 2.4 to 20.0 points, but the ranges overlap, and at w = 5 one seed shows no increase",
 ]
-for a in ANCHORS:
-    for name in FILES:
-        if a in NORM[name]:
-            ok(f"anchor in {name}: {a[:40]}…")
-        else:
-            bad(f"anchor in {name}", f"missing '{a}'")
+SUPP_ANCHORS = [
+    "which all 54 cells do",
+    "maps 6.6 points more of its reads correctly than its w = 0 index",
+    "at w = 10 sketching costs more at both matched operating points than at the default, at every CV",
+    "Only seed 44's cost rises at every step of the sweep, at both windows",
+]
+for anchors, files in ((ANCHORS, FILES), (SUPP_ANCHORS, SUPP_FILES)):
+    for a in anchors:
+        for name in files:
+            if a in NORM[name]:
+                ok(f"anchor in {name}: {a[:40]}…")
+            else:
+                bad(f"anchor in {name}", f"missing '{a}'")
 
-# ---- every replicated 'mean [range]' appears whole, in both files
-for pat, why in MR_TEXT:
-    for name in FILES:
+# ---- every replicated 'mean [range]' appears whole, in both files of its pair
+for pat, why, doc in MR_TEXT:
+    for name in PAIRS[doc]:
         if re.search(pat, NORM[name]):
             ok(f"mean [range] in {name}: {why[:45]}")
         else:

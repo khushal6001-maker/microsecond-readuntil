@@ -123,8 +123,8 @@ own pipeline, included because it is the configuration a constant-dwell evaluati
 not claim that signal simulators omit dwell variation: Squigulator models it, and the gap identified
 here is specific to Icarust. It does not claim that the authors' pipeline is competitive. At CV 0.44
 its better configuration resolves 14.1% of reads at zero false positives, where RawHash2 maps 91.8%
-correctly at its default operating point, and every comparison drawn below concerns the shape of a
-system's response to dispersion, not its level.
+correctly at its default operating point and 80.5% at zero false positives (Section 3.2), and the
+comparisons drawn below concern the shape of a system's response to dispersion, not its level.
 
 ## 2 Methods
 
@@ -205,8 +205,9 @@ maps within 500 bases of the locus Squigulator records in the read identifier, o
 strand, and the false-mapping rate is the percentage of control reads that receive any mapping.
 
 Two differences from Section 2.4 limit what may be compared. RawHash2's default operating point
-admits false mappings, so its correct-mapping rate is not level-comparable with a zero-false-positive
-TPR; the comparison is of shape. RawHash2 also receives whole reads rather than the first 10 chunks,
+admits false mappings, so its correct-mapping rate in Table 3 is not level-comparable with a
+zero-false-positive TPR, and the comparison there is of shape; Section 3.2 also places RawHash2
+at matched operating points. RawHash2 also receives whole reads rather than the first 10 chunks,
 which favours it. The dwell × window grid was run for the same three seeds as Table 2, with 500 reads
 per set, by `scripts/rerun_rawhash_grid.sh`; seed 42 reproduces an earlier single-seed run of the
 grid exactly, in every cell. At its default and at CV 0.44, RawHash2 maps 91.8% [91.2–92.4] of reads
@@ -326,14 +327,28 @@ one estimator applied to both systems, 200 reads per cell, one seed.
 | RawHash2 | own, with merging | 0.00 | 0.913 | 0.055 |
 | RawHash2 | own, with merging | 0.44 | 0.911 | 0.092 |
 
+**At matched operating points.** RawHash2 can be put on the statistic of Table 2 without new runs.
+A threshold on its own mapping quality is raised until no control read is mapped, and the correct
+on-target mappings at or above it are counted; `scripts/rawhash_zero_fp.py` does this from the same
+output, after first reproducing every cell of Table 3 from it, and also applies a budget of 1% false
+positives. At CV 0.44 and zero false positives RawHash2 resolves 80.5% [76.2–84.6] of reads, 5.7-fold
+the detected arm's 14.1% [13.0–15.0]; the two ranges are far apart, so the difference in level is not
+an artefact of the operating point. Nor does dispersion collapse RawHash2 at either point. At zero
+false positives every replicate at every CV lies between 76.2% and 92.8%, and 4.3 points [0.4–6.6]
+are lost between CV 0 and CV 0.60, although the rate is not monotone in CV, since each threshold is
+set by the single highest-scoring control read. With the 1% budget, whose threshold is set by the
+sixth-highest, 3.1 points [2.6–3.6] are lost, close to the 2.9 at the default (Supplementary
+Section S4, Table S1).
+
 ### 3.3 The cost of minimizer sketching depends on dwell dispersion
 
 Table 5 and Figure 4 give the accuracy cost of sketching: the correct-mapping rate at w = 0 minus
 that at a larger window, in percentage points. Every window of one seed maps the same reads, so the
 cost is taken within each seed and then summarised over the three. At w = 10 it is 11.7 points
 [10.4–12.8] at CV 0 and 19.5 [18.2–21.0] at CV 0.60. The two ranges do not overlap, and the cost is
-larger at CV 0.60 than at CV 0 in every seed, by 7.8 points on average [6.4–8.8]. At w = 5 it goes
-from 4.7 [4.0–5.0] to 8.7 [7.2–10.4], again larger in every seed. Sketching at w = 10 also maps more
+larger at CV 0.60 than at CV 0 in every seed, by 7.8 points on average [6.4–8.8]; Supplementary
+Table S3 gives each seed. At w = 5 it goes from 4.7 [4.0–5.0] to 8.7 [7.2–10.4], again larger in
+every seed. Sketching at w = 10 also maps more
 control reads than w = 0 at every dispersion and in every seed (Table 3), so the sensitivity it gives
 up is not returned as specificity.
 
@@ -363,6 +378,15 @@ again at CV 0.60. The claim made is that the cost is larger at realistic and hig
 constant dwell, in every seed; it is not that the cost rises at every step. Three seeds give an
 observed range rather than a confidence interval, which is why each claim in this section is one
 that holds in every seed separately.
+
+**At matched operating points.** The claim of this section survives a change of operating point
+(Supplementary Table S2). With the 1% budget of Section 3.2 the w = 10 cost is 13.4 points
+[12.8–14.6] at CV 0 and 24.5 [21.4–27.0] at CV 0.60, and the w = 5 cost 3.8 [3.4–4.2] and
+9.6 [8.6–10.6]; at both windows the ranges are disjoint and the cost is larger at CV 0.60 in every
+seed. At zero false positives the w = 10 cost is 15.7 points [13.4–19.6] at CV 0 and 29.5
+[16.6–38.6] at CV 0.60, larger in every seed by 2.4 to 20.0 points, but the ranges overlap, and at
+w = 5 one seed shows no increase. A zero-false-positive threshold rests on one control read, and the
+cost at it varies more between seeds than at the default or with the 1% budget.
 
 **What is known and what is added.** RawHash2 ships with sketching disabled to obtain its highest
 accuracy, and reports that its minimizer mode maps with accuracy similar to the default except on the
@@ -449,8 +473,10 @@ CV 0, where there is no timing noise to explain it, which indicates a structural
 this pipeline's reference and query encodings. It lowers that arm's absolute TPR, and it is one
 reason we draw only comparisons of shape.
 
-*Operating points.* The two systems are measured at different operating points, zero false positives
-for the authors' pipeline and RawHash2's default for RawHash2.
+*Operating points.* RawHash2's main results are at its default operating point. Section 3.2 places it
+at zero false positives by a threshold on its own mapping quality, a score RawHash2 computes and the
+authors' pipeline does not, so its level there depends on how well that score separates control
+reads, and each such threshold is set by a single control read.
 
 *Scope of the reversal.* The fixed-width arm is a configuration of the authors' pipeline. No
 published tool's evaluation is claimed to be wrong.
