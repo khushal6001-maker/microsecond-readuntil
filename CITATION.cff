@@ -1,0 +1,28 @@
+# Read by GitHub ("Cite this repository") and by Zenodo when a release is archived.
+# Only the fields Zenodo documents as supported are used, so the archive cannot fail on an
+# unknown key. Keep `version` equal to the release tag without its leading "v".
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata from this file."
+type: software
+title: "microsecond-readuntil: a signal-space read-until data plane and dwell-time sensitivity analysis for nanopore adaptive sampling"
+version: "1.0.0"
+abstract: >-
+  Source code, result files and verification scripts for a signal-space read-until client
+  for Oxford Nanopore adaptive sampling. Includes the dwell-time sensitivity sweep, a patch
+  that adds lognormal dwell variation to the Icarust simulator, and a script that recomputes
+  every number in the accompanying manuscript from the committed results.
+license: MIT
+keywords:
+  - nanopore sequencing
+  - adaptive sampling
+  - raw signal mapping
+  - read until
+  - dwell time
+  - benchmarking
+authors:
+  - family-names: Singh
+    given-names: Khushal
+    affiliation: "National Institute of Technology Kurukshetra"
+  - family-names: Garg
+    given-names: Ritu
+    affiliation: "National Institute of Technology Kurukshetra"

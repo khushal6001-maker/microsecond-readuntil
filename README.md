@@ -365,3 +365,15 @@ numbers are quotable; run it here and they are not.
   cacheline. Recall and the vote threshold must be re-measured afterwards.
 - **Position the introduction against ReadBouncer**, not readfish alone; it is
   the nearest prior art and its claims need reading carefully.
+
+## Licence
+
+The source code, scripts and result files in this repository are released under the
+[MIT License](LICENSE). Three exceptions keep their own terms. `third_party/HdrHistogram_c`
+is CC0 1.0 and `third_party/minknow_api` is MPL-2.0. The patches in `third_party_patches/`
+modify Icarust and RawHash2 and are offered under the licence of the project each one
+modifies. The manuscripts and thesis drafts in `paper/`, `paper_dwell_journal/` and `docs/`
+are not covered by the MIT License; their copyright remains with the authors.
+
+To cite the software, use [CITATION.cff](CITATION.cff), which GitHub shows as "Cite this
+repository".
