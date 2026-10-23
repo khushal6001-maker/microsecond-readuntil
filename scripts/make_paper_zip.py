@@ -24,6 +24,7 @@ REPO = Path(__file__).resolve().parent.parent
 PAPER = REPO / "paper"
 NAME = "microsecond-readuntil-paper-latex"
 ALT = "acm-10-page"
+SPRINGER = "springer-lncs"
 
 # archive path -> repository path
 FILES = {
@@ -33,6 +34,8 @@ FILES = {
     "README.md": PAPER / "BUNDLE.md",
     ALT + "/manuscript-acmart.tex": PAPER / "manuscript.tex",
     ALT + "/manuscript-acmart.pdf": PAPER / "manuscript.pdf",
+    SPRINGER + "/manuscript-springer.tex": PAPER / "manuscript-springer.tex",
+    SPRINGER + "/manuscript-springer.pdf": PAPER / "manuscript-springer.pdf",
 }
 
 FIGURES = sorted((PAPER / "figures").glob("*.pdf")) + [PAPER / "figures" / "MANIFEST.md"]
@@ -58,8 +61,9 @@ def main() -> int:
         for path in FIGURES:
             z.write(path, NAME + "/figures/" + path.name)
             z.write(path, NAME + "/" + ALT + "/figures/" + path.name)
+            z.write(path, NAME + "/" + SPRINGER + "/figures/" + path.name)
 
-    n = len(FILES) + 2 * len(FIGURES)
+    n = len(FILES) + 3 * len(FIGURES)
     print("wrote " + str(out) + "  (" + str(n) + " files, "
           + str(round(out.stat().st_size / 1024)) + " KiB)")
     return 0

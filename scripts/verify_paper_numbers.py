@@ -37,7 +37,8 @@ REPO = Path(__file__).resolve().parent.parent
 RESULTS = REPO / "results"
 PAPERS = [REPO / "paper" / "manuscript.md",
           REPO / "paper" / "manuscript.tex",
-          REPO / "paper" / "manuscript-ieee.tex"]
+          REPO / "paper" / "manuscript-ieee.tex",
+          REPO / "paper" / "manuscript-springer.tex"]
 
 OK: list[str] = []
 BAD: list[tuple[str, str, str]] = []
