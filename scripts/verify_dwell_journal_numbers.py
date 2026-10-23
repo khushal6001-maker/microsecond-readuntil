@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import re
 import subprocess
 import sys
@@ -49,6 +50,7 @@ MD, TEX = _args.md.resolve(), _args.tex.resolve()
 
 PASS: list[tuple[str, str]] = []
 FAIL: list[tuple[str, str]] = []
+SKIP: list[tuple[str, str]] = []   # checks that cannot apply here; they do not affect the exit code
 
 
 def ok(what: str, where: str = "") -> None:
@@ -552,12 +554,40 @@ for fig in ("fig6-1-dwell-crossover", "fig6-2-rawhash-dwell", "fig6-3-minimizer-
     if f"figures/{fig}.png" not in md_raw or f"figures/{fig}.pdf" not in tex_raw:
         bad(f"figure {fig}", "not referenced by both manuscripts")
 
-try:
-    dirty = subprocess.run(["git", "status", "--porcelain", "--", "figures"], cwd=REPO,
-                           capture_output=True, text=True, check=True).stdout.strip()
-    (bad("thesis figures/ untouched", dirty) if dirty else ok("thesis figures/ untouched", "git status"))
-except Exception as exc:
-    bad("thesis figures/ untouched", f"git failed: {exc}")
+def not_this_checkout() -> str | None:
+    """None if REPO is this project's own git checkout, otherwise why it is not.
+
+    A release archive, which Zenodo preserves, has no .git, so asking git whether the thesis
+    figures are untouched has no answer there. Skipping is right only when the question cannot
+    be asked: inside a real checkout the check runs, and a git error there still fails.
+    """
+    try:
+        top = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=REPO,
+                             capture_output=True, text=True)
+    except FileNotFoundError:
+        return "git is not installed"
+    if top.returncode != 0:
+        return "not a git checkout (a release archive, for instance)"
+    same = os.path.normcase(str(Path(top.stdout.strip()).resolve())) == os.path.normcase(str(REPO.resolve()))
+    if not same:
+        return "inside another repository's work tree"
+    tracked = subprocess.run(["git", "ls-files", "--error-unmatch", "scripts/verify_dwell_journal_numbers.py"],
+                             cwd=REPO, capture_output=True, text=True)
+    if tracked.returncode != 0:
+        return "a git work tree that does not track this project"
+    return None
+
+
+why_not = not_this_checkout()
+if why_not:
+    SKIP.append(("thesis figures/ untouched", why_not))
+else:
+    try:
+        dirty = subprocess.run(["git", "status", "--porcelain", "--", "figures"], cwd=REPO,
+                               capture_output=True, text=True, check=True).stdout.strip()
+        (bad("thesis figures/ untouched", dirty) if dirty else ok("thesis figures/ untouched", "git status"))
+    except Exception as exc:
+        bad("thesis figures/ untouched", f"git failed: {exc}")
 
 bib = text_of(PAPER / "refs.bib")
 keys = set(re.findall(r"@\w+\{([^,]+),", bib))
@@ -582,6 +612,10 @@ if FAIL:
     for what, why in FAIL:
         print(f"  FAIL {what}")
         print(f"       {why}")
+if SKIP:
+    print(f"\nSKIPPED  ({len(SKIP)})   not applicable here; does not affect the exit code")
+    for what, why in SKIP:
+        print(f"  skip {what}: {why}")
 
 print("\n" + "=" * 78)
 print("OUTSTANDING: values in §3.5 that no captured run backs")
@@ -590,6 +624,6 @@ for key, why, needs in OUTSTANDING:
     print(f"\n  {key:<7} {why}")
     print(f"          needs: {needs}")
 
-print(f"\nsummary: {len(PASS)} agree, {len(FAIL)} disagree, {len(OUTSTANDING)} outstanding, "
-      f"{len(BACKED)} distinct backed values")
+print(f"\nsummary: {len(PASS)} agree, {len(FAIL)} disagree, {len(SKIP)} skipped, "
+      f"{len(OUTSTANDING)} outstanding, {len(BACKED)} distinct backed values")
 sys.exit(1 if FAIL else 0)
