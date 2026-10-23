@@ -331,6 +331,16 @@ repositories rather than on execution.
 
 
 def main() -> int:
+    # paper/manuscript-ieee.tex is now hand-maintained: the author edited it directly, and
+    # regenerating would silently replace that work with a derivation of the acmart source.
+    # Refuse unless the file on disk is one this script wrote.
+    if DST.exists() and "HAND-MAINTAINED" in DST.read_text(encoding="utf-8")[:2000]:
+        print(str(DST.relative_to(REPO)) + " is hand-maintained; refusing to overwrite it.",
+              file=sys.stderr)
+        print("Edit it directly, or delete it first if you really want it regenerated.",
+              file=sys.stderr)
+        return 1
+
     src = SRC.read_text(encoding="utf-8")
 
     m_abs = re.search(r"\\begin\{abstract\}(.*?)\\end\{abstract\}", src, re.S)

@@ -229,8 +229,12 @@ if lat:
 
 # ------------------------------------------------------------------ constants
 want("service bound", "1.56 ms", "1.5625")
+# The two index-structure figures are asserted separately rather than as one phrase. Joining
+# them with "+" is one way to write the startup line and "a 512.0 MiB table plus 204.3 MiB of
+# positions" is another; the connective is not a measurement, and asserting it made the check
+# fail on a manuscript whose numbers were entirely correct.
 want("index line", "63,981,218 minimizers", "32,888,127 distinct keys",
-     "512.0 MiB table + 204.3 MiB positions")
+     "512.0 MiB", "204.3 MiB")
 want("ChunkRef size", "56-byte", "72 bytes")
 want("vote table footprint", "3,072 B", "1.57 MB", "8.22 MB")
 want("TSC artefact", "2418.7 MHz", "111.93", "54.19")

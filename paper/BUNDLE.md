@@ -42,10 +42,13 @@ To build the 10-page version instead, set the main document to
 
 ## Which format to submit
 
-**`manuscript-ieee.tex` is the 8-page submission version.** It is generated from
-`manuscript-acmart.tex` by `scripts/make_ieee_manuscript.py` in the repository, which also
-applies the cuts that take it from 10 pages to 8. Edit the prose in the ACM file and
-regenerate, or edit the IEEE file directly and stop regenerating it — but not both.
+**`manuscript-ieee.tex` is the 8-page submission version, and it is hand-maintained.** Edit it
+directly. It began as output from `scripts/make_ieee_manuscript.py`, derived from the ACM
+file, but its prose has since been rewritten by the author; that script now refuses to
+overwrite it.
+
+The two `.tex` files therefore differ in wording as well as in format. They do not differ in
+any measurement — `verify_paper_numbers.py` holds both to the same assertions.
 
 Formatting differences: document class, title block, reference style, table sizing, and two
 geometric details — Figure 1's node spacing drops by 2 mm, because the ACM geometry measures

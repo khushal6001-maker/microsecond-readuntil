@@ -7,7 +7,7 @@ the same discipline.
 |---|---|
 | `manuscript.md` | the paper in Markdown, readable without a TeX installation |
 | `manuscript.tex` | the same paper for `acmart` (sigconf, `nonacm`) |
-| `manuscript-ieee.tex` | the paper cut to 8 pages for `IEEEtran` (`conference`), generated from the above |
+| `manuscript-ieee.tex` | the submission manuscript: 8 pages, `IEEEtran` (`conference`), hand-maintained |
 | `manuscript.pdf` (10 pages), `manuscript-ieee.pdf` (8 pages) | built output |
 | `figures/` | the paper's figures, generated without figure-level titles |
 | `BUNDLE.md` | the README that ships inside the distributable source archive |
@@ -26,15 +26,25 @@ Two `pdflatex` passes suffice if `latexmk` is unavailable; the bibliography is a
 `thebibliography` environment, so no BibTeX run is needed. Built with TeX Live 2026; both
 `acmart` and `IEEEtran` are in the standard distribution.
 
-## The IEEE version
+## The IEEE version is now hand-maintained
 
-```bash
-python scripts/make_ieee_manuscript.py
-```
+**`manuscript-ieee.tex` is the author's manuscript and is edited directly.** It began as the
+generator's output, but the author has since rewritten its prose, and regenerating would
+replace that work with a derivation of the acmart source.
 
-`manuscript-ieee.tex` is *generated* from `manuscript.tex`, not maintained beside it, so the
-two cannot drift in prose or in numbers. The generator rewrites the preamble, the title block
-and the bibliography wholesale, and makes four kinds of formatting change to the body:
+`scripts/make_ieee_manuscript.py` therefore refuses to run while the file on disk carries the
+`HAND-MAINTAINED` marker in its header, and exits non-zero saying so. Delete the file first if
+you genuinely want it regenerated.
+
+The practical consequence is that **the two manuscripts have diverged in prose** and will stay
+diverged. They have not diverged in numbers, and cannot: `verify_paper_numbers.py` holds both
+to the same assertions, which is now the only thing keeping them in step.
+
+### What the generator did, while it was in use
+
+The historical behaviour is recorded here because the current file still bears its marks. It
+rewrote the preamble, the title block and the bibliography wholesale, and made four kinds of
+formatting change to the body:
 `\S\ref` becomes `Section~\ref`, two `\paragraph` run-in headings become the `\textbf` form
 used elsewhere in the paper, table bodies drop from `\small` to `\footnotesize` or
 `\scriptsize` for the narrower column, and Figure 1's node spacing tightens by 2 mm. That
@@ -50,14 +60,8 @@ is why four of them, the four that plot a table already present or draw a displa
 are the first thing to go. The other cuts are the scaffolding around §VIII and §IX, and an
 abstract rewritten from 389 words to IEEE's 250 in a single paragraph.
 
-**No measurement is cut.** `verify_paper_numbers.py` holds the IEEE file to the same 144
-assertions as the other two, so a cut that dropped one fails the gate. The abstract gets a
-second guard, because it is rewritten rather than edited: the generator compares the numeric
-tokens of the short abstract against the full one and refuses to write a file that introduces
-a numeral the full-length abstract did not have.
-
-Edit the prose in `manuscript.tex` and regenerate. The generator fails loudly rather than
-silently skipping if any of the structures it expects has moved.
+**No measurement was cut.** `verify_paper_numbers.py` holds the IEEE file to the same 144
+assertions as the other two, so a cut that dropped one fails the gate.
 
 ## A distributable archive
 
