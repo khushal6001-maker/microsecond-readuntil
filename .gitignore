@@ -33,3 +33,13 @@ paper/*.fdb_latexmk
 paper/*.synctex.gz
 paper/*.bbl
 paper/*.blg
+
+# The same for the dwell-sensitivity journal manuscript; its PDF is committed, the rest is not.
+paper_dwell_journal/*.aux
+paper_dwell_journal/*.log
+paper_dwell_journal/*.out
+paper_dwell_journal/*.fls
+paper_dwell_journal/*.fdb_latexmk
+paper_dwell_journal/*.synctex.gz
+paper_dwell_journal/*.bbl
+paper_dwell_journal/*.blg
