@@ -24,7 +24,7 @@ the detected arm 9.6%† against stock Icarust, and 0.5%† and 9.6%† against 
 CV 0.35. Taken at face value, stock Icarust reports the fixed-width arm as 4.5-fold† better, and the
 patched simulator reverses the order, which is the reversal of Section 3.1 observed on the live
 interface. These are accept rates on the live loop and are not comparable with the offline
-true-positive rates (TPR) of Table 1. Re-running stock and patched Icarust against the client would
+true-positive rates (TPR) of Table 2. Re-running stock and patched Icarust against the client would
 settle them.
 
 ## S2 Calibration target for event detection
@@ -46,7 +46,7 @@ against its event count.
 
 A detector threshold calibrated against signal from a generator written for this project, applied
 unchanged to Squigulator signal, gave 0.6%† TPR at CV 0, where the Squigulator-calibrated detector
-gives 18.4% [17.0–19.8] (Table 1), a 30.7-fold† difference. The two generators differ in their
+gives 18.4% [17.0–19.8] (Table 2), a 30.7-fold† difference. The two generators differ in their
 amplitude-noise models, and the detector threshold is a t-statistic whose operating point depends
 on that model. Whatever the magnitude, a result obtained with event detection is interpretable only
 together with a statement of how the detector was calibrated and on what signal.

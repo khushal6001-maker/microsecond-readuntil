@@ -20,6 +20,9 @@
 \usepackage{amsmath}
 \usepackage{graphicx}
 \usepackage{booktabs}
+\usepackage{array}
+% Ragged-right paragraph columns: justified text in a narrow column stretches badly.
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
 \usepackage[font=small,labelfont=bf,labelsep=period]{caption}
 \usepackage[round,authoryear]{natbib}
 \usepackage{authblk}
@@ -106,7 +109,8 @@ while the molecule is still in the pore, as in adaptive sampling
 Every pipeline in this family begins by dividing the trace into events, each intended to
 correspond to one k-mer. The order of stages matters. A key is built from consecutive events, so a
 query boundary that does not correspond to one implied by the reference changes the key, and no
-later stage can restore it. Event duration is set by the motor protein, whose stepping is
+later stage can restore it (Figure~\ref{fig:schematic}A, B). Event duration is set by the motor
+protein, whose stepping is
 stochastic: the number of samples per k-mer varies from one k-mer to the next, and its
 distribution is right-skewed. On real signal the variation is large enough that signal aligners
 model it explicitly: Uncalled4 attributes frequent stays, consecutive events that represent the
@@ -114,6 +118,20 @@ same k-mer, to variable sequencing speed \citep{kovaka2025uncalled4}, and SegPor
 protein's dynamics into segmentation itself \citep{cheng2025segpore}. The accuracy of a
 segmentation-based mapper is therefore a function of dwell-time dispersion. What is not known, for any published pipeline or parameter choice, is
 how strong that dependence is.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\linewidth]{figures/fig1-dwell-schematic.pdf}
+\caption{How dwell dispersion reaches the keys, drawn as a schematic: the current levels,
+durations and key ranks are illustrative, not data. (A)~At constant dwell every fixed-width window
+covers one k-mer, so its mean sits on the current level, as the detected events do. (B)~With
+durations drawn lognormal at CV 0.44, fixed-width windows straddle level changes (shaded) and their
+means fall between levels, while detected events still follow the level changes. (C)~The candidate
+mechanism of Section~\ref{sec:minimizer}, simplified to one minimizer window of $w = 4$ keys: a
+displaced boundary changes key K2 in the query, so the query keeps K4 as its minimizer; K4 is
+identical on both sides but was not the reference's choice, and the two share no seed.}
+\label{fig:schematic}
+\end{figure}
 
 Evaluation practice does not measure it. Mappers are evaluated chiefly on real datasets, and
 RawBench \citep{eris2025rawbench}, which decomposes raw-signal analysis into reference encoding,
@@ -231,7 +249,29 @@ operation. The detector threshold was calibrated on Squigulator signal
 The reported statistic is the true-positive rate (TPR) at the lowest score threshold that admits
 no control read, that is, at zero false positives. This threshold is set by the single
 highest-scoring control read, so it has high variance when the TPR is low; for that reason we
-report the range over seeds alongside the mean.
+report the range over seeds alongside the mean. Table~\ref{tab:configs} sets both arms beside the
+comparison mapper of Section~\ref{sec:rawhash}.
+
+\begin{table}[t]
+\centering
+\caption{The three systems compared. Both arms are configurations of the authors' pipeline;
+RawHash2 v2.1 runs at its own defaults except for the minimizer window, $w = 0$ being its default.
+Chunks are 2000 samples, 0.4~s at 5~kHz. The detector uses windows of 4 samples and a minimum event
+length of 4 samples; RawHash2 merges events whose levels differ by less than its
+\texttt{-{}-sig-diff} threshold of 0.35.}
+\label{tab:configs}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{L{2.1cm}L{3.3cm}L{1.6cm}L{1.6cm}L{3.0cm}L{1.8cm}}
+\toprule
+System & Segmentation & Key (bits $\times$ events) & Minimizer window $w$ & Reported statistic & Signal used \\
+\midrule
+Fixed-width arm & constant-width windows & $3 \times 14$ & 10 & TPR at zero false positives & first 10 chunks \\
+Detected arm & two-window t-test, threshold 3.0 & $4 \times 12$ & 1 & TPR at zero false positives & first 10 chunks \\
+RawHash2 & its own detection, with event merging & $4 \times 8$ & 0, 5 and 10 & correct mapping at its default operating point & whole read \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \subsection{Comparison mapper}\label{sec:rawhash}
 
@@ -436,8 +476,8 @@ Dwell CV & $w = 5$ & $w = 10$ \\
 \centering
 \includegraphics[width=0.82\linewidth]{figures/figj-3-minimizer-penalty-3seeds.pdf}
 \caption{Accuracy cost of minimizer sketching in RawHash2 against dwell-time CV, for windows 5 and
-10 relative to window 0, taken within each seed. Points are means over three seeds and bars span
-the observed range. The dotted line marks Squigulator's default dispersion.}
+10 relative to window 0, taken within each seed. Thin lines are the individual seeds; thick lines
+with markers are their mean. The dotted line marks Squigulator's default dispersion.}
 \label{fig:penalty}
 \end{figure}
 
@@ -460,7 +500,7 @@ cost at another, and a comparison on constant-dwell signal understates it.
 window of consecutive keys \citep{roberts2004minimizers}. A displaced event boundary changes the
 quantised values of the keys that overlap it and can therefore change which key in a window
 attains the minimum, so that reference and query select different keys even where both would
-match individually. This requires boundaries to move. At constant dwell the cost reflects only the
+match individually (Figure~\ref{fig:schematic}C). This requires boundaries to move. At constant dwell the cost reflects only the
 seeds that sketching discards; the increment above it is consistent with the mechanism, which
 would be demonstrated by recording which keys each side selects, and that was not done.
 

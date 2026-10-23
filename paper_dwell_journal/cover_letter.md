@@ -68,16 +68,16 @@ manuscript.
    - the same reference (a 20 Mb prefix of chromosome 20), pore model and Squigulator settings;
    - the three-seed RawHash2 result at its default setting (91.8% of reads correctly mapped),
      which appears here as one cell of the dwell sweep (CV 0.44, w = 0) and as context;
-   - the per-event agreement and indel fractions in Table 3, which the companion manuscript
+   - the per-event agreement and indel fractions in Table 4, which the companion manuscript
      reports as part of its own analysis and which serve here only as supporting evidence for
      the bounding result of Section 3.2;
    - a one-sentence mention of the Icarust patch, which this manuscript describes in full in
      Section 3.4.
 
-   The dwell sweep itself (Tables 1, 2 and 4 and Figures 1 to 3), the ranking reversal, the
+   The dwell sweep itself (Tables 2, 3 and 5 and Figures 2 to 4), the ranking reversal, the
    minimizer result, the compatibility conditions of Section 2.3 and the observations in the
    Supplementary Information do not appear in the companion manuscript. If the companion manuscript is published or
-   posted while this one is under review, we will cite it and reduce Table 3 to a citation.
+   posted while this one is under review, we will cite it and reduce Table 4 to a citation.
 
 3. *Public draft.* The code, results and a draft of this manuscript are in a public GitHub
    repository, https://github.com/khushal6001-maker/microsecond-readuntil. The software given

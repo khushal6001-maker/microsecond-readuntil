@@ -55,7 +55,7 @@ in adaptive sampling (Kovaka et al., 2021; Payne et al., 2021).
 Every pipeline in this family begins by dividing the trace into events, each intended to
 correspond to one k-mer. The order of stages matters. A key is built from consecutive events, so
 a query boundary that does not correspond to one implied by the reference changes the key, and no
-later stage can restore it. Event duration is set by the motor protein, whose stepping is
+later stage can restore it (Figure 1A, B). Event duration is set by the motor protein, whose stepping is
 stochastic: the number of samples per k-mer varies from one k-mer to the next, and its
 distribution is right-skewed. On real signal the variation is large enough that signal aligners
 model it explicitly: Uncalled4 attributes frequent stays, consecutive events that represent the
@@ -63,6 +63,17 @@ same k-mer, to variable sequencing speed (Kovaka et al., 2025), and SegPore buil
 protein's dynamics into segmentation itself (Cheng et al., 2025). The accuracy of a
 segmentation-based mapper is therefore a function of dwell-time dispersion. What is not known, for any published pipeline or parameter choice, is
 how strong that dependence is.
+
+![Figure 1](figures/fig1-dwell-schematic.png)
+
+**Figure 1.** How dwell dispersion reaches the keys, drawn as a schematic: the current levels,
+durations and key ranks are illustrative, not data. (A) At constant dwell every fixed-width window
+covers one k-mer, so its mean sits on the current level, as the detected events do. (B) With
+durations drawn lognormal at CV 0.44, fixed-width windows straddle level changes (shaded) and their
+means fall between levels, while detected events still follow the level changes. (C) The candidate
+mechanism of Section 3.3, simplified to one minimizer window of w = 4 keys: a displaced boundary
+changes key K2 in the query, so the query keeps K4 as its minimizer; K4 is identical on both sides
+but was not the reference's choice, and the two share no seed.
 
 Evaluation practice does not measure it. Mappers are evaluated chiefly on real datasets, and RawBench
 (Eris et al., 2025), which decomposes raw-signal analysis into reference encoding, signal encoding
@@ -171,7 +182,19 @@ threshold was calibrated on Squigulator signal (Supplementary Section S2).
 The reported statistic is the true-positive rate (TPR) at the lowest score threshold that admits no
 control read, that is, at zero false positives. This threshold is set by the single highest-scoring
 control read, so it has high variance when the TPR is low; for that reason we report the range over
-seeds alongside the mean.
+seeds alongside the mean. Table 1 sets both arms beside the comparison mapper of Section 2.5.
+
+**Table 1.** The three systems compared. Both arms are configurations of the authors' pipeline;
+RawHash2 v2.1 runs at its own defaults except for the minimizer window, w = 0 being its default.
+Chunks are 2000 samples, 0.4 s at 5 kHz. The detector uses windows of 4 samples and a minimum event
+length of 4 samples; RawHash2 merges events whose levels differ by less than its `--sig-diff`
+threshold of 0.35.
+
+| System | Segmentation | Key (bits × events) | Minimizer window w | Reported statistic | Signal used |
+|---|---|---|---|---|---|
+| Fixed-width arm | constant-width windows | 3 × 14 | 10 | TPR at zero false positives | first 10 chunks |
+| Detected arm | two-window t-test, threshold 3.0 | 4 × 12 | 1 | TPR at zero false positives | first 10 chunks |
+| RawHash2 | its own detection, with event merging | 4 × 8 | 0, 5 and 10 | correct mapping at its default operating point | whole read |
 
 ### 2.5 Comparison mapper
 
@@ -184,7 +207,7 @@ strand, and the false-mapping rate is the percentage of control reads that recei
 Two differences from Section 2.4 limit what may be compared. RawHash2's default operating point
 admits false mappings, so its correct-mapping rate is not level-comparable with a zero-false-positive
 TPR; the comparison is of shape. RawHash2 also receives whole reads rather than the first 10 chunks,
-which favours it. The dwell × window grid was run for the same three seeds as Table 1, with 500 reads
+which favours it. The dwell × window grid was run for the same three seeds as Table 2, with 500 reads
 per set, by `scripts/rerun_rawhash_grid.sh`; seed 42 reproduces an earlier single-seed run of the
 grid exactly, in every cell. At its default and at CV 0.44, RawHash2 maps 91.8% [91.2–92.4] of reads
 correctly and 9.1% [8.4–10.6] of control reads.
@@ -199,7 +222,7 @@ read side comes from its own `--out-quantize` option; the reference side comes f
 emits no symbols. The two sequences were aligned, agreement was taken as matches over aligned pairs under the maximising
 alignment, and the indel fraction as gap columns over all alignment columns. Both of this pipeline's
 segmentations were measured with keys of 12 events at 4 bits per event, so the fixed-width row
-isolates the segmentation change from the 3-bit key of the fixed-width arm in Table 1, and scaling
+isolates the segmentation change from the 3-bit key of the fixed-width arm in Table 2, and scaling
 was estimated from the whole read. The measurement covers 200 reads per cell, at CV 0 and CV 0.44
 only, with one seed.
 
@@ -219,12 +242,12 @@ Figures are drawn by `scripts/generate_thesis_figures.py` from the same files an
 
 ### 3.1 Constant dwell reverses the ranking of two segmentation configurations
 
-Table 1 and Figure 1 give the TPR of both arms across the sweep. The fixed-width arm falls from 49.7%
+Table 2 and Figure 2 give the TPR of both arms across the sweep. The fixed-width arm falls from 49.7%
 at CV 0 to 1.3% at CV 0.44, a 38.2-fold reduction, and is already reduced 8.4-fold at CV 0.10, the
 smallest non-zero dispersion tested. The detected arm remains between 14.1% and 19.3% up to CV 0.44
 and declines to 7.5% at CV 0.60.
 
-**Table 1.** True-positive rate (%) at zero false positives, mean [range] over three seeds, 500
+**Table 2.** True-positive rate (%) at zero false positives, mean [range] over three seeds, 500
 on-target and 500 control reads per cell.
 
 | Dwell CV | Fixed-width (3 × 14, w = 10) | Detected (4 × 12, w = 1) |
@@ -236,9 +259,9 @@ on-target and 500 control reads per cell.
 | 0.44 | 1.3 [1.0–1.6] | 14.1 [13.0–15.0] |
 | 0.60 | 1.7 [0.4–3.4] | 7.5 [7.2–8.0] |
 
-![Figure 1](figures/fig6-1-dwell-crossover.png)
+![Figure 2](figures/fig6-1-dwell-crossover.png)
 
-**Figure 1.** True-positive rate at zero false positives against dwell-time CV for the two
+**Figure 2.** True-positive rate at zero false positives against dwell-time CV for the two
 segmentation configurations. Bars span the observed range over three seeds. The shaded band marks
 the interval in which the two curves cross; the dotted line marks Squigulator's default dispersion.
 
@@ -257,15 +280,15 @@ it does not extend to the method class.
 ### 3.2 A published mapper does not reverse
 
 At its default, w = 0, RawHash2 loses 2.9 points [2.8–3.0] of correct mapping between CV 0 and
-CV 0.60, with no crossover and no collapse (Table 2, Figure 2). The sensitivity found in Section 3.1
+CV 0.60, with no crossover and no collapse (Table 3, Figure 3). The sensitivity found in Section 3.1
 is therefore a property of fixed-width segmentation and not of quantised-event matching, and a
 developer evaluating RawHash2 at constant dwell would reach the same conclusion as one evaluating it
 at realistic dispersion. With sketching enabled the decline is steeper, 7.0 points [5.2–8.4] at
 w = 5 and 10.7 [9.4–11.6] at w = 10, which is the subject of Section 3.3.
 
-**Table 2.** RawHash2 across the dwell sweep: percentage of on-target reads correctly mapped and
+**Table 3.** RawHash2 across the dwell sweep: percentage of on-target reads correctly mapped and
 percentage of control reads mapped at all, by minimizer window w. Mean over three seeds, 500 reads
-per set; Figure 2 shows the range across seeds, and `results/rawhash-grid-seeds.csv` every seed.
+per set; Figure 3 shows the range across seeds, and `results/rawhash-grid-seeds.csv` every seed.
 
 | Rate | w | 0.00 | 0.10 | 0.20 | 0.30 | 0.44 | 0.60 |
 |---|---|---|---|---|---|---|---|
@@ -276,14 +299,14 @@ per set; Figure 2 shows the range across seeds, and `results/rawhash-grid-seeds.
 | False-mapped | 5 | 9.8 | 10.7 | 8.5 | 9.5 | 9.9 | 10.7 |
 | False-mapped | 10 | 14.4 | 12.9 | 13.9 | 13.7 | 14.3 | 15.8 |
 
-![Figure 2](figures/figj-2-rawhash-dwell-3seeds.png)
+![Figure 3](figures/figj-2-rawhash-dwell-3seeds.png)
 
-**Figure 2.** RawHash2 under the dwell sweep. Solid, dashed and dash-dotted lines: percentage of
+**Figure 3.** RawHash2 under the dwell sweep. Solid, dashed and dash-dotted lines: percentage of
 on-target reads correctly mapped, by minimizer window. Dotted lines: percentage of control reads
 mapped. Points are means over three seeds and bars span the observed range. The default operating
-point is not zero-false-positive, so these rates are not level-comparable with Figure 1.
+point is not zero-false-positive, so these rates are not level-comparable with Figure 2.
 
-The response to dispersion is visible in the encoding before any seeding or chaining (Table 3).
+The response to dispersion is visible in the encoding before any seeding or chaining (Table 4).
 RawHash2's per-event agreement is 0.913 at CV 0 and 0.911 at CV 0.44, and that of the detected arm
 0.797 and 0.783. The fixed-width segmentation's agreement falls from 0.793 to 0.648, and its indel
 fraction rises 2.8-fold, from 0.073 to 0.208. RawHash2's indel fraction also rises, from 0.055 to
@@ -291,7 +314,7 @@ fraction rises 2.8-fold, from 0.073 to 0.208. RawHash2's indel fraction also ris
 have dispersion-invariant agreement, and the one that segments by time does not. These are two
 dwell levels, 200 reads and one seed (Section 5).
 
-**Table 3.** Per-event agreement and indel fraction between reference and query symbol sequences,
+**Table 4.** Per-event agreement and indel fraction between reference and query symbol sequences,
 one estimator applied to both systems, 200 reads per cell, one seed.
 
 | System | Segmentation | Dwell CV | Agreement | Indel fraction |
@@ -305,16 +328,16 @@ one estimator applied to both systems, 200 reads per cell, one seed.
 
 ### 3.3 The cost of minimizer sketching depends on dwell dispersion
 
-Table 4 and Figure 3 give the accuracy cost of sketching: the correct-mapping rate at w = 0 minus
+Table 5 and Figure 4 give the accuracy cost of sketching: the correct-mapping rate at w = 0 minus
 that at a larger window, in percentage points. Every window of one seed maps the same reads, so the
 cost is taken within each seed and then summarised over the three. At w = 10 it is 11.7 points
 [10.4–12.8] at CV 0 and 19.5 [18.2–21.0] at CV 0.60. The two ranges do not overlap, and the cost is
 larger at CV 0.60 than at CV 0 in every seed, by 7.8 points on average [6.4–8.8]. At w = 5 it goes
 from 4.7 [4.0–5.0] to 8.7 [7.2–10.4], again larger in every seed. Sketching at w = 10 also maps more
-control reads than w = 0 at every dispersion and in every seed (Table 2), so the sensitivity it gives
+control reads than w = 0 at every dispersion and in every seed (Table 3), so the sensitivity it gives
 up is not returned as specificity.
 
-**Table 4.** Accuracy cost of minimizer sketching in RawHash2: correct-mapping rate at w = 0 minus
+**Table 5.** Accuracy cost of minimizer sketching in RawHash2: correct-mapping rate at w = 0 minus
 that at the stated window, in percentage points, taken within each seed; mean [range] over three
 seeds.
 
@@ -327,11 +350,11 @@ seeds.
 | 0.44 | 6.4 [5.4–7.2] | 15.4 [14.6–16.4] |
 | 0.60 | 8.7 [7.2–10.4] | 19.5 [18.2–21.0] |
 
-![Figure 3](figures/figj-3-minimizer-penalty-3seeds.png)
+![Figure 4](figures/figj-3-minimizer-penalty-3seeds.png)
 
-**Figure 3.** Accuracy cost of minimizer sketching in RawHash2 against dwell-time CV, for windows 5
-and 10 relative to window 0, taken within each seed. Points are means over three seeds and bars span
-the observed range. The dotted line marks Squigulator's default dispersion.
+**Figure 4.** Accuracy cost of minimizer sketching in RawHash2 against dwell-time CV, for windows 5
+and 10 relative to window 0, taken within each seed. Thin lines are the individual seeds; thick
+lines with markers are their mean. The dotted line marks Squigulator's default dispersion.
 
 **The shape, and the limits of the claim.** Up to CV 0.30 the mean w = 10 cost stays between 11.2
 and 12.3 points, and each of those cells' ranges overlaps the CV 0 range. At CV 0.44, the
@@ -351,7 +374,7 @@ constant-dwell signal understates it.
 **A candidate mechanism, not isolated.** A minimizer is the key of lowest rank within a window of
 consecutive keys (Roberts et al., 2004). A displaced event boundary changes the quantised values of
 the keys that overlap it and can therefore change which key in a window attains the minimum, so that
-reference and query select different keys even where both would match individually. This requires
+reference and query select different keys even where both would match individually (Figure 1C). This requires
 boundaries to move. At constant dwell the cost reflects only the seeds that sketching discards; the
 increment above it is consistent with the mechanism, which would be demonstrated by recording which
 keys each side selects, and that was not done.

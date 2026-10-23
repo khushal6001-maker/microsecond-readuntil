@@ -378,7 +378,8 @@ needles(RESULTS / "rawhash-seeds.csv",
          "same three seeds as decision-rules.csv"],
         "§2.5 RawHash2 parameters and scoring")
 needles(RESULTS / "rawhash-seeds-raw" / "on_s42.log",
-        ["Version: 2.1", "pore kmer size: 9"], "§2.5 RawHash2 version and k")
+        ["Version: 2.1", "pore kmer size: 9", "concatanated events: 8; quantization bits: 4"],
+        "§2.5 RawHash2 version, k and key geometry (Table 1)")
 needles(RESULTS / "rawhash-grid-seeds.csv",
         ["scripts/rerun_rawhash_grid.sh", "-k 9 -q 4 -e 8 --sig-diff 0.35", "within 500 bases",
          "matching strand", "Seed 42 re-runs rawhash-dwell-sweep.csv"],
@@ -517,8 +518,12 @@ def tex_segments(raw: str) -> list[tuple[str, bool]]:
 
 def tex_scan(s: str) -> str:
     for pat in (r"\\(?:label|ref|citep?|citet|url|includegraphics(?:\[[^\]]*\])?)\{[^}]*\}",
-                r"\\begin\{tabular\}\{[^}]*\}", r"\\multicolumn\{\d+\}", r"\\cmidrule\([^)]*\)\{[^}]*\}",
-                r"\\rule\{[^}]*\}\{[^}]*\}", r"[\d.]+\\(?:line|text|column)width"):
+                # A column spec may nest one level of braces, as in {p{2.0cm}p{3.2cm}}.
+                r"\\begin\{tabular\}\{(?:[^{}]|\{[^{}]*\})*\}",
+                r"\\multicolumn\{\d+\}", r"\\cmidrule\([^)]*\)\{[^}]*\}",
+                r"\\rule\{[^}]*\}\{[^}]*\}", r"[\d.]+\\(?:line|text|column)width",
+                # A number glued to a TeX length unit is layout, never data ("12.8 points" has a space).
+                r"(?<![\w.])\d+(?:\.\d+)?(?:cm|mm|pt|em|ex|in|bp)\b"):
         s = re.sub(pat, "", s)
     # The manuscript cites its own sections with \ref, but the supplement can only name the
     # manuscript's sections in plain text ("Section~3.1"), so those are stripped here as in md.
@@ -542,7 +547,17 @@ NORM = {name: " ".join(full for _, _, full in segs) for name, segs in ALL_FILES.
 PAIRS = {"main": ("manuscript.md", "manuscript.tex"), "supp": ("supplementary.md", "supplementary.tex")}
 
 # ---- tables, cell by cell from data
-for label, table in (("Table 1", TABLE1), ("Table 2", TABLE2), ("Table 3", TABLE3), ("Table 4", TABLE4)):
+# Table 1 lists configurations, not results: every number in it is a method parameter whose
+# provenance is checked above, so its rows are fixed here and required verbatim in both files.
+CONFIG = [
+    ["Fixed-width arm", "constant-width windows", "3 × 14", "10", "TPR at zero false positives", "first 10 chunks"],
+    ["Detected arm", "two-window t-test, threshold 3.0", "4 × 12", "1", "TPR at zero false positives",
+     "first 10 chunks"],
+    ["RawHash2", "its own detection, with event merging", "4 × 8", "0, 5 and 10",
+     "correct mapping at its default operating point", "whole read"],
+]
+for label, table in (("Table 1", CONFIG), ("Table 2", TABLE1), ("Table 3", TABLE2), ("Table 4", TABLE3),
+                     ("Table 5", TABLE4)):
     for row in table:
         md_row = "| " + " | ".join(row) + " |"
         tex_row = " & ".join(row) + r" \\"
@@ -563,13 +578,15 @@ ANCHORS = [
     "the mean w = 10 cost stays between 11.2 and 12.3 points",
     # §2.7: the one sentence that stands in the main text for the Supplementary Information.
     "they are reported, marked, in the Supplementary Information and are used in no claim here",
+    # Figure 1 is a schematic, and its caption must say so.
+    "the current levels, durations and key ranks are illustrative, not data",
 ]
 for a in ANCHORS:
     for name in FILES:
         if a in NORM[name]:
-            ok(f"Abstract anchor in {name}: {a[:40]}…")
+            ok(f"anchor in {name}: {a[:40]}…")
         else:
-            bad(f"Abstract anchor in {name}", f"missing '{a}'")
+            bad(f"anchor in {name}", f"missing '{a}'")
 
 # ---- every replicated 'mean [range]' appears whole, in both files
 for pat, why in MR_TEXT:
@@ -645,18 +662,24 @@ for k in sorted(OUT_KEYS):
             bad(f"outstanding value {k} absent from {name}", "drop it from OUTSTANDING or restore it")
 
 # ---------------------------------------------------------------- figures and references
+# Each figure and what it is drawn from: a results file, or for the schematic its own script.
+SCHEMATIC = REPO / "scripts" / "draw_dwell_schematic.py"
 PAPER_FIGURES = {
-    "fig6-1-dwell-crossover": "dwell-sweep-ours.csv",
-    "figj-2-rawhash-dwell-3seeds": "rawhash-grid-seeds.csv",
-    "figj-3-minimizer-penalty-3seeds": "rawhash-grid-seeds.csv",
+    "fig1-dwell-schematic": SCHEMATIC,
+    "fig6-1-dwell-crossover": RESULTS / "dwell-sweep-ours.csv",
+    "figj-2-rawhash-dwell-3seeds": RESULTS / "rawhash-grid-seeds.csv",
+    "figj-3-minimizer-penalty-3seeds": RESULTS / "rawhash-grid-seeds.csv",
 }
+needles(SCHEMATIC, ["noise and key ranks below", "are illustrative, and the figure caption says so"],
+        "Figure 1 is drawn as a schematic, from values its script declares illustrative")
 for fig, source in PAPER_FIGURES.items():
     pdf, png = PAPER / "figures" / f"{fig}.pdf", PAPER / "figures" / f"{fig}.png"
     if not (pdf.exists() and png.exists()):
-        bad(f"figure {fig}", "pdf or png missing; run generate_thesis_figures.py "
-                             "--no-titles --only 6.1,J6.2,J6.3 --outdir paper_dwell_journal/figures")
+        bad(f"figure {fig}", "pdf or png missing; run draw_dwell_schematic.py and "
+                             "generate_thesis_figures.py --no-titles --only 6.1,J6.2,J6.3 "
+                             "--outdir paper_dwell_journal/figures")
         continue
-    src = RESULTS / source
+    src = source
     if pdf.stat().st_mtime < src.stat().st_mtime:
         bad(f"figure {fig}", f"older than {src.name}; regenerate")
     try:

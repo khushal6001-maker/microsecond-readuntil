@@ -586,7 +586,11 @@ def fig_j_2(outdir: Path, formats: list[str]) -> None:
 
 
 def fig_j_3(outdir: Path, formats: list[str]) -> None:
-    """The sketching penalty, paired within each seed, three seeds."""
+    """The sketching penalty, paired within each seed: every seed drawn, and the mean over them.
+
+    The claim this figure carries is that the penalty is larger at CV 0.60 than at CV 0 in every
+    seed. Error bars would show only the spread; one line per seed shows the claim itself.
+    """
     g = _grid()
     cv = np.array([float(c) for c in GRID_CVS])
     fig, ax = plt.subplots()
@@ -596,21 +600,25 @@ def fig_j_3(outdir: Path, formats: list[str]) -> None:
         # seed and only then summarised across seeds.
         p = np.array([[float(g[(s, "0", c)]["correct_pct"]) - float(g[(s, w, c)]["correct_pct"])
                        for s in GRID_SEEDS] for c in GRID_CVS])
-        mean, err = _spread(p)
         top = max(top, float(p.max()))
-        ax.errorbar(cv, mean, yerr=err, color=colour, marker=marker, capsize=2.5, elinewidth=0.9,
-                    label=f"w = {w} against w = 0")
+        for i in range(p.shape[1]):
+            ax.plot(cv, p[:, i], color=colour, linewidth=0.8, alpha=0.45)
+        ax.plot(cv, p.mean(axis=1), color=colour, marker=marker, linewidth=1.8,
+                label=f"w = {w} against w = 0, mean")
     ax.axvline(0.44, color=NEUTRAL, linestyle=":", linewidth=1.0)
     ax.set_xlabel("dwell-time coefficient of variation")
     ax.set_ylabel("accuracy cost of sketching (percentage points)")
     ax.set_ylim(0, max(25.0, top + 3.0))
-    ax.legend(frameon=False, loc="upper left")
+    handles, labels = ax.get_legend_handles_labels()
+    handles.append(Line2D([], [], color=NEUTRAL, linewidth=0.8, alpha=0.6))
+    labels.append("one seed")
+    ax.legend(handles, labels, frameon=False, loc="upper left")
     atitle(ax, "Figure J.3  The sketching penalty, paired within seed, three seeds", fontsize=9)
     save(fig, "figj-3-minimizer-penalty-3seeds", outdir, formats)
     record(
         "figj-3-minimizer-penalty-3seeds",
         "results/rawhash-grid-seeds.csv",
-        "Accuracy cost of minimizer sketching, paired within seed; mean and range over three seeds.",
+        "Accuracy cost of minimizer sketching, paired within seed; each seed and the mean.",
     )
 
 
