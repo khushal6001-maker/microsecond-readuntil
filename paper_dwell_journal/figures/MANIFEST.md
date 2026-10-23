@@ -7,5 +7,5 @@ results file; do not edit a figure by hand.
 | figure | source data | content |
 |---|---|---|
 | `fig6-1-dwell-crossover` | `results/dwell-sweep-ours.csv` | Fixed-width collapses and detection does not; the ranking inverts between CV 0 and 0.10. |
-| `fig6-2-rawhash-dwell` | `results/rawhash-dwell-sweep.csv` | Correct and false mapping rates for the comparison mapper across the dwell sweep. |
-| `fig6-3-minimizer-penalty` | `results/rawhash-dwell-sweep.csv` | Accuracy cost of minimizer sketching as a function of dwell dispersion. |
+| `figj-2-rawhash-dwell-3seeds` | `results/rawhash-grid-seeds.csv` | Correct and false mapping rates for the comparison mapper, mean and range over three seeds. |
+| `figj-3-minimizer-penalty-3seeds` | `results/rawhash-grid-seeds.csv` | Accuracy cost of minimizer sketching, paired within seed; mean and range over three seeds. |

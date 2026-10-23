@@ -24,11 +24,10 @@ with a composition-matched control and three seeds. In one quantised-event pipel
 segmentation leads event detection at CV 0, 49.7% against 18.4% true-positive rate at zero false
 positives, and trails it 10.8-fold at the simulator's default CV of 0.44, 1.3% against 14.1%; the
 replicate ranges do not overlap at any dispersion tested. Evaluation at constant dwell therefore
-selects the worse configuration. RawHash2 loses 3.0 points at its default setting, so the reversal
+selects the worse configuration. RawHash2 loses 2.9 points at its default setting, so the reversal
 belongs to the segmentation choice, not to signal-space mapping. RawHash2's minimizer sketching does
-carry a dwell-dependent cost: the accuracy penalty of window 10 against window 0 is 12.8 points at
-CV 0 and 21.0 at CV 0.60, where sketching also raises the false-mapping rate on the control from
-8.4% to 15.2%.
+carry a dwell-dependent cost: paired within seed, the accuracy penalty of window 10 against window 0
+rises from 11.7 points at CV 0 to 19.5 at CV 0.60, and is larger at CV 0.60 in every seed.
 
 <!-- ZENODO: replace both "[ZENODO DOI TO BE INSERTED]" placeholders in this file, and the
      \zenodoslot macro in manuscript.tex, with the archive's DOI written as a URL,
@@ -58,8 +57,11 @@ correspond to one k-mer. The order of stages matters. A key is built from consec
 a query boundary that does not correspond to one implied by the reference changes the key, and no
 later stage can restore it. Event duration is set by the motor protein, whose stepping is
 stochastic: the number of samples per k-mer varies from one k-mer to the next, and its
-distribution is right-skewed. The accuracy of a segmentation-based mapper is therefore a function
-of dwell-time dispersion. What is not known, for any published pipeline or parameter choice, is
+distribution is right-skewed. On real signal the variation is large enough that signal aligners
+model it explicitly: Uncalled4 attributes frequent stays, consecutive events that represent the
+same k-mer, to variable sequencing speed (Kovaka et al., 2025), and SegPore builds the motor
+protein's dynamics into segmentation itself (Cheng et al., 2025). The accuracy of a
+segmentation-based mapper is therefore a function of dwell-time dispersion. What is not known, for any published pipeline or parameter choice, is
 how strong that dependence is.
 
 Evaluation practice does not measure it. Mappers are evaluated chiefly on real datasets, and RawBench
@@ -182,9 +184,10 @@ strand, and the false-mapping rate is the percentage of control reads that recei
 Two differences from Section 2.4 limit what may be compared. RawHash2's default operating point
 admits false mappings, so its correct-mapping rate is not level-comparable with a zero-false-positive
 TPR; the comparison is of shape. RawHash2 also receives whole reads rather than the first 10 chunks,
-which favours it. The dwell × window grid of Table 2 is one seed per cell with 500 reads per set. The
-default configuration at CV 0.44 was replicated over seeds 42, 43 and 44, giving 91.8% [91.2–92.4]
-correctly mapped and 9.1% [8.4–10.6] false-mapped.
+which favours it. The dwell × window grid was run for the same three seeds as Table 1, with 500 reads
+per set, by `scripts/rerun_rawhash_grid.sh`; seed 42 reproduces an earlier single-seed run of the
+grid exactly, in every cell. At its default and at CV 0.44, RawHash2 maps 91.8% [91.2–92.4] of reads
+correctly and 9.1% [8.4–10.6] of control reads.
 
 ### 2.6 Per-event agreement
 
@@ -249,32 +252,32 @@ it does not extend to the method class.
 
 ### 3.2 A published mapper does not reverse
 
-At its default, w = 0, RawHash2's correct-mapping rate goes from 95.0% at CV 0 to 92.0% at CV 0.60,
-a loss of 3.0 points, with no crossover and no collapse (Table 2, Figure 2). The sensitivity found in
-Section 3.1 is therefore a property of fixed-width segmentation and not of quantised-event matching,
-and a developer evaluating RawHash2 at constant dwell would reach the same conclusion as one
-evaluating it at realistic dispersion. With sketching enabled the decline is steeper, 8.4 points at
-w = 5 (90.0 to 81.6) and 11.2 at w = 10 (82.2 to 71.0), which is the subject of Section 3.3.
+At its default, w = 0, RawHash2 loses 2.9 points [2.8–3.0] of correct mapping between CV 0 and
+CV 0.60, with no crossover and no collapse (Table 2, Figure 2). The sensitivity found in Section 3.1
+is therefore a property of fixed-width segmentation and not of quantised-event matching, and a
+developer evaluating RawHash2 at constant dwell would reach the same conclusion as one evaluating it
+at realistic dispersion. With sketching enabled the decline is steeper, 7.0 points [5.2–8.4] at
+w = 5 and 10.7 [9.4–11.6] at w = 10, which is the subject of Section 3.3.
 
 **Table 2.** RawHash2 across the dwell sweep: percentage of on-target reads correctly mapped and
-percentage of control reads mapped at all, by minimizer window w. One seed per cell, 500 reads per
-set.
+percentage of control reads mapped at all, by minimizer window w. Mean over three seeds, 500 reads
+per set; Figure 2 shows the range across seeds, and `results/rawhash-grid-seeds.csv` every seed.
 
 | Rate | w | 0.00 | 0.10 | 0.20 | 0.30 | 0.44 | 0.60 |
 |---|---|---|---|---|---|---|---|
-| Correct | 0 | 95.0 | 95.2 | 94.6 | 94.2 | 92.4 | 92.0 |
-| Correct | 5 | 90.0 | 88.8 | 89.4 | 88.0 | 85.2 | 81.6 |
-| Correct | 10 | 82.2 | 82.2 | 82.2 | 79.2 | 77.2 | 71.0 |
-| False-mapped | 0 | 9.6 | 9.8 | 8.4 | 9.0 | 8.4 | 8.4 |
-| False-mapped | 5 | 10.2 | 11.2 | 10.2 | 9.8 | 8.2 | 10.4 |
-| False-mapped | 10 | 14.8 | 12.8 | 11.2 | 13.4 | 13.8 | 15.2 |
+| Correct | 0 | 93.5 | 93.8 | 93.3 | 92.7 | 91.8 | 90.5 |
+| Correct | 5 | 88.8 | 88.4 | 88.7 | 87.4 | 85.4 | 81.8 |
+| Correct | 10 | 81.8 | 82.1 | 82.1 | 80.5 | 76.4 | 71.1 |
+| False-mapped | 0 | 10.1 | 11.1 | 8.1 | 10.4 | 9.1 | 10.5 |
+| False-mapped | 5 | 9.8 | 10.7 | 8.5 | 9.5 | 9.9 | 10.7 |
+| False-mapped | 10 | 14.4 | 12.9 | 13.9 | 13.7 | 14.3 | 15.8 |
 
-![Figure 2](figures/fig6-2-rawhash-dwell.png)
+![Figure 2](figures/figj-2-rawhash-dwell-3seeds.png)
 
 **Figure 2.** RawHash2 under the dwell sweep. Solid, dashed and dash-dotted lines: percentage of
-on-target reads correctly mapped, by minimizer window. Dotted lines: percentage of control reads mapped. The
-default operating point is not zero-false-positive, so these rates are not level-comparable with
-Figure 1.
+on-target reads correctly mapped, by minimizer window. Dotted lines: percentage of control reads
+mapped. Points are means over three seeds and bars span the observed range. The default operating
+point is not zero-false-positive, so these rates are not level-comparable with Figure 1.
 
 The response to dispersion is visible in the encoding before any seeding or chaining (Table 3).
 RawHash2's per-event agreement is 0.913 at CV 0 and 0.911 at CV 0.44, and that of the detected arm
@@ -298,31 +301,41 @@ one estimator applied to both systems, 200 reads per cell, one seed.
 
 ### 3.3 The cost of minimizer sketching depends on dwell dispersion
 
-Table 4 and Figure 3 give the accuracy cost of sketching, the correct-mapping rate at w = 0 minus
-that at a larger window, in percentage points. At w = 10 the cost is 12.8 points at CV 0 and 21.0 at
-CV 0.60, an increase of 8.2 points, or 64%. At CV 0.60 sketching at w = 10 also raises the
-false-mapping rate on the control from 8.4% to 15.2%, so both error types worsen together. At w = 5
-the cost goes from 5.0 to 10.4 points over the same range.
+Table 4 and Figure 3 give the accuracy cost of sketching: the correct-mapping rate at w = 0 minus
+that at a larger window, in percentage points. Every window of one seed maps the same reads, so the
+cost is taken within each seed and then summarised over the three. At w = 10 it is 11.7 points
+[10.4–12.8] at CV 0 and 19.5 [18.2–21.0] at CV 0.60. The two ranges do not overlap, and the cost is
+larger at CV 0.60 than at CV 0 in every seed, by 7.8 points on average [6.4–8.8]. At w = 5 it goes
+from 4.7 [4.0–5.0] to 8.7 [7.2–10.4], again larger in every seed. Sketching at w = 10 also maps more
+control reads than w = 0 at every dispersion and in every seed (Table 2), so the sensitivity it gives
+up is not returned as specificity.
 
-**Table 4.** Accuracy cost of minimizer sketching in RawHash2, w = 0 minus the stated window, in
-percentage points of correctly mapped reads, from Table 2.
+**Table 4.** Accuracy cost of minimizer sketching in RawHash2: correct-mapping rate at w = 0 minus
+that at the stated window, in percentage points, taken within each seed; mean [range] over three
+seeds.
 
-| Window | 0.00 | 0.10 | 0.20 | 0.30 | 0.44 | 0.60 |
-|---|---|---|---|---|---|---|
-| w = 5 | 5.0 | 6.4 | 5.2 | 6.2 | 7.2 | 10.4 |
-| w = 10 | 12.8 | 13.0 | 12.4 | 15.0 | 15.2 | 21.0 |
+| Dwell CV | w = 5 | w = 10 |
+|---|---|---|
+| 0.00 | 4.7 [4.0–5.0] | 11.7 [10.4–12.8] |
+| 0.10 | 5.4 [4.6–6.4] | 11.7 [10.6–13.0] |
+| 0.20 | 4.7 [3.6–5.2] | 11.2 [10.4–12.4] |
+| 0.30 | 5.3 [4.0–6.2] | 12.3 [10.2–15.0] |
+| 0.44 | 6.4 [5.4–7.2] | 15.4 [14.6–16.4] |
+| 0.60 | 8.7 [7.2–10.4] | 19.5 [18.2–21.0] |
 
-![Figure 3](figures/fig6-3-minimizer-penalty.png)
+![Figure 3](figures/figj-3-minimizer-penalty-3seeds.png)
 
 **Figure 3.** Accuracy cost of minimizer sketching in RawHash2 against dwell-time CV, for windows 5
-and 10 relative to window 0. The dotted line marks Squigulator's default dispersion.
+and 10 relative to window 0, taken within each seed. Points are means over three seeds and bars span
+the observed range. The dotted line marks Squigulator's default dispersion.
 
-**The growth is not monotone, and the claim is limited accordingly.** At w = 10 the series dips by
-0.6 points at CV 0.20, from 13.0 to 12.4. Each cell is one seed. As a scale for single-cell
-variation, the three-seed range of the default configuration at CV 0.44 is 1.2 points (91.2 to 92.4),
-and a cost is a difference of two such cells. A 0.6-point change is within that scale and an 8.2-point
-change is not. The claim made is that the cost is substantially larger at the top of the range than
-at the bottom, not that it rises at every step.
+**The shape, and the limits of the claim.** Up to CV 0.30 the mean w = 10 cost stays between 11.2
+and 12.3 points, and each of those cells' ranges overlaps the CV 0 range. At CV 0.44, the
+simulator's default, it is 15.4 [14.6–16.4], a range already clear of the CV 0 range, and it rises
+again at CV 0.60. The claim made is that the cost is larger at realistic and high dispersion than at
+constant dwell, in every seed; it is not that the cost rises at every step. Three seeds give an
+observed range rather than a confidence interval, which is why each claim in this section is one
+that holds in every seed separately.
 
 **What is known and what is added.** RawHash2 ships with sketching disabled to obtain its highest
 accuracy, and reports that its minimizer mode maps with accuracy similar to the default except on the
@@ -418,8 +431,9 @@ We draw six recommendations for evaluating raw-signal methods.
 The sweep is complementary to existing benchmarks. RawBench varies the components of the pipeline on
 fixed data; the sweep varies one property of the data with the pipeline fixed, and adding a
 simulated-dispersion axis to a modular benchmark would combine the two. It is equally a way to
-quantify methods that correct signal before segmentation: the benefit of a correction such as CRANE
-could be reported as a function of the noise source it addresses rather than at one point. Any
+quantify methods that correct or model the signal before segmentation: the benefit of CRANE's
+correction, or of SegPore's model of motor-protein dynamics, could be reported as a function of the
+noise source it addresses rather than at one point. Any
 pipeline that builds keys from consecutive events, whether by hashing quantised values or by seeding
 on event vectors, is exposed to boundary placement in the way Section 3.3 describes, and the sweep is
 an inexpensive way to measure that exposure.
@@ -434,9 +448,9 @@ shape of the response to dispersion, and it has not been tested on a second refe
 particular device or run is not established here. Measuring the empirical dispersion of a public
 dataset and marking it on the axis is the most direct extension.
 
-*Replication.* The RawHash2 dwell × window grid is one seed per cell. Its default configuration is
-replicated at one dwell level, which provides the scale used in Section 3.3 but not a per-cell
-interval.
+*Replication.* Every accuracy result is over three generator seeds of 500 reads per set. Three seeds
+give an observed range, not a confidence interval, so the claims made are those that hold in each
+seed separately; they bound variation between simulated read sets, not between sequencing runs.
 
 *Mechanisms.* The minimizer mechanism of Section 3.3 is consistent with the data and not isolated.
 The agreement measurement of Section 2.6 covers two dwell levels, 200 reads and one seed.
@@ -458,7 +472,7 @@ Dwell-time dispersion is a signal property that Squigulator exposes as a paramet
 evaluations of raw-signal mappers do not vary. Sweeping it, with a composition-matched control and
 three replicates, shows that an evaluation at constant dwell can select a segmentation configuration
 that is 10.8-fold worse at realistic dispersion, and that the accuracy cost of minimizer sketching in
-RawHash2 rises from 12.8 to 21.0 points over the range swept. The first result is bounded by
+RawHash2 rises from 11.7 to 19.5 points over the range swept, in every seed. The first result is bounded by
 RawHash2's flat response and the second is measured on it. Both follow from holding fixed a variable
 that evaluation can move, and both are avoided by reporting accuracy as a function of it.
 
@@ -481,6 +495,9 @@ implementation, archived at **[ZENODO DOI TO BE INSERTED]**.
 Ambrozak, S., McConnell, U., Srinivasan, B., Ozkan, B., Zhang, E. and Firtina, C. (2026) CRANE:
 correcting errors in raw nanopore signals using hidden Markov models. arXiv:2603.20420.
 
+Cheng, G., Vehtari, A. and Cheng, L. (2025) Raw signal segmentation for estimating RNA modification
+from Nanopore direct RNA sequencing data. *eLife*, **14**, RP104618. doi:10.7554/eLife.104618.
+
 Eris, F., McConnell, U., Firtina, C. and Mutlu, O. (2025) RawBench: a comprehensive benchmarking
 framework for raw nanopore signal analysis techniques. In *Proceedings of the ACM Conference on
 Bioinformatics, Computational Biology, and Health Informatics (ACM-BCB)*. arXiv:2510.03629.
@@ -500,6 +517,10 @@ doi:10.1101/gr.278730.123.
 Kovaka, S., Fan, Y., Ni, B., Timp, W. and Schatz, M.C. (2021) Targeted nanopore sequencing by
 real-time mapping of raw electrical signal with UNCALLED. *Nature Biotechnology*, **39**(4), 431–441.
 doi:10.1038/s41587-020-0731-9.
+
+Kovaka, S., Hook, P.W., Jenike, K.M., Shivakumar, V., Morina, L.B., Razaghi, R., Timp, W. and
+Schatz, M.C. (2025) Uncalled4 improves nanopore DNA and RNA modification detection via fast and
+accurate signal alignment. *Nature Methods*, **22**(4), 681–691. doi:10.1038/s41592-025-02631-4.
 
 Munro, R., Wibowo, S., Payne, A. and Loose, M. (2024) Icarust, a real-time simulator for Oxford
 Nanopore adaptive sampling. *Bioinformatics*, **40**(4), btae141. doi:10.1093/bioinformatics/btae141.

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import difflib
 import os
 import re
 import subprocess
@@ -172,43 +173,101 @@ if ours:
     else:
         bad("order exchanges between CV 0 and CV 0.10 (§3.1)", "it does not")
 
-# ---------------------------------------------------------------- Table 2: RawHash2 grid
-rh = {(r["w"], r["dwell_cv"]): r for r in rows("rawhash-dwell-sweep.csv")}
+# ---------------------------------------------------------------- Tables 2 and 4: RawHash2 grid
+# Three seeds per cell, from scripts/rerun_rawhash_grid.sh. The earlier single-seed file,
+# rawhash-dwell-sweep.csv, is seed 42's run of the same grid, and the re-run must reproduce it.
+SEEDS = ("42", "43", "44")
+grid = {(r["seed"], r["w"], r["dwell_cv"]): r for r in rows("rawhash-grid-seeds.csv")}
+single = {(r["w"], r["dwell_cv"]): r for r in rows("rawhash-dwell-sweep.csv")}
 TABLE2, TABLE4 = [], []
-if rh:
-    corr = lambda w, cv: D(rh[(w, cv)]["correct_pct"])
-    fals = lambda w, cv: D(rh[(w, cv)]["false_mapped_pct"])
-    for w in ("0", "5", "10"):
-        TABLE2.append(["Correct", w] + [q(corr(w, cv), "0.1") for cv in CVS])
-    for w in ("0", "5", "10"):
-        TABLE2.append(["False-mapped", w] + [q(fals(w, cv), "0.1") for cv in CVS])
+
+
+def holds(cond: bool, what: str) -> None:
+    if cond:
+        ok(what)
+    else:
+        bad(what, "does not hold in the data")
+
+
+def mr(values) -> str:
+    """'mean [min–max]' at one decimal: the form the text uses for every replicated value."""
+    return f"{q(sum(values) / len(values), '0.1')} [{q(min(values), '0.1')}–{q(max(values), '0.1')}]"
+
+
+MR_TEXT: list[tuple[str, str]] = []   # (pattern, why): each must also appear whole in both files
+
+
+def claim_mr(text: str, values, why: str) -> None:
+    """A 'mean [min–max]' quoted in the text, each of its three numbers recomputed.
+
+    The three are also required to appear together, as one phrase, in both manuscripts. The
+    registry alone would accept a wrong mean that happens to equal another backed value;
+    requiring the whole phrase ties the mean to its own range.
+    """
+    m, lo, hi = re.fullmatch(r"(\S+) \[(\S+)–(\S+)\]", text).groups()
+    claim(m, sum(values) / len(values), "0.1", f"{why}, mean")
+    claim(lo, min(values), "0.1", f"{why}, min")
+    claim(hi, max(values), "0.1", f"{why}, max")
+    # Words may sit between mean and range: "2.9 points [2.8–3.0]", "7.8 points on average [...]".
+    MR_TEXT.append((rf"(?<![\d.]){re.escape(m)}(?: [a-z ]+)? \[{re.escape(lo)}–{re.escape(hi)}\]", why))
+
+
+if grid:
+    COLS2 = ("reads", "mapped_pct", "correct_pct", "off_reads", "false_mapped_pct")
+    diff = [(w, cv, c) for (w, cv), r in single.items() for c in COLS2
+            if grid.get(("42", w, cv), {}).get(c) != r[c]]
+    if diff or len(grid) != 54:
+        bad("grid seed 42 reproduces rawhash-dwell-sweep.csv in every cell",
+            f"{len(grid)} rows; differs at {diff[:5]}")
+    else:
+        ok("grid seed 42 reproduces rawhash-dwell-sweep.csv in every cell", "18 cells x 5 columns")
+
+    corr = lambda s, w, cv: D(grid[(s, w, cv)]["correct_pct"])
+    fals = lambda s, w, cv: D(grid[(s, w, cv)]["false_mapped_pct"])
+    # Paired: every window of one seed maps the same reads, so the cost is taken within a seed.
+    pen = lambda s, w, cv: corr(s, "0", cv) - corr(s, w, cv)
+
+    for label, f in (("Correct", corr), ("False-mapped", fals)):
+        for w in ("0", "5", "10"):
+            TABLE2.append([label, w] + [q(sum(f(s, w, cv) for s in SEEDS) / 3, "0.1") for cv in CVS])
     for row in TABLE2:
         for cell in row[2:]:
-            backed(cell, f"rawhash-dwell-sweep {row[0]} w={row[1]}")
-
-    pen = lambda w, cv: corr("0", cv) - corr(w, cv)
-    for w in ("5", "10"):
-        cells = [q(pen(w, cv), "0.1") for cv in CVS]
-        TABLE4.append([f"w = {w}"] + cells)
+            backed(cell, f"rawhash-grid {row[0]} w={row[1]}, mean of three seeds")
+    for cv in CVS:
+        cells = [mr([pen(s, w, cv) for s in SEEDS]) for w in ("5", "10")]
+        TABLE4.append([cv] + cells)
         for c in cells:
-            backed(c, f"sketching penalty w={w}")
+            for tok in re.findall(r"\d+\.\d", c):
+                backed(tok, f"paired sketching penalty at CV {cv}")
 
-    claim("3.0", corr("0", "0.00") - corr("0", "0.60"), "0.1", "RawHash2 w=0 loss over sweep (points), Abstract")
-    claim("8.4", corr("5", "0.00") - corr("5", "0.60"), "0.1", "RawHash2 w=5 loss over sweep (points), §3.2")
-    claim("11.2", corr("10", "0.00") - corr("10", "0.60"), "0.1", "RawHash2 w=10 loss over sweep (points), §3.2")
-    claim("12.8", pen("10", "0.00"), "0.1", "w=10 penalty at CV 0, Abstract")
-    claim("21.0", pen("10", "0.60"), "0.1", "w=10 penalty at CV 0.60, Abstract")
-    claim("8.2", pen("10", "0.60") - pen("10", "0.00"), "0.1", "w=10 penalty growth (points), §3.3")
-    claim("64", (pen("10", "0.60") / pen("10", "0.00") - 1) * 100, "1", "w=10 penalty growth (%), §3.3")
-    claim("0.6", pen("10", "0.10") - pen("10", "0.20"), "0.1", "w=10 penalty dip at CV 0.20, §3.3")
-    claim("5.0", pen("5", "0.00"), "0.1", "w=5 penalty at CV 0, §3.3")
-    claim("10.4", pen("5", "0.60"), "0.1", "w=5 penalty at CV 0.60, §3.3")
-    claim("8.4", fals("0", "0.60"), "0.1", "false-mapped w=0 at CV 0.60, Abstract")
-    claim("15.2", fals("10", "0.60"), "0.1", "false-mapped w=10 at CV 0.60, Abstract")
-    claim("95.0", corr("0", "0.00"), "0.1", "RawHash2 w=0 correct at CV 0, §3.2")
-    claim("92.0", corr("0", "0.60"), "0.1", "RawHash2 w=0 correct at CV 0.60, §3.2")
+    loss = lambda w: [corr(s, w, "0.00") - corr(s, w, "0.60") for s in SEEDS]
+    claim_mr("2.9 [2.8–3.0]", loss("0"), "RawHash2 w=0 loss over the sweep, Abstract, §3.2")
+    claim_mr("7.0 [5.2–8.4]", loss("5"), "RawHash2 w=5 loss over the sweep, §3.2")
+    claim_mr("10.7 [9.4–11.6]", loss("10"), "RawHash2 w=10 loss over the sweep, §3.2")
+    claim_mr("11.7 [10.4–12.8]", [pen(s, "10", "0.00") for s in SEEDS], "w=10 penalty at CV 0, Abstract, §3.3")
+    claim_mr("19.5 [18.2–21.0]", [pen(s, "10", "0.60") for s in SEEDS], "w=10 penalty at CV 0.60, Abstract, §3.3")
+    claim_mr("15.4 [14.6–16.4]", [pen(s, "10", "0.44") for s in SEEDS], "w=10 penalty at CV 0.44, §3.3")
+    claim_mr("4.7 [4.0–5.0]", [pen(s, "5", "0.00") for s in SEEDS], "w=5 penalty at CV 0, §3.3")
+    claim_mr("8.7 [7.2–10.4]", [pen(s, "5", "0.60") for s in SEEDS], "w=5 penalty at CV 0.60, §3.3")
+    claim_mr("7.8 [6.4–8.8]", [pen(s, "10", "0.60") - pen(s, "10", "0.00") for s in SEEDS],
+             "w=10 penalty growth from CV 0 to 0.60, §3.3")
+    early = [sum(pen(s, "10", cv) for s in SEEDS) / 3 for cv in CVS[:4]]
+    claim("11.2", min(early), "0.1", "w=10 mean penalty, lowest up to CV 0.30, §3.3")
+    claim("12.3", max(early), "0.1", "w=10 mean penalty, highest up to CV 0.30, §3.3")
 
-# ---------------------------------------------------------------- RawHash2, three seeds
+    # The logical claims of the Abstract and §3.3. Each must hold in every seed, not on average.
+    p = lambda w, cv: [pen(s, w, cv) for s in SEEDS]
+    for w in ("5", "10"):
+        holds(all(pen(s, w, "0.60") > pen(s, w, "0.00") for s in SEEDS),
+              f"w={w} penalty larger at CV 0.60 than at CV 0 in every seed (Abstract, §3.3)")
+    holds(max(p("10", "0.00")) < min(p("10", "0.60")), "w=10 penalty ranges at CV 0 and 0.60 disjoint (§3.3)")
+    holds(max(p("10", "0.00")) < min(p("10", "0.44")), "w=10 penalty range at CV 0.44 clear of CV 0 (§3.3)")
+    holds(all(min(p("10", cv)) <= max(p("10", "0.00")) for cv in CVS[1:4]),
+          "w=10 penalty ranges up to CV 0.30 overlap the CV 0 range (§3.3)")
+    holds(all(fals(s, "10", cv) > fals(s, "0", cv) for s in SEEDS for cv in CVS),
+          "w=10 maps more control reads than w=0 in every seed at every CV (§3.3)")
+
+# ---------------------------------------------------------------- RawHash2 default, three seeds
 seeds = {r["seed"]: r for r in rows("rawhash-seeds.csv")}
 if seeds:
     per_c = [D(seeds[s]["correct_pct"]) for s in ("42", "43", "44")]
@@ -216,7 +275,6 @@ if seeds:
     claim("91.8", sum(per_c) / 3, "0.1", "RawHash2 default correct, 3-seed mean, §2.5")
     claim("91.2", min(per_c), "0.1", "RawHash2 default correct, 3-seed min, §2.5")
     claim("92.4", max(per_c), "0.1", "RawHash2 default correct, 3-seed max, §2.5")
-    claim("1.2", max(per_c) - min(per_c), "0.1", "RawHash2 default 3-seed range width, §3.3")
     claim("9.1", sum(per_f) / 3, "0.1", "RawHash2 default false-mapped, 3-seed mean, §2.5")
     claim("8.4", min(per_f), "0.1", "RawHash2 default false-mapped, 3-seed min, §2.5")
     claim("10.6", max(per_f), "0.1", "RawHash2 default false-mapped, 3-seed max, §2.5")
@@ -226,8 +284,9 @@ if seeds:
         else:
             ok(f"rawhash-seeds.csv mean row ({col}) equals mean of seeds")
 
-    # The three seeds are at CV 0.44. Seed 42's captured score must reproduce both its row
-    # here and the grid's w=0, CV 0.44 cell, which is what ties the grid to the replicates.
+    # The three seeds are at CV 0.44. Seed 42's captured score must reproduce its row here, and
+    # each seed must equal the grid's w=0, CV 0.44 cell: two separate runs, from two separately
+    # built indexes, that must agree exactly.
     sc = text_of(RESULTS / "rawhash-seeds-raw" / "score_s42.txt").strip().split(",")
     r42 = seeds["42"]
     want = [r42["reads"], r42["mapped_pct"], r42["correct_pct"], r42["off_reads"], r42["false_mapped_pct"]]
@@ -235,13 +294,10 @@ if seeds:
         bad("score_s42.txt matches rawhash-seeds.csv seed 42", f"{sc} vs {want}")
     else:
         ok("score_s42.txt matches rawhash-seeds.csv seed 42", "captured run")
-    if rh:
-        cell = rh[("0", "0.44")]
-        grid = [cell["mapped_pct"], cell["correct_pct"], cell["false_mapped_pct"]]
-        if [r42["mapped_pct"], r42["correct_pct"], r42["false_mapped_pct"]] != grid:
-            bad("seed 42 reproduces the grid's w=0, CV 0.44 cell", f"{grid}")
-        else:
-            ok("seed 42 reproduces the grid's w=0, CV 0.44 cell")
+    if grid:
+        cols = ("mapped_pct", "correct_pct", "false_mapped_pct")
+        holds(all([seeds[s][c] for c in cols] == [grid[(s, "0", "0.44")][c] for c in cols] for s in SEEDS),
+              "rawhash-seeds.csv equals the grid's w=0, CV 0.44 cell for every seed")
 
 # ---------------------------------------------------------------- Table 3: agreement
 ag = rows("agreement-summary.csv")
@@ -316,6 +372,12 @@ needles(RESULTS / "rawhash-seeds.csv",
         "§2.5 RawHash2 parameters and scoring")
 needles(RESULTS / "rawhash-seeds-raw" / "on_s42.log",
         ["Version: 2.1", "pore kmer size: 9"], "§2.5 RawHash2 version and k")
+needles(RESULTS / "rawhash-grid-seeds.csv",
+        ["scripts/rerun_rawhash_grid.sh", "-k 9 -q 4 -e 8 --sig-diff 0.35", "within 500 bases",
+         "matching strand", "Seed 42 re-runs rawhash-dwell-sweep.csv"],
+        "§2.5 three-seed grid parameters and scoring")
+holds((RESULTS / "rawhash-grid-raw" / "raw.tar.gz").exists(),
+      "the grid's raw PAF and logs are committed (rawhash-grid-raw/raw.tar.gz)")
 needles(RESULTS / "agreement-summary.csv",
         ["200 reads per cell", "--sig-diff merging", "--out-quantize-ref",
          "matches / aligned pairs under the maximising alignment",
@@ -476,9 +538,10 @@ ANCHORS = [
     "49.7% against 18.4% true-positive rate at zero false positives",
     "trails it 10.8-fold at the simulator's default CV of 0.44, 1.3% against 14.1%",
     "the replicate ranges do not overlap at any dispersion tested",
-    "loses 3.0 points at its default setting",
-    "is 12.8 points at CV 0 and 21.0 at CV 0.60",
-    "false-mapping rate on the control from 8.4% to 15.2%",
+    "loses 2.9 points at its default setting",
+    "rises from 11.7 points at CV 0 to 19.5 at CV 0.60, and is larger at CV 0.60 in every seed",
+    # §3.3: the two single values that are not quoted as a mean with its range.
+    "the mean w = 10 cost stays between 11.2 and 12.3 points",
 ]
 for a in ANCHORS:
     for name in FILES:
@@ -487,10 +550,20 @@ for a in ANCHORS:
         else:
             bad(f"Abstract anchor in {name}", f"missing '{a}'")
 
+# ---- every replicated 'mean [range]' appears whole, in both files
+for pat, why in MR_TEXT:
+    for name in FILES:
+        if re.search(pat, NORM[name]):
+            ok(f"mean [range] in {name}: {why[:45]}")
+        else:
+            bad(f"mean [range] phrase in {name}", f"{why}: no match for {pat}")
+
 # ---- every numeral accounted for
 DATA_TOKENS: dict[str, set[str]] = {}
+DATA_SEQ: dict[str, list[str]] = {}   # data numerals in reading order, for the md/tex comparison
 for name, segs in FILES.items():
     seen: set[str] = set()
+    order: list[str] = []
     before = len(FAIL)
     for scan, prov, _ in segs:
         for wm in WORD_RATIO.finditer(scan):
@@ -506,17 +579,23 @@ for name, segs in FILES.items():
                 elif not re.match(r"(?:-fold)?\s*†", after):
                     bad(f"outstanding value {key} not marked † in {name}", f"…{ctx}…")
                 seen.add(key)
+                order.append(key)
             elif num in BACKED:
                 seen.add(key)
+                order.append(key)
             elif num in STRUCTURAL or (name.endswith(".md") and num in YEARS):
                 pass
             else:
                 bad(f"unregistered numeral {key} in {name}", f"…{ctx}…")
     DATA_TOKENS[name] = seen
+    DATA_SEQ[name] = order
     if len(FAIL) == before:
         ok(f"every numeral in {name} is backed, structural or marked outstanding")
 
-# ---- the two files carry the same data-derived numerals
+# ---- the two files carry the same data-derived numerals, in the same order
+# A set comparison alone misses a number changed to another value that is backed elsewhere: both
+# files would still hold the same set. The .tex transcribes the .md sentence for sentence, so the
+# data numerals must also appear in one identical sequence, which locates any drift exactly.
 only_md = DATA_TOKENS["manuscript.md"] - DATA_TOKENS["manuscript.tex"]
 only_tex = DATA_TOKENS["manuscript.tex"] - DATA_TOKENS["manuscript.md"]
 if only_md or only_tex:
@@ -524,6 +603,14 @@ if only_md or only_tex:
         f"only in md: {sorted(only_md)}; only in tex: {sorted(only_tex)}")
 else:
     ok("md and tex carry the same data-derived numerals", f"{len(DATA_TOKENS['manuscript.md'])} values")
+seq_md, seq_tex = DATA_SEQ["manuscript.md"], DATA_SEQ["manuscript.tex"]
+if seq_md == seq_tex:
+    ok("md and tex carry them in the same order", f"{len(seq_md)} numerals")
+else:
+    sm = difflib.SequenceMatcher(a=seq_md, b=seq_tex, autojunk=False)
+    where = [f"md[{i1}] {seq_md[max(0, i1 - 2):i2 + 1]} vs tex[{j1}] {seq_tex[max(0, j1 - 2):j2 + 1]}"
+             for tag, i1, i2, j1, j2 in sm.get_opcodes() if tag != "equal"]
+    bad("md and tex carry them in the same order", f"{len(where)} difference(s); first: {where[:3]}")
 for c in sorted(set(CLAIMED)):
     for name in FILES:
         if not any(t.rstrip("%") == c for t in DATA_TOKENS[name]):
@@ -534,18 +621,24 @@ for k in sorted(OUT_KEYS):
             bad(f"outstanding value {k} absent from {name}", "drop it from OUTSTANDING or restore it")
 
 # ---------------------------------------------------------------- figures and references
-for fig in ("fig6-1-dwell-crossover", "fig6-2-rawhash-dwell", "fig6-3-minimizer-penalty"):
+PAPER_FIGURES = {
+    "fig6-1-dwell-crossover": "dwell-sweep-ours.csv",
+    "figj-2-rawhash-dwell-3seeds": "rawhash-grid-seeds.csv",
+    "figj-3-minimizer-penalty-3seeds": "rawhash-grid-seeds.csv",
+}
+for fig, source in PAPER_FIGURES.items():
     pdf, png = PAPER / "figures" / f"{fig}.pdf", PAPER / "figures" / f"{fig}.png"
     if not (pdf.exists() and png.exists()):
-        bad(f"figure {fig}", "pdf or png missing; run generate_thesis_figures.py --no-titles")
+        bad(f"figure {fig}", "pdf or png missing; run generate_thesis_figures.py "
+                             "--no-titles --only 6.1,J6.2,J6.3 --outdir paper_dwell_journal/figures")
         continue
-    src = RESULTS / ("dwell-sweep-ours.csv" if fig.startswith("fig6-1") else "rawhash-dwell-sweep.csv")
+    src = RESULTS / source
     if pdf.stat().st_mtime < src.stat().st_mtime:
         bad(f"figure {fig}", f"older than {src.name}; regenerate")
     try:
         from pypdf import PdfReader
         words = "".join(p.extract_text() or "" for p in PdfReader(pdf).pages)
-        if "Figure 6." in words:
+        if re.search(r"Figure [0-9J]\.", words):
             bad(f"figure {fig}", "carries a figure-level title; regenerate with --no-titles")
         else:
             ok(f"figure {fig} exists, is current and is untitled")

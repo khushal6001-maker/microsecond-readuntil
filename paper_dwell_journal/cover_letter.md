@@ -39,8 +39,9 @@ Squigulator and report two results. First, two segmentation configurations of on
 reverse their order across the sweep, so that an evaluation at constant dwell selects the
 configuration that is 10.8-fold worse at the simulator's default dispersion. RawHash2 shows no
 such reversal, which bounds the finding to the segmentation choice. Second, the accuracy cost of
-minimizer sketching in RawHash2 rises from 12.8 to 21.0 percentage points across the range, a
-dependence we have not found measured elsewhere. We also release a patch that adds dwell
+minimizer sketching in RawHash2 rises from 11.7 to 19.5 percentage points across the range, and is
+larger at the top of the range in each of three seeds, a dependence we have not found measured
+elsewhere. We also release a patch that adds dwell
 variation to Icarust, the read-until simulator, which otherwise emits constant dwell and so
 cannot exercise this failure mode.
 
@@ -65,7 +66,7 @@ manuscript.
    set-up and part of their data:
    - the same reference (a 20 Mb prefix of chromosome 20), pore model and Squigulator settings;
    - the three-seed RawHash2 result at its default setting (91.8% of reads correctly mapped),
-     which this manuscript uses only as a scale for single-seed variation and as context;
+     which appears here as one cell of the dwell sweep (CV 0.44, w = 0) and as context;
    - the per-event agreement and indel fractions in Table 3, which the companion manuscript
      reports as part of its own analysis and which serve here only as supporting evidence for
      the bounding result of Section 3.2;

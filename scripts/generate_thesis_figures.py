@@ -531,6 +531,90 @@ def fig_6_3(outdir: Path, formats: list[str]) -> None:
 
 
 # ---------------------------------------------------------------------------------------
+# Journal manuscript (paper_dwell_journal/): Figures 6.2 and 6.3 over three seeds. Separate
+# functions with separate names, so the thesis figures above are untouched.
+# ---------------------------------------------------------------------------------------
+
+GRID_SEEDS = ("42", "43", "44")
+GRID_CVS = ("0.00", "0.10", "0.20", "0.30", "0.44", "0.60")
+
+
+def _grid() -> dict[tuple[str, str, str], dict]:
+    rows = read_csv_rows(RESULTS / "rawhash-grid-seeds.csv")
+    return {(r["seed"], r["w"], r["dwell_cv"]): r for r in rows}
+
+
+def _spread(values: np.ndarray) -> tuple[np.ndarray, list[np.ndarray]]:
+    """Mean over seeds, and the asymmetric error bar that spans the observed range."""
+    mean = values.mean(axis=1)
+    return mean, [mean - values.min(axis=1), values.max(axis=1) - mean]
+
+
+def fig_j_2(outdir: Path, formats: list[str]) -> None:
+    """The comparison mapper under the dwell sweep, three seeds."""
+    g = _grid()
+    cv = np.array([float(c) for c in GRID_CVS])
+    fig, ax = plt.subplots()
+    styles = {"0": (OURS, "o", "-"), "5": (NEUTRAL, "^", "--"), "10": (THEIRS, "s", "-.")}
+    for w, (colour, marker, ls) in styles.items():
+        for col in ("correct_pct", "false_mapped_pct"):
+            v = np.array([[float(g[(s, w, c)][col]) for s in GRID_SEEDS] for c in GRID_CVS])
+            mean, err = _spread(v)
+            correct = col == "correct_pct"
+            ax.errorbar(
+                cv, mean, yerr=err, color=colour, marker=marker,
+                linestyle=ls if correct else ":", alpha=1.0 if correct else 0.55,
+                linewidth=None if correct else 1.0, capsize=2.5, elinewidth=0.9,
+                label=(f"w = {w}" + (" (default)" if w == "0" else "")) if correct else None,
+            )
+    ax.axvline(0.44, color=NEUTRAL, linestyle=":", linewidth=1.0)
+    ax.set_xlabel("dwell-time coefficient of variation")
+    ax.set_ylabel("per cent of reads")
+    ax.set_ylim(0, 100)
+    handles, labels = ax.get_legend_handles_labels()
+    handles.append(Line2D([], [], color=NEUTRAL, linestyle=":", alpha=0.6))
+    labels.append("false-mapped on shuffled control")
+    # One column, so the legend stays left of the dotted line at the simulator's default CV.
+    ax.legend(handles, labels, frameon=False, loc="center left", ncol=1)
+    atitle(ax, "Figure J.2  Comparison mapper under the dwell sweep, three seeds", fontsize=9)
+    save(fig, "figj-2-rawhash-dwell-3seeds", outdir, formats)
+    record(
+        "figj-2-rawhash-dwell-3seeds",
+        "results/rawhash-grid-seeds.csv",
+        "Correct and false mapping rates for the comparison mapper, mean and range over three seeds.",
+    )
+
+
+def fig_j_3(outdir: Path, formats: list[str]) -> None:
+    """The sketching penalty, paired within each seed, three seeds."""
+    g = _grid()
+    cv = np.array([float(c) for c in GRID_CVS])
+    fig, ax = plt.subplots()
+    top = 0.0
+    for w, colour, marker in (("5", NEUTRAL, "^"), ("10", THEIRS, "s")):
+        # Paired: every window of one seed maps the same reads, so the penalty is taken within a
+        # seed and only then summarised across seeds.
+        p = np.array([[float(g[(s, "0", c)]["correct_pct"]) - float(g[(s, w, c)]["correct_pct"])
+                       for s in GRID_SEEDS] for c in GRID_CVS])
+        mean, err = _spread(p)
+        top = max(top, float(p.max()))
+        ax.errorbar(cv, mean, yerr=err, color=colour, marker=marker, capsize=2.5, elinewidth=0.9,
+                    label=f"w = {w} against w = 0")
+    ax.axvline(0.44, color=NEUTRAL, linestyle=":", linewidth=1.0)
+    ax.set_xlabel("dwell-time coefficient of variation")
+    ax.set_ylabel("accuracy cost of sketching (percentage points)")
+    ax.set_ylim(0, max(25.0, top + 3.0))
+    ax.legend(frameon=False, loc="upper left")
+    atitle(ax, "Figure J.3  The sketching penalty, paired within seed, three seeds", fontsize=9)
+    save(fig, "figj-3-minimizer-penalty-3seeds", outdir, formats)
+    record(
+        "figj-3-minimizer-penalty-3seeds",
+        "results/rawhash-grid-seeds.csv",
+        "Accuracy cost of minimizer sketching, paired within seed; mean and range over three seeds.",
+    )
+
+
+# ---------------------------------------------------------------------------------------
 # Chapter 7 -- the ceiling
 # ---------------------------------------------------------------------------------------
 
@@ -843,6 +927,8 @@ FIGURES = [
     ("6.1", fig_6_1),
     ("6.2", fig_6_2),
     ("6.3", fig_6_3),
+    ("J6.2", fig_j_2),
+    ("J6.3", fig_j_3),
     ("7.1", fig_7_1),
     ("7.2", fig_7_2),
     ("7.3", fig_7_3),
@@ -873,6 +959,10 @@ def main() -> int:
     failures = []
     for num, fn in FIGURES:
         if only and num not in only:
+            continue
+        # Journal-only figures (J...) are drawn only when named, so a full regeneration of the
+        # thesis figures/ directory never acquires figures the thesis does not reference.
+        if not only and num.startswith("J"):
             continue
         print(f"figure {num}")
         try:
