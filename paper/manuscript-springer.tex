@@ -7,11 +7,13 @@
 % identical to that version; edit paper/manuscript-ieee.tex and
 % regenerate rather than editing this file.
 %
+% ABRIDGED TO 12 PAGES for a venue with that limit. The IEEE version
+% is the full paper; the units cut here are listed, with reasons, in
+% scripts/make_springer_manuscript.py.
+%
 % TODO BEFORE SUBMISSION
-%   1. ORCID iDs: uncomment the \orcidID calls in \author if you have
-%      them. Springer encourages these.
-%   2. Confirm the page limit with the organisers. LNCS proceedings are
-%      commonly 12 to 15 pages including references.
+%   1. ORCID iDs: append \orcidID{...} after each name in \author if you
+%      have them. Springer encourages these.
 %
 % IF THE VENUE PUBLISHES IN A DIFFERENT SPRINGER SERIES
 %   LNCS, CCIS and LNNS all use llncs.cls, so nothing below changes.
@@ -19,9 +21,7 @@
 %   class line; the body is unaffected either way.
 %
 % FIGURES expected in ./figures/ :
-%   fig5-4-r3-distribution.pdf
-%   fig7-3-model-vs-measured.pdf
-% Figure 1 is drawn in TikZ below and needs no file.
+%   fig7-3-model-vs-measured.pdf     (the only figure in this version)
 % =====================================================================
 \documentclass[runningheads]{llncs}
 
@@ -32,8 +32,6 @@
 \usepackage{booktabs}
 \usepackage{textcomp}
 \usepackage{url}
-\usepackage{tikz}
-\usetikzlibrary{arrows.meta, positioning, shapes.geometric}
 
 \graphicspath{{figures/}}
 \renewcommand{\arraystretch}{1.15}
@@ -149,8 +147,7 @@ an estimator-symmetric measurement of its two parameters for both systems
 
 \textbf{The interface.} MinKNOW~\cite{minknow} provides Read Until through a bidirectional
 streaming RPC. The client receives raw signal chunks from each channel and sends its decisions
-back over the same connection. Since version 6.0, the API identifies reads only by a string, with
-no numeric read index, which restricts the data structures a client can use.
+back over the same connection.
 
 \textbf{Basecalling clients.} readfish~\cite{readfish} and similar clients basecall each chunk
 and map the resulting sequence. The approach is accurate and builds on mature tools, but it
@@ -176,7 +173,7 @@ chaining strategy. Sections~\ref{sec:gap}--\ref{sec:causes} follow this order.
 
 \textbf{Streaming decision structures.} Misra--Gries~\cite{misragries} and
 Space-Saving~\cite{spacesaving} identify frequent items approximately, using a fixed amount of
-memory. We use a set-associative variant. Its update cost is $O(\text{ways})$ rather than
+memory. We use a set-associative variant as a vote table. Its update cost is $O(\text{ways})$ rather than
 $O(\text{counters})$, which is significant on a latency-critical decision path.
 
 \textbf{Simulation.} Squigulator~\cite{squigulator} generates signal with an adjustable spread
@@ -364,7 +361,7 @@ A factor of 5.2 (Table~\ref{tab:acc}). The rest of this paper accounts for it.
 
 Six decision rules were each run in triplicate at the same operating point.
 
-\textbf{The $\beta = 0$ control is the informative row.} With gap tolerance removed, chaining is
+\textbf{The $\beta = 0$ control is the informative case.} With gap tolerance removed, chaining is
 \emph{worse} than the vote table---9.1\% against 14.1\%---as expected when it tracks 24
 candidates where the table tracks 256. The improvement is therefore attributable to the
 tolerance, not to the change of data structure.
@@ -375,10 +372,7 @@ we tried exceeded that.
 \textbf{Single rules vary by up to 3.8 points across seeds}---the control spans 7.0 to
 10.8---comparable to the gaps \emph{between} rules, and the ranges of adjacent rules overlap. Any
 comparison between configurations differing by less than roughly four points requires
-replication. We learned this the expensive way: an earlier single-run table reported that
-increasing look-back from 48 to 128 did not help. It does, by 1.4 points of mean and positively
-in every seed; the single run that supported the old claim was a different seed from the other
-five rows of the same table.
+replication.
 
 Even at its best, the decision rule moves accuracy by tens of percent where the gap to be closed
 is a factor of five. The deficiency is not here.
@@ -530,14 +524,6 @@ bits of nominal specificity; one of 12 events at nearly 4 realised bits carries 
 system with the \emph{less} specific key is five times more accurate, because specificity it
 does not need costs it nothing and agreement it does need costs us everything.
 
-\textbf{Differencing does not help, and the reason is instructive.} Encoding the
-\emph{difference} between successive levels removes the per-read normalisation shift shared by
-all events. In triplicate, however, it is much worse: 8.3 [3.6--11.8] against 17.6 for the
-absolute encoding, and worse in every seed. Differencing still produces one symbol per event, so
-a key still needs $E$ agreements, while each symbol now depends on two noisy levels instead of
-one. It targets the right quantity with the wrong mechanism. Merging, in contrast, reduces $E$
-\emph{and} increases $a$; since both appear in $(1-g)^{E} a^{E}$, it helps twice.
-
 \subsection{Recoverable loss inside the chainer}
 
 The correspondence-aware measurement revises our frozen configuration's anchor supply from a
@@ -551,26 +537,13 @@ recover more anchors than exist, and 1.85 against 4 left no room for loss. The c
 occurrence cap discarding anchors before chaining, the 24-slot greedy chainer thrashing, and a
 chaining band of 12 against a measured indel rate of 0.196. We have not isolated which.
 
-This qualifies, but does not overturn, the location of the deficiency. Closing a 31-fold gap in
-anchor supply matters far more than recovering a factor of less than four. But the decision stage is no longer blameless,
-and because the anchors are known to exist, this is a diagnostic rather than a search.
-
 \section{Discussion}
-Our results lead to four recommendations.
+Our results lead to two recommendations.
 
 \textbf{Measure $a$ and $g$ before designing a decision rule.} Both can be computed in a single
 pass over paired reference and query events, without training or search, and together they show
 whether \emph{any} decision rule can succeed before one is designed. A decision rule reported
 without these figures cannot be assessed by the reader.
-
-\textbf{Optimise key-match probability, not agreement alone.} Correspondence failure has the
-same exponent in $P(\mathrm{key})$ as disagreement, and our indel rate is 0.170 even without
-timing noise. A smaller alphabet can improve both. RawHash2 and Sigmoni make this trade-off; our
-pipeline does not.
-
-\textbf{Report latency distributions against a derived budget.} When decisions have a deadline, a
-mean latency within the budget is compatible with any miss rate. We therefore report all nine
-runs with their full ranges and identify the one run that exceeds the bound.
 
 \textbf{Run the external baseline first, not last.} We evaluated every change to the decision
 stage against our own earlier results, which varied by plausible amounts and never suggested
@@ -587,8 +560,7 @@ mid-decision, which in the data looks exactly like a slow decision. We therefore
 p90 as properties of the implementation and p99 and above as upper bounds contaminated by the
 platform. The direct evidence is the 2.0--59.4 ms spread of observed maxima, uncorrelated with
 p99. A deadline-miss rate against the 1.56 ms bound requires bare metal with isolated
-cores, tickless operation, interrupt affinity moved off the measured cores and a fixed
-governor. We did not have it, and no claim here depends on the tail.
+cores. We did not have it, and no claim here depends on the tail.
 
 \textbf{All signal is simulated}, from two generators whose detector calibrations do not
 transfer to each other by a factor of thirty, and every figure derives from a single
@@ -621,11 +593,6 @@ $E$-fold product governs everything downstream. At the agreement and corresponde
 achieves, no decision rule placed after quantisation can recover what segmentation and
 quantisation discard---which is why six attempts to place one moved accuracy by at most 35\%
 relative against a gap of a factor of five.
-
-That is a negative result about this system and a positive one about where to look. We state it
-without apology: a system that fails for a reason that is measured, modelled, and shown to
-account for the failure of six attempts to fix it is of more use to the next designer than one
-that works for reasons its author cannot name.
 
 \section*{Reproducibility}
 

@@ -16,6 +16,7 @@ contain a number that scripts/verify_paper_numbers.py has not checked.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import zipfile
 from pathlib import Path
@@ -41,13 +42,46 @@ FILES = {
 FIGURES = sorted((PAPER / "figures").glob("*.pdf")) + [PAPER / "figures" / "MANIFEST.md"]
 
 
+def springer_only(outdir: Path) -> int:
+    """A submission archive for the Springer version alone, its .tex at the root.
+
+    The combined archive keeps the IEEE manuscript at its root, so Overleaf opens that one
+    and the Springer file needs the main document switching by hand. For the version being
+    submitted to a Springer venue, the archive should simply open the right paper. Only the
+    figures the Springer file actually includes are packed, read from the file itself.
+    """
+    name = "microsecond-readuntil-springer-latex"
+    tex = PAPER / "manuscript-springer.tex"
+    pdf = PAPER / "manuscript-springer.pdf"
+    src = tex.read_text(encoding="utf-8")
+    used = re.findall(r"\\includegraphics(?:\[[^]]*\])?\{([^}]*)\}", src)
+    figs = [PAPER / "figures" / u for u in used]
+    missing = [str(p) for p in [tex, pdf] + figs if not p.exists()]
+    if missing:
+        print("missing: " + ", ".join(missing), file=sys.stderr)
+        return 1
+    out = outdir / (name + ".zip")
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        z.write(tex, name + "/manuscript-springer.tex")
+        z.write(pdf, name + "/manuscript-springer.pdf")
+        for f in figs:
+            z.write(f, name + "/figures/" + f.name)
+    print("wrote " + str(out) + "  (" + str(2 + len(figs)) + " files, "
+          + str(round(out.stat().st_size / 1024)) + " KiB)")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--outdir", default=str(REPO / "paper" / "dist"))
+    ap.add_argument("--springer", action="store_true",
+                    help="build the Springer-only submission archive instead")
     args = ap.parse_args()
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
+    if args.springer:
+        return springer_only(outdir)
     out = outdir / (NAME + ".zip")
 
     missing = [str(p) for p in list(FILES.values()) + FIGURES if not p.exists()]

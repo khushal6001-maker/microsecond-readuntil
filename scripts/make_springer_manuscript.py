@@ -43,11 +43,13 @@ PREAMBLE = r"""% ===============================================================
 % identical to that version; edit paper/manuscript-ieee.tex and
 % regenerate rather than editing this file.
 %
+% ABRIDGED TO 12 PAGES for a venue with that limit. The IEEE version
+% is the full paper; the units cut here are listed, with reasons, in
+% scripts/make_springer_manuscript.py.
+%
 % TODO BEFORE SUBMISSION
-%   1. ORCID iDs: uncomment the \orcidID calls in \author if you have
-%      them. Springer encourages these.
-%   2. Confirm the page limit with the organisers. LNCS proceedings are
-%      commonly 12 to 15 pages including references.
+%   1. ORCID iDs: append \orcidID{...} after each name in \author if you
+%      have them. Springer encourages these.
 %
 % IF THE VENUE PUBLISHES IN A DIFFERENT SPRINGER SERIES
 %   LNCS, CCIS and LNNS all use llncs.cls, so nothing below changes.
@@ -55,9 +57,7 @@ PREAMBLE = r"""% ===============================================================
 %   class line; the body is unaffected either way.
 %
 % FIGURES expected in ./figures/ :
-%   fig5-4-r3-distribution.pdf
-%   fig7-3-model-vs-measured.pdf
-% Figure 1 is drawn in TikZ below and needs no file.
+%   fig7-3-model-vs-measured.pdf     (the only figure in this version)
 % =====================================================================
 \documentclass[runningheads]{llncs}
 
@@ -68,8 +68,6 @@ PREAMBLE = r"""% ===============================================================
 \usepackage{booktabs}
 \usepackage{textcomp}
 \usepackage{url}
-\usepackage{tikz}
-\usetikzlibrary{arrows.meta, positioning, shapes.geometric}
 
 \graphicspath{{figures/}}
 \renewcommand{\arraystretch}{1.15}
@@ -181,13 +179,69 @@ SPANS = [
     ("4.3 processor time against RawHash2",
      r"\textbf{Against a signal-space mapper.}",
      r"\section{The accuracy gap}"),
+
+    # --- round five: 13 pages, last page 1,637 characters ----------------------------
+
+    # The Conclusion's closing paragraph. It argues why a measured failure is useful, which
+    # the second Conclusion paragraph and the Discussion's first recommendation both already
+    # establish; here it is a restatement in a more rhetorical register.
+    ("10 closing paragraph",
+     "That is a negative result about this system and a positive one about where to look.",
+     r"\section*{Reproducibility}"),
+
+    # Two of the four Discussion recommendations, the two that restate the paper rather than
+    # add to it. "Optimise key-match probability" is the conclusion of Section 7, made there
+    # in full; "Report latency distributions" is the loss-system argument of Section 1, also
+    # made there in full. The two kept -- measure a and g before designing a decision rule,
+    # and run the external baseline first -- appear nowhere else in the paper.
+    #
+    # Cut here, after the last float, because removing text earlier in this version was
+    # measured to have no effect on the page count: tables pinned to page tops absorbed the
+    # freed lines as blank space instead of pulling the references back.
+    ("8 two restated recommendations",
+     r"\textbf{Optimise key-match probability, not agreement alone.}",
+     r"\textbf{Run the external baseline first, not last.}"),
+
+    # The differencing experiment: encoding successive level differences, tried as an
+    # alternative quantiser and found worse in every seed. A real negative result, and the
+    # last unit after the final float large enough to move the page count -- trimming the
+    # bucket percentages earlier in 7.2 was tried first and changed nothing, because the
+    # shortened sentence lost a word rather than a line.
+    ("7.2 differencing experiment",
+     r"\textbf{Differencing does not help, and the reason is instructive.}",
+     r"\subsection{Recoverable loss inside the chainer}"),
+
+    # The closing paragraph of 7.3, which puts the chainer loss in proportion to the supply
+    # gap. Interpretation rather than measurement; the 31-fold figure it leans on is stated
+    # in 6.3, and the measured loss -- about 11 of 15 anchors -- is the paragraph before it.
+    ("7.3 closing interpretation",
+     "This qualifies, but does not overturn, the location of the deficiency.",
+     r"\section{Discussion}"),
+
+    # The look-back anecdote. It names rule parameters -- look-back 48 against 128 -- that
+    # were rows of Table 5, which is no longer in this version, so the reader cannot see what
+    # it refers to. The principle it illustrates, that differences under four points need
+    # replication, is the sentence before it and stays.
+    ("5.2 look-back anecdote",
+     " We learned this the expensive way:",
+     "\n\nEven at its best"),
+
+    # An API-version detail about how MinKNOW identifies reads. True, and it matters to
+    # someone writing a client; nothing in the paper's argument depends on it.
+    ("2 MinKNOW read-index detail",
+     " Since version 6.0, the API identifies reads only by a string, with\n"
+     "no numeric read index, which restricts the data structures a client can use.",
+     "\n"),
 ]
 
 # Floats removed by label. Each is either a picture of numbers a surviving table carries, or
 # a diagram of a mechanism the surviving prose describes.
 DROP_FLOATS = {
     "fig:r3",        # plots the nine runs Table 2 already gives as median and range
-    "tab:entropy",   # belongs to the 7.2 passage removed above
+    # tab:entropy is no longer listed here. It sits between the differencing paragraph and
+    # the scale-dependence passage, so the 7.2 differencing span removes it along with
+    # them. Listing it as well made the generator stop -- correctly -- on a label it could
+    # no longer find, which is how the overlap between the two cuts was noticed.
     "tab:rules",     # every figure the argument uses -- 9.1, 14.1, 19.0, +35%, 3.8, 7.0,
                      # 10.8 -- is already in the prose beneath it; checked before removal
     "fig:arena",     # the protocol is fully described in the 3.3 prose; the diagram
@@ -275,6 +329,28 @@ REPLACEMENTS = [
     ("unpoint fig:r3",
      r"p90 and at the mean (Figure~\ref{fig:r3}).",
      r"p90 and at the mean."),
+
+    # The point is that the tail needs bare metal with isolated cores; the remaining items are
+    # how one would configure it, which belongs in a methods appendix, not a limitation.
+    ("9 bare-metal configuration list",
+     "requires bare metal with isolated\ncores, tickless operation, interrupt affinity moved off the measured cores and a fixed\ngovernor.",
+     "requires bare metal with isolated\ncores."),
+
+    # Table 5 is gone, so "row" now refers to nothing; the beta = 0 configuration is a case.
+    ("5.2 informative row",
+     r"\textbf{The $\beta = 0$ control is the informative row.}",
+     r"\textbf{The $\beta = 0$ control is the informative case.}"),
+
+    # Section 3.5 used to introduce the vote table by name before Section 5.2 relies on it.
+    # With 3.5 cut, 5.2's "the vote table" arrived unintroduced; Section 2 now names it.
+    ("2 name the vote table",
+     "memory. We use a set-associative variant. Its update cost",
+     "memory. We use a set-associative variant as a vote table. Its update cost"),
+
+    # Two of the four recommendations are cut above; the count that introduces them follows.
+    ("recommendation count",
+     "Our results lead to four recommendations.",
+     "Our results lead to two recommendations."),
 
     # Figure 1 is gone; the protocol sentence no longer points at it.
     ("unpoint fig:arena",

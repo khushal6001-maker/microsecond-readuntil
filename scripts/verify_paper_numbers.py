@@ -70,6 +70,8 @@ ABRIDGED = {
             "4x12 distinct keys at 20 Mb",
             # Section 4.3 processor-time ratio against RawHash2
             "comparison per read",
+            # Section 7.2 differencing experiment
+            "difference keys",
         },
     },
 }
