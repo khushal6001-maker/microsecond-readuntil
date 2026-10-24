@@ -34,7 +34,7 @@ rises from 11.7 points at CV 0 to 19.5 at CV 0.60, and is larger at CV 0.60 in e
 **Availability and implementation:** Code, result files, a patch adding dwell variation to the
 Icarust simulator, and a script that recomputes every number in this article:
 https://github.com/khushal6001-maker/microsecond-readuntil, archived at
-https://doi.org/10.5281/zenodo.23604395 (release v1.0.0).
+https://doi.org/10.5281/zenodo.23619722 (release v1.1.0).
 
 **Supplementary information:** Supplementary data are available at *Bioinformatics* online.
 
@@ -523,7 +523,7 @@ None declared.
 
 All result files, raw logs, the sweep harness, the figure generator, the Icarust and RawHash2
 patches and the verification script are in the repository given under Availability and
-implementation, archived at https://doi.org/10.5281/zenodo.23604395 (release v1.0.0).
+implementation, archived at https://doi.org/10.5281/zenodo.23619722 (release v1.1.0).
 
 ## References
 

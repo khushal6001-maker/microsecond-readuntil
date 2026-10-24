@@ -19,12 +19,10 @@ send the letter until each is filled or deleted.
 7. At submission, the journal also requires: an ORCID iD for the submitting author; the CRediT
    roles, entered in the submission form as in the manuscript's Author contributions; and
    copies of the related work disclosed below (the dissertation and the companion manuscript).
-8. After approval, cut a new Zenodo release (the manuscript cites v1.0.0, which predates the
-   matched-operating-point analysis) and put its DOI into point 3 below and into the manuscript.
+8. Done: release v1.1.0 is archived at https://doi.org/10.5281/zenodo.23619722, and the
+   manuscript and point 3 below cite it. Each further GitHub release mints a new DOI, so cut one
+   only if the archived code or data change, and then update both places again.
 -->
-
-Software archive: the manuscript currently cites Zenodo release v1.0.0,
-https://doi.org/10.5281/zenodo.23604395 ; see note 8. Delete this line too before sending.
 
 [DATE]
 
@@ -97,8 +95,8 @@ manuscript.
 
 3. *Public draft.* The code, results and a draft of this manuscript are in a public GitHub
    repository, https://github.com/khushal6001-maker/microsecond-readuntil. The software given
-   in the Availability statement is that repository's release v1.0.0, archived at Zenodo as
-   https://doi.org/10.5281/zenodo.23604395. [PREPRINT STATUS: e.g. "No preprint has been
+   in the Availability statement is that repository's release v1.1.0, archived at Zenodo as
+   https://doi.org/10.5281/zenodo.23619722. [PREPRINT STATUS: e.g. "No preprint has been
    posted on a preprint server."]
 
 **Use of AI tools.** The work was carried out with the assistance of Claude (Anthropic), used
