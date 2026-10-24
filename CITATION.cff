@@ -5,7 +5,7 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it using the metadata from this file."
 type: software
 title: "microsecond-readuntil: a signal-space read-until data plane and dwell-time sensitivity analysis for nanopore adaptive sampling"
-version: "1.0.0"
+version: "1.1.0"
 abstract: >-
   Source code, result files and verification scripts for a signal-space read-until client
   for Oxford Nanopore adaptive sampling. Includes the dwell-time sensitivity sweep, a patch
