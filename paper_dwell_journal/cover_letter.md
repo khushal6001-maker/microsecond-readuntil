@@ -9,16 +9,22 @@ send the letter until each is filled or deleted.
    Bioinformatics asks for related previously published or preprinted work, so if it is
    under review or published, say where.
 3. Whether any preprint of either manuscript has been posted.
-4. The scope of AI use beyond this manuscript. The paragraph below covers only what is known
-   from the session that prepared this manuscript. If AI tools were also used to write the
-   pipeline's code, run the analyses or draft the dissertation chapter, add that.
+4. The AI paragraph below now states the use the repository records: every commit carries a
+   Claude co-author line, including the pipeline's code, the analysis scripts and the
+   dissertation drafts. Correct it if your own use differed. The manuscript's Acknowledgements
+   and Supplementary Section S6 say the same and must stay consistent with it.
 5. The responsibility sentence in the AI paragraph must be true when you send the letter:
    both authors should have read the whole manuscript and checked its claims.
 6. Ritu Garg's approval of the submission.
+7. At submission, the journal also requires: an ORCID iD for the submitting author; the CRediT
+   roles, entered in the submission form as in the manuscript's Author contributions; and
+   copies of the related work disclosed below (the dissertation and the companion manuscript).
+8. After approval, cut a new Zenodo release (the manuscript cites v1.0.0, which predates the
+   matched-operating-point analysis) and put its DOI into point 3 below and into the manuscript.
 -->
 
-Software archive (already done, nothing to fill): Zenodo release v1.0.0,
-https://doi.org/10.5281/zenodo.23604395 . Delete this line too before sending.
+Software archive: the manuscript currently cites Zenodo release v1.0.0,
+https://doi.org/10.5281/zenodo.23604395 ; see note 8. Delete this line too before sending.
 
 [DATE]
 
@@ -38,12 +44,21 @@ evaluation measures how sensitive a mapper is to it. We sweep it as a controlled
 Squigulator and report two results. First, two segmentation configurations of one pipeline
 reverse their order across the sweep, so that an evaluation at constant dwell selects the
 configuration that is 10.8-fold worse at the simulator's default dispersion. RawHash2 shows no
-such reversal, which bounds the finding to the segmentation choice. Second, the accuracy cost of
-minimizer sketching in RawHash2 rises from 11.7 to 19.5 percentage points across the range, and is
-larger at the top of the range in each of three seeds, a dependence we have not found measured
-elsewhere. We also release a patch that adds dwell
-variation to Icarust, the read-until simulator, which otherwise emits constant dwell and so
-cannot exercise this failure mode.
+such reversal, at its default operating point or at matched false-positive rates, which bounds the
+finding to the segmentation choice. Second, the accuracy cost of minimizer sketching in RawHash2
+rises from 11.7 to 19.5 percentage points across the range, and is larger at the top of the range
+in each of three seeds, also at a matched false-positive rate of 1%, a dependence we have not found
+measured elsewhere. We also release a patch that adds dwell variation to Icarust, the read-until
+simulator, which otherwise emits constant dwell and so cannot exercise this failure mode.
+
+**Why simulated data.** The journal accepts simulated data alone only in well-justified cases, and
+we believe this is one. The variable under study, dwell-time dispersion, is fixed in any real
+dataset by the sample, the pore, the chemistry and the run, and cannot be changed while everything
+else is held; its effect on a mapper therefore cannot be measured on real data, only on a simulator
+that exposes it as a parameter. The claims concern how mappers are evaluated, not how a particular
+dataset behaves, and the step from a simulator setting to the dispersion of a real device is not
+taken: the manuscript states it as a limitation (Section 5), together with the measurement on
+public data that would take it.
 
 **Why *Bioinformatics*.** The contribution concerns how raw-signal mappers are evaluated, and its
 recommendations apply directly to tools this journal has published: RawHash, RawHash2, Sigmap,
@@ -75,8 +90,9 @@ manuscript.
      Section 3.4.
 
    The dwell sweep itself (Tables 2, 3 and 5 and Figures 2 to 4), the ranking reversal, the
-   minimizer result, the compatibility conditions of Section 2.3 and the observations in the
-   Supplementary Information do not appear in the companion manuscript. If the companion manuscript is published or
+   minimizer result, the compatibility conditions of Section 2.3, the matched operating points of
+   Section 3.2 and the contents of the Supplementary Information do not appear in the companion
+   manuscript. If the companion manuscript is published or
    posted while this one is under review, we will cite it and reduce Table 4 to a citation.
 
 3. *Public draft.* The code, results and a draft of this manuscript are in a public GitHub
@@ -85,16 +101,19 @@ manuscript.
    https://doi.org/10.5281/zenodo.23604395. [PREPRINT STATUS: e.g. "No preprint has been
    posted on a preprint server."]
 
-**Use of AI tools.** The manuscript was prepared with the assistance of Claude (Anthropic), used
-through Claude Code (Claude Opus 5 and Claude Opus 5.5). It was used to draft the manuscript text
-from the dissertation chapter; to identify the references and check each one against Crossref,
-the publisher's page or arXiv; to write the script that recomputes every number in the manuscript
-from the committed result files; to typeset the LaTeX source; and to check the chapter's numbers
-against the raw data, which led to several corrections. It generated no data: no experiment was
-run for this manuscript, and every result comes from runs recorded earlier in the repository.
-[ADD ANY OTHER AI USE: e.g. in writing the pipeline's code, running analyses or drafting the
-dissertation chapter.] The authors have reviewed and edited the text, checked its claims against
-the data, and take full responsibility for the content.
+**Use of AI tools.** The work was carried out with the assistance of Claude (Anthropic), used
+through Claude Code (Claude Opus 5 and Claude Opus 5.5), and the repository's history records it:
+every commit carries a Claude co-author line. It helped write the pipeline's source code and the
+scripts that map and score reads and draw the figures, and it helped draft the dissertation
+chapter from which the manuscript is developed. For the manuscript itself it drafted the text;
+identified the references and checked each one against Crossref, the publisher's page or arXiv;
+wrote the script that recomputes every number from the committed result files; typeset the LaTeX
+source; and checked the chapter's numbers against the raw data, which led to several corrections.
+It also ran two analyses on existing simulated reads: the three-seed replication of the RawHash2
+dwell × window grid, and the matched operating points computed from that grid's output. No reads
+were simulated for the manuscript. This use is disclosed in the manuscript's Acknowledgements and
+documented in Supplementary Section S6. The authors directed the work, reviewed and edited the
+text, checked its claims against the data, and take full responsibility for the content.
 
 **Declarations.** This manuscript is not under consideration elsewhere, both authors have approved
 its submission, and we have no competing interests to declare. [CONFIRM EACH BEFORE SENDING.]

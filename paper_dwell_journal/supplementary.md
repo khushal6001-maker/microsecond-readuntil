@@ -11,13 +11,14 @@ Haryana 136119, India
 
 ---
 
-This supplement has two parts. Sections S1–S3 report three observations made during this work that
+This supplement has three parts. Sections S1–S3 report three observations made during this work that
 rest in part on a measurement for which no run output was captured. Those values are marked with a
 dagger (†). None of them is used in any claim in the main text, and
 `scripts/verify_dwell_journal_numbers.py` lists each as outstanding, together with the run that
 would settle it. Sections S4 and S5 give committed results in more detail than the main text does,
-and every value in them is recomputed by the same script from files in the repository. Section and
-table numbers without an S refer to the main text.
+and every value in them is recomputed by the same script from files in the repository. Section S6
+documents the use of AI tools in this work. Section and table numbers without an S refer to the main
+text.
 
 ## S1 Live accept rates against Icarust
 
@@ -139,3 +140,33 @@ Table 5 gives the mean and range of each set of three.
 | 0.30 | 6.2 | 4.0 | 5.8 | 15.0 | 10.2 | 11.6 |
 | 0.44 | 7.2 | 5.4 | 6.6 | 15.2 | 16.4 | 14.6 |
 | 0.60 | 10.4 | 7.2 | 8.6 | 21.0 | 18.2 | 19.2 |
+
+## S6 Use of AI tools
+
+The authors used Claude (Anthropic) through Claude Code, a tool that reads and edits files and runs
+commands in the authors' environment at their direction; the models were Claude Opus 5 and Claude
+Opus 5.5. The repository's history records the extent of the use: every commit in it carries a
+Claude co-author line, including those that add the pipeline's source code, the analysis scripts and
+the dissertation drafts. Its tasks for this article were the following.
+
+*Code and analysis.* It helped write the pipeline's source code and the scripts that map and score
+reads, sweep dwell dispersion and draw the figures. While this article was prepared it ran the
+three-seed RawHash2 grid of Section 2.5 (`scripts/rerun_rawhash_grid.sh`) on simulated reads
+generated earlier in the work, and it wrote and ran `scripts/rawhash_zero_fp.py`, which computes
+Section S4 from that grid's output. No reads were simulated while this article was prepared.
+
+*Verification.* It wrote `scripts/verify_dwell_journal_numbers.py`, which recomputes every number in
+the article and in this supplement from the committed result files, and tested the script by
+planting errors in copies of both documents, each of which the script had to reject. Checking the
+dissertation chapter's numbers against the raw data in this way led to several corrections,
+including the replication over three seeds of a result first reported from one.
+
+*References.* It identified candidate references and checked each against Crossref, the
+publisher's page or arXiv.
+
+*Text and figures.* It drafted this article from Chapter 6 of the first author's dissertation,
+which it had also helped draft, and typeset the LaTeX source. Figure 1 is a schematic drawn by a
+script it wrote.
+
+The authors directed each task, reviewed the code, the data and the text, and take full
+responsibility for the content. No AI tool is an author.

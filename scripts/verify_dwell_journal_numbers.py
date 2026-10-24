@@ -577,6 +577,8 @@ WORD_RATIO = re.compile(
     r"\b(?:two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|forty|"
     r"fifty|hundred)[- ]?(?:fold|times)\b", re.IGNORECASE)
 REFS = re.compile(r"\b(?:Sections?|Tables?|Figures?)\s+\d+(?:\.\d+)?(?:\s+(?:to|and)\s+\d+(?:\.\d+)?)?")
+# The AI-use disclosure names model versions ("Claude Opus 5.5"); a version is a name, not data.
+MODEL = re.compile(r"\bClaude Opus \d+(?:\.\d+)?")
 
 
 def collapse(s: str) -> str:
@@ -608,7 +610,7 @@ def md_scan(s: str) -> str:
     s = re.sub(r"\S+@\S+", "", s)
     s = re.sub(r"(^| )#+ \d+(?:\.\d+)* ", r"\1", s)
     s = re.sub(r"(^| )\d+\. (?=\S)", r"\1", s)
-    return REFS.sub("", s)
+    return REFS.sub("", MODEL.sub("", s))
 
 
 def tex_segments(raw: str) -> list[tuple[str, bool]]:
@@ -637,7 +639,7 @@ def tex_scan(s: str) -> str:
         s = re.sub(pat, "", s)
     # The manuscript cites its own sections with \ref, but the supplement can only name the
     # manuscript's sections in plain text ("Section~3.1"), so those are stripped here as in md.
-    return REFS.sub("", s)
+    return REFS.sub("", MODEL.sub("", s))
 
 
 md_raw, tex_raw = text_of(MD), text_of(TEX)
@@ -707,8 +709,14 @@ ANCHORS = [
     "every replicate at every CV lies between 76.2% and 92.8%",
     "at both windows the ranges are disjoint and the cost is larger at CV 0.60 in every seed",
     "larger in every seed by 2.4 to 20.0 points, but the ranges overlap, and at w = 5 one seed shows no increase",
+    # Bioinformatics requires AI use to be disclosed in the manuscript and documented in the
+    # supplement; these keep both from being dropped in an edit.
+    "The authors used Claude (Anthropic), through Claude Code, throughout this work",
+    "Supplementary Section S6 documents this use",
 ]
 SUPP_ANCHORS = [
+    "every commit in it carries a Claude co-author line",
+    "No reads were simulated while this article was prepared",
     "which all 54 cells do",
     "maps 6.6 points more of its reads correctly than its w = 0 index",
     "at w = 10 sketching costs more at both matched operating points than at the default, at every CV",
@@ -721,6 +729,16 @@ for anchors, files in ((ANCHORS, FILES), (SUPP_ANCHORS, SUPP_FILES)):
                 ok(f"anchor in {name}: {a[:40]}…")
             else:
                 bad(f"anchor in {name}", f"missing '{a}'")
+
+# ---- nothing left for the authors to fill
+# A bracketed instruction such as "[Funding statement to be completed ...]" would typeset as text.
+for name, body in (("manuscript.md", md_raw), ("manuscript.tex", tex_raw),
+                   ("supplementary.md", smd_raw), ("supplementary.tex", stex_raw)):
+    left = re.findall(r"\[[^\]]*\b(?:to be completed|TODO|TBD|PLACEHOLDER)\b[^\]]*\]", body, re.IGNORECASE)
+    if left:
+        bad(f"placeholder left in {name}", f"{left[:2]}")
+    else:
+        ok(f"no placeholder left in {name}")
 
 # ---- every replicated 'mean [range]' appears whole, in both files of its pair
 for pat, why, doc in MR_TEXT:

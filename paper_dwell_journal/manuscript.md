@@ -91,9 +91,11 @@ value of dwell dispersion, which cannot be changed without also changing the sam
 chemistry or the run. Squigulator (Gamaarachchi et al., 2024) exposes dispersion directly, as the
 standard deviation of the number of samples per base, with a documented default of mean 9.0 and
 standard deviation 4.0 samples, a CV of approximately 0.44. For this question simulation is not a
-substitute for real data but the only instrument with the required control. What simulation cannot
-establish, the correspondence between a simulator setting and the dispersion of a particular device
-or run, is stated as a limitation in Section 5 rather than assumed.
+substitute for real data but the only instrument with the required control, and the claims that
+follow are accordingly claims about how mappers are evaluated, which a controlled sweep can
+establish, and not about the behaviour of any particular run. What simulation cannot establish, the
+correspondence between a simulator setting and the dispersion of a particular device or run, is
+stated as a limitation in Section 5 rather than assumed.
 
 The question has a practical edge. Icarust (Munro et al., 2024), the simulator that serves the
 MinKNOW read-until interface and so allows a client to be tested end to end, emits a fixed number
@@ -110,8 +112,9 @@ This article makes five contributions.
 2. A ranking reversal: two segmentation configurations of one pipeline exchange order between
    CV 0 and CV 0.10, so that an evaluation at constant dwell selects the configuration that is
    10.8-fold worse at the simulator's default (Section 3.1).
-3. A bounding result: RawHash2 does not show the reversal, which locates it in the segmentation
-   choice rather than in the method class (Section 3.2).
+3. A bounding result: RawHash2 does not show the reversal, at its default operating point or at
+   matched false-positive rates, which locates it in the segmentation choice rather than in the
+   method class (Section 3.2).
 4. A dwell-dependent accuracy cost of minimizer sketching in RawHash2, which we have not found
    measured elsewhere (Section 3.3).
 5. A patch that adds lognormal dwell variation to Icarust, so that live read-until testing can
@@ -491,9 +494,26 @@ RawHash2 rises from 11.7 to 19.5 points over the range swept, in every seed. The
 RawHash2's flat response and the second is measured on it. Both follow from holding fixed a variable
 that evaluation can move, and both are avoided by reporting accuracy as a function of it.
 
+## Acknowledgements
+
+The authors used Claude (Anthropic), through Claude Code, throughout this work: to help write the
+pipeline's source code and the scripts that map and score reads and draw the figures; to run
+analyses, among them the three-seed RawHash2 grid of Section 2.5 and the matched operating points of
+Section 3.2; to write the script that checks every number in this article against the result files;
+and to help draft the dissertation chapter this article develops, and the article itself.
+Supplementary Section S6 documents this use. The authors directed the work, reviewed the code, the
+data and the text, and take full responsibility for the content.
+
+## Author contributions
+
+Khushal Singh: Conceptualization, Methodology, Software, Investigation, Formal analysis, Data
+curation, Visualization, Writing – original draft. Ritu Garg: Supervision, Writing – review &
+editing.
+
 ## Funding
 
-[Funding statement to be completed by the authors before submission.]
+This research received no specific grant from any funding agency in the public, commercial or
+not-for-profit sectors.
 
 ## Conflict of interest
 

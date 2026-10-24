@@ -150,8 +150,10 @@ pore, the chemistry or the run. Squigulator \citep{gamaarachchi2024squigulator} 
 dispersion directly, as the standard deviation of the number of samples per base, with a
 documented default of mean 9.0 and standard deviation 4.0 samples, a CV of approximately 0.44. For
 this question simulation is not a substitute for real data but the only instrument with the
-required control. What simulation cannot establish, the correspondence between a simulator setting
-and the dispersion of a particular device or run, is stated as a limitation in
+required control, and the claims that follow are accordingly claims about how mappers are
+evaluated, which a controlled sweep can establish, and not about the behaviour of any particular
+run. What simulation cannot establish, the correspondence between a simulator setting and the
+dispersion of a particular device or run, is stated as a limitation in
 Section~\ref{sec:limitations} rather than assumed.
 
 The question has a practical edge. Icarust \citep{munro2024icarust}, the simulator that serves the
@@ -170,8 +172,9 @@ This article makes five contributions.
   \item A ranking reversal: two segmentation configurations of one pipeline exchange order
     between CV~0 and CV 0.10, so that an evaluation at constant dwell selects the configuration
     that is 10.8-fold worse at the simulator's default (Section~\ref{sec:reversal}).
-  \item A bounding result: RawHash2 does not show the reversal, which locates it in the
-    segmentation choice rather than in the method class (Section~\ref{sec:bound}).
+  \item A bounding result: RawHash2 does not show the reversal, at its default operating point or
+    at matched false-positive rates, which locates it in the segmentation choice rather than in
+    the method class (Section~\ref{sec:bound}).
   \item A dwell-dependent accuracy cost of minimizer sketching in RawHash2, which we have not
     found measured elsewhere (Section~\ref{sec:minimizer}).
   \item A patch that adds lognormal dwell variation to Icarust, so that live read-until testing
@@ -632,8 +635,23 @@ result is bounded by RawHash2's flat response and the second is measured on it. 
 holding fixed a variable that evaluation can move, and both are avoided by reporting accuracy as a
 function of it.
 
+\section*{Acknowledgements}
+The authors used Claude (Anthropic), through Claude Code, throughout this work: to help write the
+pipeline's source code and the scripts that map and score reads and draw the figures; to run
+analyses, among them the three-seed RawHash2 grid of Section~\ref{sec:rawhash} and the matched
+operating points of Section~\ref{sec:bound}; to write the script that checks every number in this
+article against the result files; and to help draft the dissertation chapter this article
+develops, and the article itself. Supplementary Section~S6 documents this use. The authors directed
+the work, reviewed the code, the data and the text, and take full responsibility for the content.
+
+\section*{Author contributions}
+Khushal Singh: Conceptualization, Methodology, Software, Investigation, Formal analysis, Data
+curation, Visualization, Writing -- original draft. Ritu Garg: Supervision, Writing -- review \&
+editing.
+
 \section*{Funding}
-[Funding statement to be completed by the authors before submission.]
+This research received no specific grant from any funding agency in the public, commercial or
+not-for-profit sectors.
 
 \section*{Conflict of interest}
 None declared.
